@@ -6,5 +6,8 @@ declare global {
     interface Env extends LaunchpadEnv {
       TEST_MIGRATIONS: D1Migration[];
     }
+    interface GlobalProps {
+      mainModule: typeof import("../src/index");
+    }
   }
 }

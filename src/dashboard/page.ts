@@ -48,7 +48,7 @@ export async function dashboardPage(c: Context<AppEnv>): Promise<Response> {
   <td><a href="${e(s.url)}">${e(s.url)}</a>${s.hidden ? ' <span class="tag">hidden</span>' : ""}${s.spa ? ' <span class="tag">spa</span>' : ""}</td>
   <td>${e(s.title ?? "")}</td>
   <td>${e(s.visibility)}${s.visibility === "restricted" ? `<div class="muted">${e(s.allowedEmails.join(", "))}</div>` : ""}</td>
-  <td>${e(fmtTime(s.updatedAt))}</td>
+  <td class="nowrap">${e(fmtTime(s.updatedAt))}</td>
   <td>${e(fmtBytes(s.totalBytes))} · ${e(s.fileCount)} files</td>
   <td class="actions">
     <form class="inline" data-action="site-replace" data-namespace="${e(s.namespace)}" data-mount="${e(s.mountPath)}">
@@ -87,7 +87,7 @@ export async function dashboardPage(c: Context<AppEnv>): Promise<Response> {
 
   const activityRows = activity
     .map(
-      (a) => `<tr><td>${e(fmtTime(a.at))}</td><td>${e(a.actor)}</td><td>${e(a.action)}</td><td>${e(a.target ?? "")}</td><td class="muted">${e(a.detail ?? "")}</td></tr>`,
+      (a) => `<tr><td class="nowrap">${e(fmtTime(a.at))}</td><td>${e(a.actor)}</td><td>${e(a.action)}</td><td>${e(a.target ?? "")}</td><td class="muted">${e(a.detail ?? "")}</td></tr>`,
     )
     .join("");
 
@@ -113,7 +113,7 @@ export async function dashboardPage(c: Context<AppEnv>): Promise<Response> {
 <section>
   <h2>Publish an app</h2>
   <form class="grid" data-action="upload">
-    <label>Namespace <input name="namespace" list="ns-list" required placeholder="yourname" pattern="[a-z0-9-]+"></label>
+    <label>Namespace <input name="namespace" list="ns-list" required placeholder="yourname" pattern="[a-z0-9\-]+"></label>
     <datalist id="ns-list">${nsOptions}</datalist>
     <label>Mount path <input name="mount_path" placeholder="my-app (empty for root)"></label>
     <label>File (.html or .zip) <input type="file" name="file" accept=".html,.htm,.zip" required></label>
@@ -142,7 +142,7 @@ export async function dashboardPage(c: Context<AppEnv>): Promise<Response> {
       : `<p class="muted">You have no namespaces yet.</p>`
   }
   <form class="inline" data-action="ns-create">
-    <input name="label" required placeholder="new-namespace" pattern="[a-z0-9-]+" aria-label="New namespace">
+    <input name="label" required placeholder="new-namespace" pattern="[a-z0-9\-]+" aria-label="New namespace">
     <button>Create namespace</button>
   </form>
 </section>

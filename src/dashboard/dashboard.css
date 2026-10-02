@@ -35,3 +35,4 @@ pre { margin: 0; white-space: pre-wrap; word-break: break-all; }
 #flash { padding: .6rem .9rem; border-radius: 8px; margin: .5rem 0; }
 #flash.ok { background: #e6f4ea; color: #12512a; }
 #flash.error { background: #fdecea; color: #8a1c1c; }
+.nowrap { white-space: nowrap; }
