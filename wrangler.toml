@@ -1,0 +1,68 @@
+# Launchpad — one Worker serves the dashboard, APIs, MCP server, SDK and app files.
+# Replace every "example.com" with your DOMAIN and fill in database_id.
+name = "launchpad"
+main = "src/index.ts"
+compatibility_date = "2026-08-01"
+compatibility_flags = ["nodejs_compat"]
+workers_dev = false
+
+routes = [
+  { pattern = "example.com/*", zone_name = "example.com" },
+  { pattern = "*.example.com/*", zone_name = "example.com" },
+]
+
+[build]
+command = "node scripts/gen-assets.mjs"
+
+[limits]
+cpu_ms = 30000
+
+[vars]
+DOMAIN = "example.com"
+ENVIRONMENT = "production"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "launchpad"
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "migrations"
+
+[[r2_buckets]]
+binding = "BUCKET"
+bucket_name = "launchpad-sites"
+
+# 60 secret-proxy calls per minute per site.
+[[ratelimits]]
+name = "PROXY_LIMITER"
+namespace_id = "1001"
+simple = { limit = 60, period = 60 }
+
+[observability]
+enabled = true
+
+# ---------------------------------------------------------------------------
+# Local development: `npm run dev` (wrangler dev --env dev).
+# No routes here, so wrangler keeps the real Host header and namespace hosts
+# like http://test.localhost:8787 work. Bindings must be repeated per env.
+# ---------------------------------------------------------------------------
+[env.dev]
+routes = []
+
+[env.dev.vars]
+DOMAIN = "localhost"
+ENVIRONMENT = "dev"
+
+[[env.dev.d1_databases]]
+binding = "DB"
+database_name = "launchpad"
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "migrations"
+
+[[env.dev.r2_buckets]]
+binding = "BUCKET"
+bucket_name = "launchpad-sites"
+
+[[env.dev.ratelimits]]
+name = "PROXY_LIMITER"
+namespace_id = "1001"
+simple = { limit = 60, period = 60 }

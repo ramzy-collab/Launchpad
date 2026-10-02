@@ -1,0 +1,8 @@
+# Copy to .dev.vars for `npm run dev`. Never commit .dev.vars.
+# ENVIRONMENT=dev and DOMAIN=localhost come from [env.dev] in wrangler.toml.
+DEV_USER=you@example.com
+OWNER_EMAIL=you@example.com
+# 32 random bytes, base64:  openssl rand -base64 32
+SECRETS_KEK=REPLACE_WITH_BASE64_32_BYTES
+ACCESS_TEAM_DOMAIN=unused-in-dev.cloudflareaccess.com
+ACCESS_AUD=unused-in-dev

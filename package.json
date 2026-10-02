@@ -1,0 +1,31 @@
+{
+  "name": "launchpad",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --env dev",
+    "deploy": "wrangler deploy",
+    "test": "vitest run",
+    "typecheck": "node scripts/gen-assets.mjs && tsc --noEmit",
+    "db:migrate:local": "wrangler d1 migrations apply launchpad --local --env dev",
+    "db:migrate:remote": "wrangler d1 migrations apply launchpad --remote"
+  },
+  "dependencies": {
+    "@cfworker/json-schema": "^4.1.1",
+    "@modelcontextprotocol/sdk": "^1.32.0",
+    "fflate": "^0.8.3",
+    "hono": "^4.13.12",
+    "jose": "^6.2.12",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.22.0",
+    "@cloudflare/workers-types": "^5.20261002.1",
+    "@vitest/runner": "~4.1.0",
+    "@vitest/snapshot": "~4.1.0",
+    "typescript": "^7.0.2",
+    "vitest": "~4.1.0",
+    "wrangler": "^4.147.0"
+  }
+}
