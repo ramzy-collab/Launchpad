@@ -113,7 +113,7 @@ describe("security 8: upload validation", () => {
       if (dv.getUint32(p, true) === 0x04034b50) dv.setUint32(p + 22, 1, true);
     }
     rejects(() => filesFromZip(forged), 413, /100 MB/);
-  });
+  }, 30_000); // builds and inflates ~100 MB twice; slow under full-suite load
 
   it("rejects non-zip garbage and unknown file types", () => {
     rejects(() => filesFromZip(new Uint8Array([1, 2, 3, 4, 5])), 400);

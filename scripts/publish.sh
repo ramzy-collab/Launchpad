@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Publish an app to Launchpad with a deploy token.
+# Publish an app to Formelab with a deploy token.
 #
-#   export LAUNCHPAD_TOKEN=lp_...        # from the dashboard; never printed by this script
-#   export LAUNCHPAD_DOMAIN=example.com  # or LAUNCHPAD_URL=http://localhost:8787 for local dev
+#   export FORMELAB_TOKEN=fl_...        # from the dashboard; never printed by this script
+#   export FORMELAB_DOMAIN=example.com  # or FORMELAB_URL=http://localhost:8787 for local dev
 #   scripts/publish.sh --file app.html --namespace ramzy --path budget --title "Budget"
 #
 # Flags:
@@ -45,12 +45,12 @@ case "$file" in *.html|*.htm|*.zip|*.HTML|*.ZIP) ;; *) die "file must be .html o
 size=$(wc -c < "$file" | tr -d ' ')
 (( size <= 25 * 1024 * 1024 )) || die "file is larger than 25 MB"
 
-if [[ -n "${LAUNCHPAD_URL:-}" ]]; then
-  base="${LAUNCHPAD_URL%/}"
-elif [[ -n "${LAUNCHPAD_DOMAIN:-}" ]]; then
-  base="https://${LAUNCHPAD_DOMAIN}"
+if [[ -n "${FORMELAB_URL:-}" ]]; then
+  base="${FORMELAB_URL%/}"
+elif [[ -n "${FORMELAB_DOMAIN:-}" ]]; then
+  base="https://${FORMELAB_DOMAIN}"
 else
-  die "set LAUNCHPAD_DOMAIN (e.g. example.com) or LAUNCHPAD_URL"
+  die "set FORMELAB_DOMAIN (e.g. example.com) or FORMELAB_URL"
 fi
 endpoint="$base/_api/deploy/sites"
 
@@ -69,16 +69,16 @@ if (( dry_run )); then
   [[ -n "$spa" ]] && echo "  spa:        true"
   [[ -n "$visibility" ]] && echo "  visibility: $visibility"
   [[ -n "$allowed" ]] && echo "  allowed:    $allowed"
-  if [[ -n "${LAUNCHPAD_TOKEN:-}" ]]; then echo "  token:      set (hidden)"; else echo "  token:      NOT SET"; fi
+  if [[ -n "${FORMELAB_TOKEN:-}" ]]; then echo "  token:      set (hidden)"; else echo "  token:      NOT SET"; fi
   exit 0
 fi
 
-[[ -n "${LAUNCHPAD_TOKEN:-}" ]] || die "LAUNCHPAD_TOKEN is not set (create one in the dashboard)"
-[[ "$LAUNCHPAD_TOKEN" =~ ^lp_[a-z2-7]+$ ]] || die "LAUNCHPAD_TOKEN does not look like a deploy token"
+[[ -n "${FORMELAB_TOKEN:-}" ]] || die "FORMELAB_TOKEN is not set (create one in the dashboard)"
+[[ "$FORMELAB_TOKEN" =~ ^fl_[a-z2-7]+$ ]] || die "FORMELAB_TOKEN does not look like a deploy token"
 
 # The token goes to curl on stdin (-K -), so it never appears in argv / `ps`.
 tmp="$(mktemp)"; trap 'rm -f "$tmp"' EXIT
-status=$(printf 'header = "Authorization: Bearer %s"\n' "$LAUNCHPAD_TOKEN" |
+status=$(printf 'header = "Authorization: Bearer %s"\n' "$FORMELAB_TOKEN" |
   curl -sS -K - -o "$tmp" -w '%{http_code}' "${form[@]}" "$endpoint") || die "request failed"
 
 if [[ "$status" == 2* ]]; then

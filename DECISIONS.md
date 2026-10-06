@@ -53,7 +53,7 @@ Choices made while building v1, including where the build differs from the spec 
   token could mint a fresh 30-day token for itself and outlive its revocation. Tokens are created
   and revoked only from the dashboard (Access session).
 - **Admin API CSRF:** `/_api/admin/*` is authenticated by the Access cookie, so (beyond the spec)
-  it rejects a mismatched `Origin` and requires `x-launchpad-request: 1` on writes, which forces a
+  it rejects a mismatched `Origin` and requires `x-formelab-request: 1` on writes, which forces a
   CORS preflight for cross-site callers. The dashboard sends the header.
 - **Site editor lists** can only be changed by the site owner or the namespace owner ("Edit editor
   lists: owner only"). Site editors and namespace editors can change the other settings.
@@ -109,7 +109,7 @@ Choices made while building v1, including where the build differs from the spec 
 
 ## Runtime API
 
-- `x-launchpad-mount` must match `^/([a-z0-9-]+(/[a-z0-9-]+)*/)?$`. Anything else (absolute URLs,
+- `x-formelab-mount` must match `^/([a-z0-9-]+(/[a-z0-9-]+)*/)?$`. Anything else (absolute URLs,
   `..`, uppercase) is a 400, and the mount is looked up only within the request's own namespace.
 - `OPTIONS` to `/_api/*` always gets 403 with no `Access-Control-*` headers.
 - KV keys may contain `/`; the SDK percent-encodes keys and the route decodes the raw remainder of
@@ -145,3 +145,13 @@ Choices made while building v1, including where the build differs from the spec 
   the build sandbox (its egress allowlist blocks the host). The same flow was verified end to end
   in Chromium against `wrangler dev` with an allowed public HTTPS API, and the proxy's handling of
   an echoing upstream is covered by tests.
+
+## Naming
+
+- **Renamed from the spec's placeholder "Launchpad" to "Formelab".** This covers the SDK global
+  (`window.formelab`, with `window.archie` still an alias), the Worker
+  name, the MCP server name, the skill (`formelab-app`), the request
+  headers (`x-formelab-mount`, `x-formelab-request`), the script variables (`FORMELAB_TOKEN`, ...),
+  and the deploy-token prefix (`fl_`).
+- The R2 bucket and D1 database keep their original names, `launchpad-sites` and `launchpad`,
+  because they were created before the rename. Those names are internal and never shown to users.

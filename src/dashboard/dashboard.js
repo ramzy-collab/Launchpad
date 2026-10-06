@@ -1,4 +1,4 @@
-// Launchpad dashboard. Served as a file so the page can use a strict CSP.
+// Formelab dashboard. Served as a file so the page can use a strict CSP.
 (function () {
   "use strict";
   var flash = document.getElementById("flash");
@@ -11,7 +11,7 @@
   }
 
   function api(method, path, body) {
-    var opts = { method: method, headers: { "x-launchpad-request": "1" }, credentials: "same-origin" };
+    var opts = { method: method, headers: { "x-formelab-request": "1" }, credentials: "same-origin" };
     if (body instanceof FormData) opts.body = body;
     else if (body !== undefined) {
       opts.headers["content-type"] = "application/json";

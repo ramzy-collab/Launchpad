@@ -1,21 +1,21 @@
 ---
-name: launchpad-app
-description: Build and publish a small web app to the user's Launchpad host (https://<namespace>.<DOMAIN>/<path>/). Use when the user asks to make, ship, host, publish or update a web app, dashboard, tool, tracker or page "on Launchpad" (or "on Archie"), or wants a quick internal app with sign-in, shared storage or an API key kept server-side.
+name: formelab-app
+description: Build and publish a small web app to the user's Formelab host (https://<namespace>.<DOMAIN>/<path>/). Use when the user asks to make, ship, host, publish or update a web app, dashboard, tool, tracker or page "on Formelab" (or "on Archie"), or wants a quick internal app with sign-in, shared storage or an API key kept server-side.
 ---
 
-# Launchpad app builder
+# Formelab app builder
 
-Launchpad hosts self-contained HTML/CSS/JS apps behind single sign-on, with a browser SDK for
-identity (`launchpad.me()`), per-app key/value storage (`launchpad.kv`), and secrets with a
-server-side proxy (`launchpad.secrets.proxy`). Apps are published through the `launchpad` MCP
+Formelab hosts self-contained HTML/CSS/JS apps behind single sign-on, with a browser SDK for
+identity (`formelab.me()`), per-app key/value storage (`formelab.kv`), and secrets with a
+server-side proxy (`formelab.secrets.proxy`). Apps are published through the `formelab` MCP
 server.
 
 ## Steps
 
 1. **Read the guide first** (once per session): call the MCP tool `get_guide`. If the MCP server
    is not connected, fetch `https://<DOMAIN>/_platform/guide.md` instead, and tell the user to
-   connect it with the command on their Launchpad dashboard:
-   `claude mcp add --transport http launchpad https://<DOMAIN>/mcp --header "Authorization: Bearer lp_..."`.
+   connect it with the command on their Formelab dashboard:
+   `claude mcp add --transport http formelab https://<DOMAIN>/mcp --header "Authorization: Bearer fl_..."`.
 2. **Pick where it goes.** Call `list_namespaces`. Use the user's namespace unless they say
    otherwise. Choose a short, lowercase `mount_path` (letters, digits, hyphens), e.g. `budget`.
    Check `list_sites` so you don't overwrite an existing app by accident; if the path is taken,
@@ -23,8 +23,8 @@ server.
 3. **Build a single-file app**: one complete `index.html` with inline CSS and JS.
    - Include `<head>` and `<meta name="viewport">`; keep asset URLs relative.
    - Add `<script src="/_platform/sdk.js"></script>` only if you use the SDK.
-   - Never embed API keys. Add a small settings form that calls `launchpad.secrets.set(...)`, and
-     call APIs with `launchpad.secrets.proxy(name, { url, headers })` using `{{value}}`.
+   - Never embed API keys. Add a small settings form that calls `formelab.secrets.set(...)`, and
+     call APIs with `formelab.secrets.proxy(name, { url, headers })` using `{{value}}`.
    - No background jobs: fetch on load or on click; cache in `localStorage` for fast first paint.
    - Wrap SDK calls in `try/catch` and show `e.message` and `e.hint`.
 4. **Publish** with the `publish` tool: `html`, `namespace`, `mount_path`, `title`, and

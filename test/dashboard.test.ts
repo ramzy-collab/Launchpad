@@ -14,7 +14,7 @@ describe("dashboard", () => {
     expect(html).toContain('<script src="/_platform/dashboard.js" defer></script>');
     expect(html).not.toMatch(/<script>(?!<\/script>)/);
     expect(html).not.toMatch(/\son[a-z]+=/i); // no inline event handlers
-    expect(html).toContain("claude mcp add --transport http launchpad https://example.com/mcp");
+    expect(html).toContain("claude mcp add --transport http formelab https://example.com/mcp");
     expect((await call("/_platform/dashboard.js", { as: OWNER })).headers.get("content-type")).toContain("javascript");
     expect((await call("/_platform/dashboard.css", { as: OWNER })).headers.get("content-type")).toContain("text/css");
   });
@@ -62,12 +62,12 @@ describe("dashboard", () => {
     }
   });
 
-  it("serves the SDK under 5 KB, defining launchpad and archie", async () => {
+  it("serves the SDK under 5 KB, defining formelab and archie", async () => {
     const res = await call(`https://${uniq()}.example.com/_platform/sdk.js`, { as: OWNER });
     const js = await res.text();
     expect(res.headers.get("content-type")).toContain("javascript");
     expect(new TextEncoder().encode(js).length).toBeLessThan(5 * 1024);
-    expect(js).toContain("window.launchpad = launchpad");
-    expect(js).toContain("window.archie = launchpad");
+    expect(js).toContain("window.formelab = formelab");
+    expect(js).toContain("window.archie = formelab");
   });
 });

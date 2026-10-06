@@ -28,11 +28,11 @@ const emails = z.array(z.string()).optional();
 
 export function buildServer(ctx: Ctx): McpServer {
   const server = new McpServer(
-    { name: "launchpad", version: "1.0.0" },
+    { name: "formelab", version: "1.0.0" },
     {
       jsonSchemaValidator: new CfWorkerJsonSchemaValidator(),
       instructions:
-        "Launchpad hosts small self-contained web apps at https://<namespace>." +
+        "Formelab hosts small self-contained web apps at https://<namespace>." +
         ctx.env.DOMAIN +
         "/<mount_path>/. Call get_guide before building an app for the first time, then publish with the publish tool.",
     },
@@ -127,7 +127,7 @@ export function buildServer(ctx: Ctx): McpServer {
 
   server.registerTool(
     "get_guide",
-    { description: "Return the Launchpad app-building guide (markdown): URL model, SDK reference, patterns, starter app, checklist.", annotations: { readOnlyHint: true } },
+    { description: "Return the Formelab app-building guide (markdown): URL model, SDK reference, patterns, starter app, checklist.", annotations: { readOnlyHint: true } },
     () => run(async () => GUIDE_MD),
   );
 

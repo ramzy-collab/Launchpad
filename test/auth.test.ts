@@ -92,7 +92,7 @@ describe("security 9: deploy tokens", () => {
     const res = await call("/_api/admin/tokens", { as: OWNER, method: "POST", json: { name: "ci", ttlHours: 2 } });
     expect(res.status).toBe(201);
     const { token, id } = await res.json<{ token: string; id: string }>();
-    expect(token).toMatch(/^lp_[a-z2-7]{52}$/);
+    expect(token).toMatch(/^fl_[a-z2-7]{52}$/);
     const row = await env.DB.prepare("SELECT * FROM tokens WHERE id = ?").bind(id).first<Record<string, unknown>>();
     expect(JSON.stringify(row)).not.toContain(token);
     expect(JSON.stringify(row)).not.toContain(token.slice(3));
@@ -125,7 +125,7 @@ describe("security 9: deploy tokens", () => {
   });
 
   it("returns 401 for unknown or malformed tokens", async () => {
-    for (const t of ["lp_" + "a".repeat(52), "nope", "lp_UPPERCASE"]) {
+    for (const t of ["fl_" + "a".repeat(52), "nope", "fl_UPPERCASE"]) {
       expect((await call("/_api/deploy/whoami", { token: t })).status).toBe(401);
     }
   });
@@ -156,7 +156,7 @@ describe("admin API CSRF", () => {
     const jwt = await accessJwt(OWNER);
     const res1 = await call("https://example.com/_api/admin/namespaces", {
       method: "POST",
-      headers: { "cf-access-jwt-assertion": jwt, origin: "https://evil.test", "x-launchpad-request": "1", "content-type": "application/json" },
+      headers: { "cf-access-jwt-assertion": jwt, origin: "https://evil.test", "x-formelab-request": "1", "content-type": "application/json" },
       body: JSON.stringify({ label: uniq() }),
     });
     expect(res1.status).toBe(403);

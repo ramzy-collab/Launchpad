@@ -1,30 +1,30 @@
 #!/usr/bin/env bash
 # Smoke test: publish a canary app, fetch it, delete it, and confirm it is gone.
 #
-#   export LAUNCHPAD_TOKEN=lp_...          # deploy token (never printed)
-#   export LAUNCHPAD_DOMAIN=example.com    # or LAUNCHPAD_URL=http://localhost:8787 for local dev
-#   export LAUNCHPAD_NAMESPACE=ramzy       # a namespace you own
+#   export FORMELAB_TOKEN=fl_...          # deploy token (never printed)
+#   export FORMELAB_DOMAIN=example.com    # or FORMELAB_URL=http://localhost:8787 for local dev
+#   export FORMELAB_NAMESPACE=ramzy       # a namespace you own
 #   scripts/smoke.sh
 #
 # Fetching the canary in production goes through Cloudflare Access, so the script needs a
-# user JWT for the app: it uses LAUNCHPAD_ACCESS_JWT if set, otherwise tries
+# user JWT for the app: it uses FORMELAB_ACCESS_JWT if set, otherwise tries
 # `cloudflared access token -app=https://<ns>.<domain>` (run `cloudflared access login` first).
 set -euo pipefail
 
 die() { echo "FAIL: $*" >&2; exit 1; }
 ok() { echo "ok   $*"; }
 
-[[ -n "${LAUNCHPAD_TOKEN:-}" ]] || die "LAUNCHPAD_TOKEN is not set"
-[[ -n "${LAUNCHPAD_NAMESPACE:-}" ]] || die "LAUNCHPAD_NAMESPACE is not set"
-if [[ -n "${LAUNCHPAD_URL:-}" ]]; then base="${LAUNCHPAD_URL%/}"
-elif [[ -n "${LAUNCHPAD_DOMAIN:-}" ]]; then base="https://${LAUNCHPAD_DOMAIN}"
-else die "set LAUNCHPAD_DOMAIN or LAUNCHPAD_URL"; fi
-ns="$LAUNCHPAD_NAMESPACE"
+[[ -n "${FORMELAB_TOKEN:-}" ]] || die "FORMELAB_TOKEN is not set"
+[[ -n "${FORMELAB_NAMESPACE:-}" ]] || die "FORMELAB_NAMESPACE is not set"
+if [[ -n "${FORMELAB_URL:-}" ]]; then base="${FORMELAB_URL%/}"
+elif [[ -n "${FORMELAB_DOMAIN:-}" ]]; then base="https://${FORMELAB_DOMAIN}"
+else die "set FORMELAB_DOMAIN or FORMELAB_URL"; fi
+ns="$FORMELAB_NAMESPACE"
 
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
 # Authenticated curl against the deploy API; the token is passed on stdin, never in argv.
 api() {
-  printf 'header = "Authorization: Bearer %s"\n' "$LAUNCHPAD_TOKEN" |
+  printf 'header = "Authorization: Bearer %s"\n' "$FORMELAB_TOKEN" |
     curl -sS -K - -o "$tmp/body" -w '%{http_code}' "$@"
 }
 json_field() { sed -n "s/.*\"$1\":\"\([^\"]*\)\".*/\1/p" "$tmp/body" | head -1; }
@@ -35,7 +35,7 @@ code=$(api "$base/_api/deploy/whoami") || die "cannot reach $base"
 ok "token is valid for $(json_field email)"
 
 # 2. Publish a canary.
-marker="launchpad-smoke-$(date +%s)-$RANDOM"
+marker="formelab-smoke-$(date +%s)-$RANDOM"
 mount="smoke-$(date +%s)"
 printf '<!doctype html><html><head><title>smoke</title></head><body><p id="m">%s</p></body></html>' "$marker" > "$tmp/canary.html"
 code=$(api -F "file=@$tmp/canary.html" -F "namespace=$ns" -F "mount_path=$mount" -F "title=Smoke canary" "$base/_api/deploy/sites")
@@ -53,7 +53,7 @@ code=$(api "$base/_api/deploy/sites?namespace=$ns")
 ok "listed in namespace $ns"
 
 # 4. Fetch it (through Access in production).
-jwt="${LAUNCHPAD_ACCESS_JWT:-}"
+jwt="${FORMELAB_ACCESS_JWT:-}"
 host=$(printf '%s' "$url" | sed -E 's#^https?://([^/:]+).*#\1#')
 if [[ -z "$jwt" && "$base" == https://* ]] && command -v cloudflared >/dev/null; then
   jwt=$(cloudflared access token -app="https://$host" 2>/dev/null || true)
@@ -68,7 +68,7 @@ fetch() {
 can_fetch=1
 if [[ "$base" == https://* && -z "$jwt" ]]; then
   can_fetch=0
-  echo "skip fetch: no Access JWT (set LAUNCHPAD_ACCESS_JWT or install cloudflared and run 'cloudflared access login https://$host')"
+  echo "skip fetch: no Access JWT (set FORMELAB_ACCESS_JWT or install cloudflared and run 'cloudflared access login https://$host')"
 fi
 if (( can_fetch )); then
   code=$(fetch)

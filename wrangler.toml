@@ -1,6 +1,6 @@
-# Launchpad — one Worker serves the dashboard, APIs, MCP server, SDK and app files.
+# Formelab — one Worker serves the dashboard, APIs, MCP server, SDK and app files.
 # Replace every "example.com" with your DOMAIN and fill in database_id.
-name = "launchpad"
+name = "formelab"
 main = "src/index.ts"
 compatibility_date = "2026-08-01"
 compatibility_flags = ["nodejs_compat"]

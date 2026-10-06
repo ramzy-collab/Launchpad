@@ -22,7 +22,7 @@ export async function dashboardPage(c: Context<AppEnv>): Promise<Response> {
     recentActivity(c.env, user.email, 50),
   ]);
   const origin = isDev(c.env) ? new URL(c.req.url).origin : `https://${c.env.DOMAIN}`;
-  const mcpCommand = `claude mcp add --transport http launchpad ${origin}/mcp \\\n  --header "Authorization: Bearer lp_..."`;
+  const mcpCommand = `claude mcp add --transport http formelab ${origin}/mcp \\\n  --header "Authorization: Bearer fl_..."`;
   const t = Date.now();
 
   const nsRows = namespaces
@@ -98,13 +98,13 @@ export async function dashboardPage(c: Context<AppEnv>): Promise<Response> {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Launchpad</title>
+<title>Formelab</title>
 <link rel="stylesheet" href="/_platform/dashboard.css">
 <script src="/_platform/dashboard.js" defer></script>
 </head>
 <body>
 <header>
-  <h1>Launchpad</h1>
+  <h1>Formelab</h1>
   <div>Signed in as <strong>${e(user.email)}</strong>${user.isAdmin ? ' <span class="tag">admin</span>' : ""}</div>
 </header>
 <main>

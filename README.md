@@ -1,4 +1,4 @@
-# Launchpad
+# Formelab
 
 A small, personal app host on Cloudflare. You (and a few people you invite) publish self-contained
 web apps and get a live URL for each:
@@ -9,7 +9,7 @@ https://<namespace>.<DOMAIN>/<mount-path>/
 
 Apps are plain HTML/CSS/JS (a single `.html` file or a `.zip` with `index.html` at its root). They
 get identity, per-app key/value storage, and secrets with a server-side proxy through a tiny
-browser SDK (`window.launchpad`). Claude Code publishes apps through Launchpad's MCP server; there
+browser SDK (`window.formelab`). Claude Code publishes apps through Formelab's MCP server; there
 is also a web dashboard.
 
 - One Worker (`src/index.ts`) serves the dashboard, APIs, MCP server, SDK and app files.
@@ -25,11 +25,11 @@ Do these once. Replace `example.com` everywhere with your domain.
 
 ### 1.1 A dedicated domain on Cloudflare DNS
 
-Use a domain just for Launchpad (for example `mylaunchpad.dev`) so namespaces sit **one level
-down**: `ramzy.mylaunchpad.dev`.
+Use a domain just for Formelab (for example `myformelab.dev`) so namespaces sit **one level
+down**: `ramzy.myformelab.dev`.
 
 > **Important:** Cloudflare's free Universal SSL certificate covers `DOMAIN` and `*.DOMAIN`, but
-> **not** `*.sub.DOMAIN`. If you nest Launchpad under a subdomain (`ramzy.apps.example.com`) you
+> **not** `*.sub.DOMAIN`. If you nest Formelab under a subdomain (`ramzy.apps.example.com`) you
 > need Advanced Certificate Manager, which is paid. Use an apex domain.
 
 ### 1.2 Workers Paid plan ($5/month)
@@ -121,14 +121,14 @@ Then smoke-test the live domain (section 2.2).
 Creates a canary app in your namespace, fetches it, deletes it, and checks it is gone:
 
 ```bash
-export LAUNCHPAD_DOMAIN=example.com
-export LAUNCHPAD_NAMESPACE=yourname
-export LAUNCHPAD_TOKEN=lp_...           # create in the dashboard → Deploy tokens
+export FORMELAB_DOMAIN=example.com
+export FORMELAB_NAMESPACE=yourname
+export FORMELAB_TOKEN=fl_...           # create in the dashboard → Deploy tokens
 cloudflared access login https://yourname.example.com   # once, so the script can fetch through Access
 scripts/smoke.sh
 ```
 
-If `cloudflared` is not installed you can set `LAUNCHPAD_ACCESS_JWT` instead (the value of the
+If `cloudflared` is not installed you can set `FORMELAB_ACCESS_JWT` instead (the value of the
 `CF_Authorization` cookie for `yourname.example.com`). Without either, the publish/list/delete
 checks still run and the fetch is skipped with a notice.
 
@@ -181,32 +181,32 @@ requirement it covers (`security 1: ...` through `security 12: ...`).
 2. Run (the dashboard shows this command pre-filled with your domain):
 
    ```bash
-   claude mcp add --transport http launchpad https://example.com/mcp \
-     --header "Authorization: Bearer lp_..."
+   claude mcp add --transport http formelab https://example.com/mcp \
+     --header "Authorization: Bearer fl_..."
    ```
 
 3. Optional: install the skill so Claude knows the workflow:
 
    ```bash
-   mkdir -p ~/.claude/skills/launchpad-app
-   cp skill/SKILL.md ~/.claude/skills/launchpad-app/SKILL.md
+   mkdir -p ~/.claude/skills/formelab-app
+   cp skill/SKILL.md ~/.claude/skills/formelab-app/SKILL.md
    ```
 
 Tools: `whoami`, `list_namespaces`, `list_sites`, `publish`, `update_site`, `delete_site`,
 `get_guide`. Then ask Claude Code something like *"Build me a habit tracker and publish it to
-Launchpad at yourname/habits."*
+Formelab at yourname/habits."*
 
 ## 5. Publishing from scripts
 
 ```bash
-export LAUNCHPAD_TOKEN=lp_...  LAUNCHPAD_DOMAIN=example.com
+export FORMELAB_TOKEN=fl_...  FORMELAB_DOMAIN=example.com
 scripts/publish.sh --file app.html --namespace yourname --path budget --title "Budget"
 scripts/publish.sh --file site.zip --namespace yourname --path docs --spa
 scripts/publish.sh --file app.html --namespace yourname --path budget --dry-run
 ```
 
 The script never prints the token (it passes it to curl on stdin). For local dev use
-`LAUNCHPAD_URL=http://localhost:8787` instead of `LAUNCHPAD_DOMAIN`.
+`FORMELAB_URL=http://localhost:8787` instead of `FORMELAB_DOMAIN`.
 
 ---
 
@@ -215,8 +215,8 @@ The script never prints the token (it passes it to curl on stdin). For local dev
 All errors are JSON: `{ "error": { "code", "message", "hint" } }`.
 
 **Management API**: `https://DOMAIN/_api/admin/*` (Access session; writes need the
-`x-launchpad-request: 1` header, which the dashboard sends) and `https://DOMAIN/_api/deploy/*`
-(`Authorization: Bearer lp_...`; same endpoints except `/tokens`).
+`x-formelab-request: 1` header, which the dashboard sends) and `https://DOMAIN/_api/deploy/*`
+(`Authorization: Bearer fl_...`; same endpoints except `/tokens`).
 
 | Method and path | Purpose |
 |---|---|
@@ -254,6 +254,6 @@ src/mcp.ts                    MCP server
 src/dashboard/                dashboard HTML, JS, CSS
 src/sdk.js, src/guide.md      browser SDK and agent guide
 scripts/                      publish.sh, smoke.sh, gen-assets.mjs
-skill/SKILL.md                Claude Code skill "launchpad-app"
+skill/SKILL.md                Claude Code skill "formelab-app"
 test/                         vitest suites
 ```

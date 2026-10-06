@@ -34,7 +34,7 @@ describe("MCP server", () => {
   it("initializes and lists all tools", async () => {
     const t = await token();
     const init = await rpc(t, "initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "1" } });
-    expect(init.result.serverInfo.name).toBe("launchpad");
+    expect(init.result.serverInfo.name).toBe("formelab");
     const { result } = await rpc(t, "tools/list");
     const names = result.tools.map((x: { name: string }) => x.name).sort();
     expect(names).toEqual(["delete_site", "get_guide", "list_namespaces", "list_sites", "publish", "update_site", "whoami"]);
@@ -90,7 +90,7 @@ describe("MCP server", () => {
 
   it("serves the guide", async () => {
     const r = await tool(await token(), "get_guide");
-    expect(r.text).toContain("# Building apps for Launchpad");
+    expect(r.text).toContain("# Building apps for Formelab");
     expect(r.text).toContain("secrets.proxy");
   });
 });

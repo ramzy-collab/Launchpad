@@ -1,4 +1,4 @@
-/* Launchpad SDK: window.launchpad (alias window.archie). No build step. */
+/* Formelab SDK: window.formelab (alias window.archie). No build step. */
 (function () {
   "use strict";
   var mount = (function () {
@@ -11,7 +11,7 @@
   })();
 
   function call(method, path, body, raw) {
-    var headers = { "x-launchpad-mount": mount };
+    var headers = { "x-formelab-mount": mount };
     var opts = { method: method, headers: headers, credentials: "same-origin" };
     if (body !== undefined) {
       headers["content-type"] = "application/json";
@@ -36,7 +36,7 @@
 
   var enc = encodeURIComponent;
 
-  var launchpad = {
+  var formelab = {
     mount: mount,
     me: function () { return call("GET", "me"); },
     kv: {
@@ -73,6 +73,6 @@
     }
   };
 
-  window.launchpad = launchpad;
-  window.archie = launchpad;
+  window.formelab = formelab;
+  window.archie = formelab;
 })();

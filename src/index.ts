@@ -39,9 +39,9 @@ apex.route("/_api/deploy", managementApi("deploy"));
 apex.all("/mcp", async (c) => {
   const user = await identifyBearer(c.req.raw, c.env);
   if (!user) {
-    return new Response(JSON.stringify({ error: { code: "unauthorized", message: "A valid deploy token is required.", hint: "Create a token in the dashboard and pass it as Authorization: Bearer lp_..." } }), {
+    return new Response(JSON.stringify({ error: { code: "unauthorized", message: "A valid deploy token is required.", hint: "Create a token in the dashboard and pass it as Authorization: Bearer fl_..." } }), {
       status: 401,
-      headers: { "content-type": "application/json", "www-authenticate": 'Bearer realm="launchpad"' },
+      headers: { "content-type": "application/json", "www-authenticate": 'Bearer realm="formelab"' },
     });
   }
   return handleMcp(c.req.raw, c.env, user, c.executionCtx);
@@ -59,8 +59,8 @@ apex.use("*", async (c, next) => {
 apex.use("/_api/admin/*", async (c, next) => {
   const origin = c.req.header("origin");
   if (origin && origin !== new URL(c.req.url).origin) return jsonError(forbidden("Cross-origin requests are not allowed."));
-  if (c.req.method !== "GET" && c.req.method !== "HEAD" && c.req.header("x-launchpad-request") !== "1") {
-    return jsonError(forbidden("Missing x-launchpad-request header."));
+  if (c.req.method !== "GET" && c.req.method !== "HEAD" && c.req.header("x-formelab-request") !== "1") {
+    return jsonError(forbidden("Missing x-formelab-request header."));
   }
   await next();
 });

@@ -1,11 +1,11 @@
-# Building apps for Launchpad
+# Building apps for Formelab
 
-This guide is written for AI agents (and people) building web apps for a Launchpad host. Read it
+This guide is written for AI agents (and people) building web apps for a Formelab host. Read it
 once before you build your first app.
 
-## 1. What Launchpad is
+## 1. What Formelab is
 
-Launchpad hosts small, self-contained web apps: plain HTML, CSS and JavaScript, with no build step
+Formelab hosts small, self-contained web apps: plain HTML, CSS and JavaScript, with no build step
 and no backend of your own. Each app gets a URL:
 
 ```
@@ -20,9 +20,9 @@ https://<namespace>.<DOMAIN>/<mount-path>/
 - An app can be `all` (anyone who can sign in) or `restricted` (only its owner, editors and the
   emails on its allow-list).
 
-Apps get platform features through a small browser SDK, `window.launchpad`:
+Apps get platform features through a small browser SDK, `window.formelab`:
 
-- **Identity**: `launchpad.me()` tells you who is viewing.
+- **Identity**: `formelab.me()` tells you who is viewing.
 - **Key/value storage**: per-app JSON storage shared by everyone who can see the app.
 - **Secrets and a server-side proxy**: store an API key once; call the API through the proxy so
   the key never reaches the browser.
@@ -38,8 +38,8 @@ Apps get platform features through a small browser SDK, `window.launchpad`:
    to the platform. Use the SDK instead of calling `/_api/*` by hand. Uploads may not contain files
    under these paths.
 4. **Never put secrets in client code.** No API keys in HTML or JS, ever. Store them with
-   `launchpad.secrets.set()` (or ask the user to paste them into a settings form that calls it),
-   then use `launchpad.secrets.proxy()` with a `{{value}}` placeholder.
+   `formelab.secrets.set()` (or ask the user to paste them into a settings form that calls it),
+   then use `formelab.secrets.proxy()` with a `{{value}}` placeholder.
 5. **There are no background jobs.** Fetch data when the page loads or when the user acts. Cache
    results (in KV or `localStorage`) so the page paints fast.
 6. **Keep uploads small**: at most 25 MB compressed, 100 MB uncompressed, 2,000 files. A single
@@ -52,44 +52,44 @@ Apps get platform features through a small browser SDK, `window.launchpad`:
 
 ## 3. SDK reference
 
-Add `<script src="/_platform/sdk.js"></script>`, then use `window.launchpad` (also available as
+Add `<script src="/_platform/sdk.js"></script>`, then use `window.formelab` (also available as
 `window.archie`). Every method returns a Promise. On failure it throws an `Error` with `.code`,
 `.status` and `.hint` (a plain-language suggestion you can show the user).
 
-### `launchpad.me()`
+### `formelab.me()`
 
 ```js
-const me = await launchpad.me(); // { email: "ana@example.com", name: null }
+const me = await formelab.me(); // { email: "ana@example.com", name: null }
 ```
 
-### `launchpad.kv`
+### `formelab.kv`
 
 Per-app JSON storage. Keys are 1–256 characters; values are any JSON up to 64 KB; at most 1,000
 keys per app.
 
 ```js
-await launchpad.kv.set("settings", { theme: "dark", city: "Boston" });
-const settings = await launchpad.kv.get("settings");   // the value itself, or null if missing
-const all = await launchpad.kv.list();                  // [{ key, value, updatedAt }] sorted by key
-const votes = await launchpad.kv.list("vote:");         // only keys starting with "vote:"
-await launchpad.kv.delete("settings");
+await formelab.kv.set("settings", { theme: "dark", city: "Boston" });
+const settings = await formelab.kv.get("settings");   // the value itself, or null if missing
+const all = await formelab.kv.list();                  // [{ key, value, updatedAt }] sorted by key
+const votes = await formelab.kv.list("vote:");         // only keys starting with "vote:"
+await formelab.kv.delete("settings");
 ```
 
-### `launchpad.secrets`
+### `formelab.secrets`
 
 Only the app's owner and editors can set or delete secrets. Anyone who can view the app can *use*
 them through the proxy, but nobody can read them back.
 
 ```js
-await launchpad.secrets.set("weather_key", "abc123");                         // a string
-await launchpad.secrets.set("stripe", { public: "pk_...", secret: "sk_..." });  // an object
-await launchpad.secrets.list();                                                 // ["stripe", "weather_key"]
-await launchpad.secrets.delete("weather_key");
+await formelab.secrets.set("weather_key", "abc123");                         // a string
+await formelab.secrets.set("stripe", { public: "pk_...", secret: "sk_..." });  // an object
+await formelab.secrets.list();                                                 // ["stripe", "weather_key"]
+await formelab.secrets.delete("weather_key");
 ```
 
 Names are 1–64 characters of `a-z 0-9 _ -`. Values are at most 8 KB; at most 50 secrets per app.
 
-### `launchpad.secrets.proxy(name, { url, method, headers, body })`
+### `formelab.secrets.proxy(name, { url, method, headers, body })`
 
 The server fills placeholders in `url`, header values and `body`, then makes the request:
 
@@ -100,18 +100,18 @@ The server fills placeholders in `url`, header values and `body`, then makes the
 | `{{basic}}` | `base64(user:pass)` for objects with `public`+`secret` or `username`+`password` |
 
 ```js
-const res = await launchpad.secrets.proxy("weather_key", {
+const res = await formelab.secrets.proxy("weather_key", {
   url: "https://api.openweathermap.org/data/2.5/weather?q=Boston&appid={{value}}",
 });
 // res = { status, contentType, text, truncated, json() }
 if (res.status === 200) console.log(res.json().main.temp);
 
-await launchpad.secrets.proxy("stripe", {
+await formelab.secrets.proxy("stripe", {
   url: "https://api.stripe.com/v1/customers?limit=3",
   headers: { Authorization: "Basic {{basic}}" },
 });
 
-await launchpad.secrets.proxy("openai", {
+await formelab.secrets.proxy("openai", {
   url: "https://api.example.com/v1/things",
   method: "POST",
   headers: { Authorization: "Bearer {{value}}", "Content-Type": "application/json" },
@@ -129,7 +129,7 @@ the platform replaces it with `[redacted]`.
 
 ### Dashboard over an external API
 
-1. A settings panel (shown to editors) calls `launchpad.secrets.set("api_key", value)`.
+1. A settings panel (shown to editors) calls `formelab.secrets.set("api_key", value)`.
 2. On load, render the last snapshot from `localStorage` immediately, then refresh via the proxy.
 3. Save the fresh snapshot to `localStorage` (and to KV if every viewer should share it).
 
@@ -138,7 +138,7 @@ const CACHE = location.pathname + ":snapshot";
 const cached = localStorage.getItem(CACHE);
 if (cached) render(JSON.parse(cached));
 try {
-  const res = await launchpad.secrets.proxy("api_key", { url: "https://api.example.com/stats?key={{value}}" });
+  const res = await formelab.secrets.proxy("api_key", { url: "https://api.example.com/stats?key={{value}}" });
   if (res.status === 200) { localStorage.setItem(CACHE, res.text); render(res.json()); }
   else showError("The API answered " + res.status);
 } catch (e) {
@@ -149,16 +149,16 @@ try {
 ### Shared counter or config in KV
 
 ```js
-const n = (await launchpad.kv.get("count")) ?? 0;
-await launchpad.kv.set("count", n + 1); // last write wins; fine for small teams
+const n = (await formelab.kv.get("count")) ?? 0;
+await formelab.kv.set("count", n + 1); // last write wins; fine for small teams
 ```
 
 ### Per-viewer data
 
 ```js
-const { email } = await launchpad.me();
-const mine = (await launchpad.kv.get("prefs:" + email)) ?? {};
-await launchpad.kv.set("prefs:" + email, { ...mine, lastSeen: Date.now() });
+const { email } = await formelab.me();
+const mine = (await formelab.kv.get("prefs:" + email)) ?? {};
+await formelab.kv.set("prefs:" + email, { ...mine, lastSeen: Date.now() });
 ```
 
 ## 5. Starter app
@@ -201,10 +201,10 @@ visits, lets an editor store a key, and calls `https://httpbin.org/anything` thr
 
     (async () => {
       try {
-        const me = await launchpad.me();
+        const me = await formelab.me();
         $("hello").textContent = "Hello, " + (me.name || me.email);
-        const count = ((await launchpad.kv.get("visits")) ?? 0) + 1;
-        await launchpad.kv.set("visits", count);
+        const count = ((await formelab.kv.get("visits")) ?? 0) + 1;
+        await formelab.kv.set("visits", count);
         $("count").textContent = count;
       } catch (e) { fail(e); }
     })();
@@ -212,7 +212,7 @@ visits, lets an editor store a key, and calls `https://httpbin.org/anything` thr
     $("keyform").addEventListener("submit", async (ev) => {
       ev.preventDefault();
       try {
-        await launchpad.secrets.set("demo_key", $("key").value);
+        await formelab.secrets.set("demo_key", $("key").value);
         $("key").value = "";
         $("error").textContent = "Key saved.";
       } catch (e) { fail(e); }
@@ -220,8 +220,8 @@ visits, lets an editor store a key, and calls `https://httpbin.org/anything` thr
 
     $("call").addEventListener("click", async () => {
       try {
-        const res = await launchpad.secrets.proxy("demo_key", {
-          url: "https://httpbin.org/anything?source=launchpad",
+        const res = await formelab.secrets.proxy("demo_key", {
+          url: "https://httpbin.org/anything?source=formelab",
           headers: { "X-Api-Key": "{{value}}" },
         });
         $("out").textContent = res.status + "\n" + JSON.stringify(res.json(), null, 2);
@@ -236,7 +236,7 @@ visits, lets an editor store a key, and calls `https://httpbin.org/anything` thr
 
 ### With the MCP `publish` tool (preferred)
 
-If the Launchpad MCP server is connected (tools named `publish`, `list_sites`, …):
+If the Formelab MCP server is connected (tools named `publish`, `list_sites`, …):
 
 1. `list_namespaces` to see where you can publish. If there are none, pick a short namespace
    name; publishing to a free namespace creates it.
@@ -252,8 +252,8 @@ Publishing to an existing path replaces the app atomically; its KV data and secr
 Create a token in the dashboard, then:
 
 ```bash
-export LAUNCHPAD_TOKEN=lp_...
-export LAUNCHPAD_DOMAIN=example.com
+export FORMELAB_TOKEN=fl_...
+export FORMELAB_DOMAIN=example.com
 scripts/publish.sh --file app.html --namespace ramzy --path budget --title "Budget"
 scripts/publish.sh --file site.zip --namespace ramzy --path docs --spa
 ```

@@ -81,7 +81,7 @@ describe("security 4: namespace isolation", () => {
     expect((await call(`${a.origin}/_api/kv`, { as: OWNER, mount: "/nothing-here/" })).status).toBe(404);
   });
 
-  it("requires the x-launchpad-mount header", async () => {
+  it("requires the x-formelab-mount header", async () => {
     const { origin } = await newSite();
     expect((await call(`${origin}/_api/me`, { as: OWNER })).status).toBe(400);
   });

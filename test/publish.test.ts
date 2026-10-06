@@ -117,7 +117,7 @@ describe("publish and serve", () => {
     expect(v2 > v1).toBe(true); // time-sortable
     expect(await env.DB.prepare("SELECT value FROM kv WHERE site_id = ?").bind(id).first()).toEqual({ value: "1" });
     // The old version's files are removed in the background.
-    await new Promise((r) => setTimeout(r, 50));
+    for (let i = 0; i < 100 && (await r2Keys(`sites/${id}/${v1}/`)).length; i++) await new Promise((r) => setTimeout(r, 20));
     expect(await r2Keys(`sites/${id}/${v1}/`)).toEqual([]);
     expect(await r2Keys(`sites/${id}/${v2}/`)).toEqual([`sites/${id}/${v2}/index.html`]);
   });

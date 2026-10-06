@@ -63,23 +63,23 @@ export interface CallOpts extends RequestInit {
   token?: string;
   mount?: string;
   json?: unknown;
-  /** Set false to omit the dashboard's x-launchpad-request header on admin writes. */
+  /** Set false to omit the dashboard's x-formelab-request header on admin writes. */
   csrf?: boolean;
 }
 
-/** Calls the Worker. `as` signs an Access JWT; `token` sends a bearer token; `mount` sets x-launchpad-mount. */
+/** Calls the Worker. `as` signs an Access JWT; `token` sends a bearer token; `mount` sets x-formelab-mount. */
 export async function call(url: string, opts: CallOpts = {}): Promise<Response> {
   const headers = new Headers(opts.headers);
   if (opts.as) headers.set("cf-access-jwt-assertion", await accessJwt(opts.as));
   if (opts.token) headers.set("authorization", `Bearer ${opts.token}`);
-  if (opts.mount !== undefined) headers.set("x-launchpad-mount", opts.mount);
+  if (opts.mount !== undefined) headers.set("x-formelab-mount", opts.mount);
   let body = opts.body;
   if (opts.json !== undefined) {
     headers.set("content-type", "application/json");
     body = JSON.stringify(opts.json);
   }
   const full = url.startsWith("http") ? url : `https://${DOMAIN}${url}`;
-  if (opts.csrf !== false && full.startsWith(`https://${DOMAIN}/_api/admin`) && opts.method && opts.method !== "GET") headers.set("x-launchpad-request", "1");
+  if (opts.csrf !== false && full.startsWith(`https://${DOMAIN}/_api/admin`) && opts.method && opts.method !== "GET") headers.set("x-formelab-request", "1");
   return exports.default.fetch(new Request(full, { ...opts, headers, body, redirect: "manual" }));
 }
 

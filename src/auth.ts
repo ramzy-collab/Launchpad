@@ -93,7 +93,7 @@ export async function mintToken(env: Env, user: User, name: string, ttlHours = T
   if (!Number.isFinite(ttlHours) || ttlHours < TOKEN_MIN_TTL_HOURS || ttlHours > TOKEN_MAX_TTL_HOURS) {
     throw badRequest("ttlHours must be between 1 and 720.", "Pick a lifetime between 1 hour and 30 days.");
   }
-  const token = "lp_" + base32(randomBytes(32));
+  const token = "fl_" + base32(randomBytes(32));
   const id = randomId("t_");
   const createdAt = now();
   const expiresAt = createdAt + Math.round(ttlHours * 3600_000);
@@ -105,10 +105,10 @@ export async function mintToken(env: Env, user: User, name: string, ttlHours = T
   return { token, info: { id, name, expiresAt, revoked: false, lastUsed: null, createdAt } satisfies TokenInfo };
 }
 
-/** Resolves `Authorization: Bearer lp_...` to its owner, or null if missing/invalid/expired/revoked. */
+/** Resolves `Authorization: Bearer fl_...` to its owner, or null if missing/invalid/expired/revoked. */
 export async function identifyBearer(req: Request, env: Env): Promise<User | null> {
   const auth = req.headers.get("authorization") ?? "";
-  const m = /^Bearer\s+(lp_[a-z2-7]{20,100})\s*$/.exec(auth);
+  const m = /^Bearer\s+(fl_[a-z2-7]{20,100})\s*$/.exec(auth);
   if (!m) return null;
   const hash = await sha256Hex(m[1]!);
   const row = await env.DB.prepare(

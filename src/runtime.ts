@@ -9,7 +9,7 @@ import { getNamespace, getSiteByMount, validateMountPath } from "./sites";
 /**
  * The per-app runtime API on `<ns>.DOMAIN/_api/*`. The parent sets c.var.user and
  * c.var.namespace. This router enforces the CSRF/origin rules and resolves the site
- * from Host + x-launchpad-mount, so an app can never address another namespace.
+ * from Host + x-formelab-mount, so an app can never address another namespace.
  */
 export function runtimeApi() {
   const api = new Hono<AppEnv>();
@@ -24,12 +24,12 @@ export function runtimeApi() {
     if (origin && origin !== new URL(c.req.url).origin) {
       return jsonError(forbidden("Cross-origin requests are not allowed."));
     }
-    const mountHeader = c.req.header("x-launchpad-mount");
+    const mountHeader = c.req.header("x-formelab-mount");
     if (!mountHeader) {
-      return jsonError(badRequest("Missing x-launchpad-mount header.", "Call the API through the SDK: <script src=\"/_platform/sdk.js\"></script>."));
+      return jsonError(badRequest("Missing x-formelab-mount header.", "Call the API through the SDK: <script src=\"/_platform/sdk.js\"></script>."));
     }
     if (!/^\/([a-z0-9-]+(\/[a-z0-9-]+)*\/)?$/.test(mountHeader)) {
-      return jsonError(badRequest("Malformed x-launchpad-mount header.", "Use the SDK; it sets this header for you."));
+      return jsonError(badRequest("Malformed x-formelab-mount header.", "Use the SDK; it sets this header for you."));
     }
     const ns = c.get("namespace");
     const site = await getSiteByMount(c.env, ns, validateMountPath(mountHeader));
@@ -79,7 +79,7 @@ export function runtimeApi() {
     try {
       body = await c.req.json();
     } catch {
-      throw badRequest("The body must be JSON like { \"value\": \"...\" }.", "Use launchpad.secrets.set(name, value).");
+      throw badRequest("The body must be JSON like { \"value\": \"...\" }.", "Use formelab.secrets.set(name, value).");
     }
     return c.json(await secretSet(c.env, c.get("site"), c.get("user"), c.req.param("name"), body));
   });
@@ -94,9 +94,9 @@ export function runtimeApi() {
     try {
       body = await c.req.json();
     } catch {
-      throw badRequest("The body must be JSON like { \"url\": \"https://...\" }.", "Use launchpad.secrets.proxy(name, { url }).");
+      throw badRequest("The body must be JSON like { \"url\": \"https://...\" }.", "Use formelab.secrets.proxy(name, { url }).");
     }
-    if (!body || typeof body !== "object") throw badRequest("The body must be a JSON object.", "Use launchpad.secrets.proxy(name, { url }).");
+    if (!body || typeof body !== "object") throw badRequest("The body must be a JSON object.", "Use formelab.secrets.proxy(name, { url }).");
     return c.json(await proxy(c.env, c.get("site"), c.get("user"), c.req.param("name"), body as Record<string, unknown>));
   });
 
