@@ -2,6 +2,10 @@ export interface Env {
   DB: D1Database;
   BUCKET: R2Bucket;
   PROXY_LIMITER?: RateLimit;
+  /** OAuth grants, clients and tokens for the Claude chat connector (workers-oauth-provider). */
+  OAUTH_KV: KVNamespace;
+  /** Injected by OAuthProvider into requests it hands to the default handler. */
+  OAUTH_PROVIDER?: import("@cloudflare/workers-oauth-provider").OAuthHelpers;
   DOMAIN: string;
   ENVIRONMENT: string;
   DEV_USER?: string;

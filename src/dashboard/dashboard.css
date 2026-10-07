@@ -36,3 +36,7 @@ pre { margin: 0; white-space: pre-wrap; word-break: break-all; }
 #flash.ok { background: #e6f4ea; color: #12512a; }
 #flash.error { background: #fdecea; color: #8a1c1c; }
 .nowrap { white-space: nowrap; }
+h3 { font-size: .95rem; margin: 1rem 0 .4rem; }
+.consent { max-width: 36rem; }
+.consent h1 { font-size: 1.3rem; margin: 0 0 .75rem; }
+.warn { padding: .6rem .9rem; border-radius: 8px; background: #fdecea; color: #8a1c1c; }

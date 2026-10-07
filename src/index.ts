@@ -5,7 +5,7 @@ import { dashboardPage } from "./dashboard/page";
 import type { AppEnv, Env } from "./env";
 import { forbidden, jsonError, onError, unauthorized } from "./errors";
 import { DASHBOARD_CSS, DASHBOARD_JS, GUIDE_MD, SDK_JS } from "./generated/assets";
-import { handleMcp } from "./mcp";
+import { apexOrigin, AUTHORIZE_PATH, authorizeGet, authorizePost, oauthProvider } from "./oauth";
 import { runtimeApi } from "./runtime";
 import { plainPage, serveAppFile } from "./serve";
 
@@ -36,16 +36,8 @@ apex.use("/_api/deploy/*", async (c, next) => {
 });
 apex.route("/_api/deploy", managementApi("deploy"));
 
-apex.all("/mcp", async (c) => {
-  const user = await identifyBearer(c.req.raw, c.env);
-  if (!user) {
-    return new Response(JSON.stringify({ error: { code: "unauthorized", message: "A valid deploy token is required.", hint: "Create a token in the dashboard and pass it as Authorization: Bearer fl_..." } }), {
-      status: 401,
-      headers: { "content-type": "application/json", "www-authenticate": 'Bearer realm="formelab"' },
-    });
-  }
-  return handleMcp(c.req.raw, c.env, user, c.executionCtx);
-});
+// /mcp, /oauth/* and /.well-known/oauth-* are answered by the OAuth provider before this app
+// (see the default export); it validates OAuth access tokens and fl_ deploy tokens for /mcp.
 
 // Everything else on the apex requires a Cloudflare Access identity.
 apex.use("*", async (c, next) => {
@@ -65,6 +57,10 @@ apex.use("/_api/admin/*", async (c, next) => {
   await next();
 });
 apex.route("/_api/admin", managementApi("admin"));
+
+// OAuth consent for MCP clients such as Claude chat. Behind Access like the dashboard.
+apex.get(AUTHORIZE_PATH, authorizeGet);
+apex.post(AUTHORIZE_PATH, authorizePost);
 
 apex.get("/_platform/guide.md", guide);
 apex.get("/_platform/dashboard.js", () => text(DASHBOARD_JS, "text/javascript; charset=utf-8"));
@@ -114,7 +110,9 @@ function namespaceOf(hostname: string, env: Env): string | null {
 export default {
   async fetch(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const host = new URL(req.url).hostname.toLowerCase();
-    if (host === env.DOMAIN.toLowerCase()) return apex.fetch(req, env, ctx);
+    if (host === env.DOMAIN.toLowerCase()) {
+      return oauthProvider(apexOrigin(env, req.url), apex as never).fetch(req, env, ctx);
+    }
     if (namespaceOf(host, env)) return nsApp.fetch(req, env, ctx);
     return plainPage(404, "Not found", "Unknown host.");
   },

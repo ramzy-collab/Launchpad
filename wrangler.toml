@@ -1,14 +1,16 @@
 # Formelab — one Worker serves the dashboard, APIs, MCP server, SDK and app files.
-# Replace every "example.com" with your DOMAIN and fill in database_id.
+# To run your own copy: replace formelab.ai with your domain and set your own database_id.
 name = "formelab"
 main = "src/index.ts"
 compatibility_date = "2026-08-01"
-compatibility_flags = ["nodejs_compat"]
+# global_fetch_strictly_public: required by the OAuth provider to fetch MCP clients'
+# Client ID Metadata Documents safely (subrequests always go to the public internet).
+compatibility_flags = ["nodejs_compat", "global_fetch_strictly_public"]
 workers_dev = false
 
 routes = [
-  { pattern = "example.com/*", zone_name = "example.com" },
-  { pattern = "*.example.com/*", zone_name = "example.com" },
+  { pattern = "formelab.ai/*", zone_name = "formelab.ai" },
+  { pattern = "*.formelab.ai/*", zone_name = "formelab.ai" },
 ]
 
 [build]
@@ -18,18 +20,23 @@ command = "node scripts/gen-assets.mjs"
 cpu_ms = 30000
 
 [vars]
-DOMAIN = "example.com"
+DOMAIN = "formelab.ai"
 ENVIRONMENT = "production"
 
 [[d1_databases]]
 binding = "DB"
 database_name = "launchpad"
-database_id = "00000000-0000-0000-0000-000000000000"
+database_id = "ba4a0464-c702-4582-982c-aab12c498515"
 migrations_dir = "migrations"
 
 [[r2_buckets]]
 binding = "BUCKET"
 bucket_name = "launchpad-sites"
+
+# OAuth grants and tokens for the Claude chat connector. No id: `wrangler deploy`
+# creates the namespace on first deploy and remembers it.
+[[kv_namespaces]]
+binding = "OAUTH_KV"
 
 # 60 secret-proxy calls per minute per site.
 [[ratelimits]]
@@ -61,6 +68,9 @@ migrations_dir = "migrations"
 [[env.dev.r2_buckets]]
 binding = "BUCKET"
 bucket_name = "launchpad-sites"
+
+[[env.dev.kv_namespaces]]
+binding = "OAUTH_KV"
 
 [[env.dev.ratelimits]]
 name = "PROXY_LIMITER"

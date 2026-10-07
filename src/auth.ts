@@ -108,9 +108,14 @@ export async function mintToken(env: Env, user: User, name: string, ttlHours = T
 /** Resolves `Authorization: Bearer fl_...` to its owner, or null if missing/invalid/expired/revoked. */
 export async function identifyBearer(req: Request, env: Env): Promise<User | null> {
   const auth = req.headers.get("authorization") ?? "";
-  const m = /^Bearer\s+(fl_[a-z2-7]{20,100})\s*$/.exec(auth);
-  if (!m) return null;
-  const hash = await sha256Hex(m[1]!);
+  const m = /^Bearer\s+(\S+)\s*$/.exec(auth);
+  return m ? userForDeployToken(env, m[1]!) : null;
+}
+
+/** Looks up a plaintext deploy token (fl_...) by its hash. Null if unknown, expired or revoked. */
+export async function userForDeployToken(env: Env, token: string): Promise<User | null> {
+  if (!/^fl_[a-z2-7]{20,100}$/.test(token)) return null;
+  const hash = await sha256Hex(token);
   const row = await env.DB.prepare(
     `SELECT t.id, t.expires_at, t.revoked, u.email, u.name, u.is_admin
        FROM tokens t JOIN users u ON u.email = t.owner_email WHERE t.hash = ?`,
@@ -120,6 +125,14 @@ export async function identifyBearer(req: Request, env: Env): Promise<User | nul
   if (!row || row.revoked || row.expires_at <= now()) return null;
   await env.DB.prepare("UPDATE tokens SET last_used = ? WHERE id = ?").bind(now(), row.id).run();
   return { email: row.email, name: row.name, isAdmin: row.is_admin === 1 };
+}
+
+/** The current record for a known user, or null. */
+export async function getUser(env: Env, email: string): Promise<User | null> {
+  const row = await env.DB.prepare("SELECT email, name, is_admin FROM users WHERE email = ?")
+    .bind(email)
+    .first<{ email: string; name: string | null; is_admin: number }>();
+  return row ? { email: row.email, name: row.name, isAdmin: row.is_admin === 1 } : null;
 }
 
 export async function listTokens(env: Env, user: User): Promise<TokenInfo[]> {

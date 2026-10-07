@@ -155,3 +155,33 @@ Choices made while building v1, including where the build differs from the spec 
   and the deploy-token prefix (`fl_`).
 - The R2 bucket and D1 database keep their original names, `launchpad-sites` and `launchpad`,
   because they were created before the rename. Those names are internal and never shown to users.
+
+## OAuth for MCP (Claude chat connector)
+
+- **`@cloudflare/workers-oauth-provider` (1.2) as a combined `OAuthProvider`**, only in front of the
+  apex host. Namespace hosts never reach it, so an app can't be confused with an OAuth endpoint.
+  It serves `/.well-known/oauth-authorization-server`, `/.well-known/oauth-protected-resource/mcp`,
+  `/oauth/token`, `/oauth/register` (DCR) and validates tokens on `/mcp`. Client ID Metadata
+  Documents are enabled too (MCP 2026-07-28 prefers them), which requires the
+  `global_fetch_strictly_public` compatibility flag. The provider is built once per apex origin,
+  because the resource URL (`https://DOMAIN/mcp`) is fixed at construction.
+- **`/authorize` sits behind Cloudflare Access**, like the dashboard. The person approving is
+  identified by the same Access JWT check, so there is no second login system. The Access bypass
+  app gains `/oauth/*` and `/.well-known/*`; `/authorize` must never be bypassed.
+- **Consent page** uses the library's consent helpers (browser-bound handle cookie, no framing),
+  escapes every client-supplied string, and shows where tokens will be sent. Its CSP allows the
+  client's redirect origin in `form-action`, because browsers apply `form-action` to the redirect
+  that follows the POST.
+- **One scope, `mcp`**, covering every tool. A grant acts as the user, with exactly their
+  permissions, like a deploy token. Access tokens last 1 hour; grants (refresh) 30 days.
+- **Deploy tokens (`fl_...`) keep working on `/mcp`** through `resolveExternalToken`, so Claude Code
+  setups are unaffected. An Access JWT is not accepted as an MCP credential.
+- **Connected apps** on the dashboard list the user's grants (`listUserGrants`) and revoke them
+  (`revokeGrant`). Deploy tokens can't list or revoke connections.
+- **Limitation:** removing someone from the Access policy doesn't revoke an OAuth grant they already
+  approved. Their connection keeps working until it expires (30 days) or is disconnected. The
+  same was already true of deploy tokens.
+- **KV namespace `OAUTH_KV`** has no `id` in `wrangler.toml`: `wrangler deploy` provisions it on the
+  first deploy.
+- `wrangler.toml` now carries the real `formelab.ai` domain and D1 `database_id`. Neither is a
+  secret, and keeping them in the repo means `git pull` doesn't fight local edits.
