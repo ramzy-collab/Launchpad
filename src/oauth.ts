@@ -114,6 +114,7 @@ function consentPage(user: string, d: ConsentDescription, handle: string): strin
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Connect ${e(d.clientName)} to Formelab</title>
 <link rel="stylesheet" href="/_platform/dashboard.css">
+<script src="/_platform/consent.js" defer></script>
 </head>
 <body>
 <main class="consent">
@@ -140,8 +141,24 @@ const consentCsp = (redirectUri: string) => {
     target = " " + new URL(redirectUri).origin;
   } catch {}
   // form-action also governs the redirect after the POST, so it must allow the client's origin.
-  return `default-src 'self'; script-src 'none'; style-src 'self'; img-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'${target}`;
+  return `default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'${target}`;
 };
+
+/**
+ * The Allow/Deny form posts a one-time handle bound to this browser. If it fails here, the handle
+ * was already used (a second click), expired, or belongs to another browser. The first case is
+ * the common one and means the connection already went through.
+ */
+function consentSubmitFailure(err: unknown): Response {
+  if (err instanceof AuthorizationError && !err.redirectTo) {
+    return plainPage(
+      400,
+      "This page has already been used",
+      "If Claude now shows Formelab as connected, you're all set and can close this tab. Otherwise, start connecting again from Claude.",
+    );
+  }
+  return authorizationFailure(err);
+}
 
 function authorizationFailure(err: unknown): Response {
   if (err instanceof AuthorizationError && err.redirectTo) return Response.redirect(err.redirectTo, 302);
@@ -194,7 +211,7 @@ export async function authorizePost(c: Context<AppEnv>): Promise<Response> {
     approved.headers.set("location", redirectTo);
     return new Response(null, { status: 302, headers: approved.headers });
   } catch (err) {
-    return authorizationFailure(err);
+    return consentSubmitFailure(err);
   }
 }
 

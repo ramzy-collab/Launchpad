@@ -12,6 +12,7 @@ const assets = {
   GUIDE_MD: "src/guide.md",
   DASHBOARD_JS: "src/dashboard/dashboard.js",
   DASHBOARD_CSS: "src/dashboard/dashboard.css",
+  CONSENT_JS: "src/dashboard/consent.js",
   SKILL_MD: "skill/SKILL.md",
 };
 

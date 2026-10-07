@@ -196,6 +196,40 @@ describe("OAuth for MCP (Claude chat connector)", () => {
     expect(res.headers.get("location")).toBeNull();
   });
 
+  it("explains a second click on Allow instead of a bare error, and the first one still connects", async () => {
+    const clientId = await register();
+    const { verifier, challenge } = await pkce();
+    const page = await call(authorizeUrl(clientId, challenge).url, { as: OWNER });
+    const html = await page.text();
+    expect(html).toContain('<script src="/_platform/consent.js" defer></script>');
+    const handle = /name="handle" value="([^"]+)"/.exec(html)![1]!;
+    const submit = () =>
+      call(`${ORIGIN}/authorize`, {
+        as: OWNER,
+        method: "POST",
+        headers: { cookie: cookiesFrom(page), "content-type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ handle, decision: "approve" }).toString(),
+      });
+    const first = await submit();
+    expect(first.status).toBe(302);
+    const second = await submit();
+    expect(second.status).toBe(400);
+    expect(await second.text()).toContain("already been used");
+    const code = new URL(first.headers.get("location")!).searchParams.get("code")!;
+    const tokens = await exchange(clientId, code, verifier);
+    expect((await mcpCall(tokens.access_token, "whoami")).status).toBe(200);
+  });
+
+  it("serves the consent script, allowed by the page's CSP", async () => {
+    const js = await call(`${ORIGIN}/_platform/consent.js`, { as: OWNER });
+    expect(js.status).toBe(200);
+    expect(js.headers.get("content-type")).toContain("javascript");
+    const clientId = await register();
+    const { challenge } = await pkce();
+    const page = await call(authorizeUrl(clientId, challenge).url, { as: OWNER });
+    expect(page.headers.get("content-security-policy")).toContain("script-src 'self'");
+  });
+
   it("escapes the client's self-chosen name and forbids framing", async () => {
     const clientId = await register(`<script>alert(1)</script>`);
     const { challenge } = await pkce();
