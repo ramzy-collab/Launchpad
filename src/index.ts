@@ -4,7 +4,7 @@ import { identifyBearer, identifyHuman } from "./auth";
 import { dashboardPage } from "./dashboard/page";
 import type { AppEnv, Env } from "./env";
 import { forbidden, jsonError, onError, unauthorized } from "./errors";
-import { DASHBOARD_CSS, DASHBOARD_JS, GUIDE_MD, SDK_JS } from "./generated/assets";
+import { CONSENT_JS, DASHBOARD_CSS, DASHBOARD_JS, GUIDE_MD, SDK_JS } from "./generated/assets";
 import { apexOrigin, AUTHORIZE_PATH, authorizeGet, authorizePost, oauthProvider } from "./oauth";
 import { runtimeApi } from "./runtime";
 import { plainPage, serveAppFile } from "./serve";
@@ -65,6 +65,7 @@ apex.post(AUTHORIZE_PATH, authorizePost);
 apex.get("/_platform/guide.md", guide);
 apex.get("/_platform/dashboard.js", () => text(DASHBOARD_JS, "text/javascript; charset=utf-8"));
 apex.get("/_platform/dashboard.css", () => text(DASHBOARD_CSS, "text/css; charset=utf-8"));
+apex.get("/_platform/consent.js", () => text(CONSENT_JS, "text/javascript; charset=utf-8"));
 apex.get("/", async (c) => dashboardPage(c));
 apex.notFound(() => plainPage(404, "Not found", "There is nothing here."));
 
