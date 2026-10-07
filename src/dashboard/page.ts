@@ -6,6 +6,7 @@ import { isDev } from "../env";
 import { listNamespaces, listSites } from "../sites";
 import { escapeHtml as e } from "../util";
 import { ctxOf } from "../api";
+import { listConnections } from "../oauth";
 
 const CSP = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'";
 
@@ -15,11 +16,12 @@ const fmtBytes = (n: number) => (n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${(n /
 export async function dashboardPage(c: Context<AppEnv>): Promise<Response> {
   const ctx = ctxOf(c);
   const user = ctx.user;
-  const [namespaces, sites, tokens, activity] = await Promise.all([
+  const [namespaces, sites, tokens, activity, connections] = await Promise.all([
     listNamespaces(ctx),
     listSites(ctx),
     listTokens(c.env, user),
     recentActivity(c.env, user.email, 50),
+    listConnections(c.env, user.email).catch(() => []),
   ]);
   const origin = isDev(c.env) ? new URL(c.req.url).origin : `https://${c.env.DOMAIN}`;
   const mcpCommand = `claude mcp add --transport http formelab ${origin}/mcp \\\n  --header "Authorization: Bearer fl_..."`;
@@ -83,6 +85,15 @@ export async function dashboardPage(c: Context<AppEnv>): Promise<Response> {
   <td>${state === "active" ? `<button class="danger" data-action="token-revoke" data-id="${e(k.id)}">Revoke</button>` : ""}</td>
 </tr>`;
     })
+    .join("");
+
+  const connectionRows = connections
+    .map(
+      (k) => `<tr>
+  <td>${e(k.clientName)}</td><td class="nowrap">${e(fmtTime(k.createdAt))}</td><td class="nowrap">${e(k.expiresAt ? fmtTime(k.expiresAt) : "—")}</td>
+  <td><button class="danger" data-action="connection-revoke" data-id="${e(k.id)}">Disconnect</button></td>
+</tr>`,
+    )
     .join("");
 
   const activityRows = activity
@@ -168,10 +179,24 @@ export async function dashboardPage(c: Context<AppEnv>): Promise<Response> {
 </section>
 
 <section>
-  <h2>Connect Claude Code</h2>
+  <h2>Connect Claude</h2>
+  <h3>Claude chat (claude.ai, desktop and mobile)</h3>
+  <p>In Claude, open <strong>Settings → Connectors → Add custom connector</strong>, name it <strong>Formelab</strong>, and use this URL:</p>
+  <div class="copyrow"><pre id="mcp-url">${e(origin)}/mcp</pre><button type="button" data-copy="#mcp-url">Copy</button></div>
+  <p class="muted">Click <strong>Connect</strong>, sign in, and choose <strong>Allow</strong>. No token needed.</p>
+  <h3>Claude Code</h3>
   <p>Create a deploy token (30 days is fine for personal use), then run:</p>
   <div class="copyrow"><pre id="mcp-cmd">${e(mcpCommand)}</pre><button type="button" data-copy="#mcp-cmd">Copy</button></div>
   <p class="muted">Agents can read the build guide at <a href="/_platform/guide.md">/_platform/guide.md</a> or with the <code>get_guide</code> tool.</p>
+</section>
+
+<section>
+  <h2>Connected apps</h2>
+  ${
+    connections.length
+      ? `<div class="scroll"><table><thead><tr><th>App</th><th>Connected</th><th>Expires</th><th></th></tr></thead><tbody>${connectionRows}</tbody></table></div>`
+      : `<p class="muted">No apps are connected through sign-in yet. Deploy tokens are listed above.</p>`
+  }
 </section>
 
 <section>

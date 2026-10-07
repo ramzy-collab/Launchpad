@@ -14,6 +14,7 @@ import {
   type Ctx,
 } from "./sites";
 import { filesFromHtml, filesFromUpload, filesFromZip, MAX_UPLOAD_BYTES, type FileMap } from "./upload";
+import { listConnections, revokeConnection } from "./oauth";
 import { b64decode } from "./util";
 
 export const ctxOf = (c: Context<AppEnv>): Ctx => ({
@@ -114,9 +115,20 @@ export function managementApi(kind: "admin" | "deploy") {
       await revokeToken(c.env, c.get("user"), c.req.param("id"));
       return c.json({ ok: true });
     });
+    api.get("/connections", async (c) => c.json(await listConnections(c.env, c.get("user").email)));
+    api.delete("/connections/:id", async (c) => {
+      await revokeConnection(c.env, c.get("user").email, c.req.param("id"));
+      return c.json({ ok: true });
+    });
   } else {
     api.all("/tokens/*", () => {
       throw err(403, "browser_only", "Deploy tokens can only be managed from the dashboard.", "Open the dashboard in a browser to create or revoke tokens.");
+    });
+    api.all("/connections", () => {
+      throw err(403, "browser_only", "Connected apps can only be managed from the dashboard.", "Open the dashboard in a browser.");
+    });
+    api.all("/connections/*", () => {
+      throw err(403, "browser_only", "Connected apps can only be managed from the dashboard.", "Open the dashboard in a browser.");
     });
     api.all("/tokens", () => {
       throw err(403, "browser_only", "Deploy tokens can only be managed from the dashboard.", "Open the dashboard in a browser to create or revoke tokens.");

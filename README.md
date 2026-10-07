@@ -73,11 +73,13 @@ In the [Zero Trust dashboard](https://one.dash.cloudflare.com/):
    - Policy: **Allow**, include **Emails**: your email plus any invitees.
    - After saving, open the app's **Overview** and copy the **Application Audience (AUD) Tag**.
 3. Add a second **Self-hosted** application, the **bypass app**, for the paths the Worker
-   authenticates itself with bearer tokens:
-   - Application domains: `example.com/_api/deploy/*` and `example.com/mcp`.
+   authenticates itself (deploy tokens, MCP, and the OAuth protocol endpoints):
+   - Application domains: `example.com/_api/deploy/*`, `example.com/mcp`,
+     `example.com/oauth/*` and `example.com/.well-known/*`.
    - Policy: action **Bypass**, include **Everyone**.
    (Access matches the most specific path, so these paths skip the login while everything else
-   still requires it.)
+   still requires it. Do **not** bypass `/authorize`: that consent page relies on the Access
+   login to know who is approving.)
 4. Note your **team domain** (Settings → Custom Pages, or the URL of your login page):
    `<team>.cloudflareaccess.com`.
 
@@ -175,7 +177,20 @@ requirement it covers (`security 1: ...` through `security 12: ...`).
 
 ---
 
-## 4. Connecting Claude Code (MCP)
+## 4. Connecting Claude (MCP)
+
+### Claude chat (claude.ai, desktop and mobile apps)
+
+The MCP endpoint supports OAuth, so Claude chat connects without a token:
+
+1. In Claude, open **Settings → Connectors → Add custom connector**.
+2. Name it `Formelab` and set the URL to `https://example.com/mcp`.
+3. Click **Connect**. Sign in through Cloudflare Access, then click **Allow** on the Formelab page.
+
+The connection acts as you. It appears on the dashboard under **Connected apps**, where
+**Disconnect** revokes it immediately. Sign-ins last up to 30 days before Claude has to reconnect.
+
+### Claude Code
 
 1. In the dashboard, create a deploy token (30 days is fine for personal use). It is shown once.
 2. Run (the dashboard shows this command pre-filled with your domain):

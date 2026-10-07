@@ -127,6 +127,9 @@
       if (typedNs === null) return;
       if (typedNs.trim() !== btn.dataset.label) { show("The name did not match; nothing was deleted.", true); return; }
       p = api("DELETE", "/namespaces/" + encodeURIComponent(btn.dataset.label)).then(function () { show("Namespace deleted."); reloadSoon(); });
+    } else if (action === "connection-revoke") {
+      if (!confirm("Disconnect this app? It will need to sign in again to use Formelab.")) return;
+      p = api("DELETE", "/connections/" + encodeURIComponent(btn.dataset.id)).then(function () { show("Disconnected."); reloadSoon(); });
     } else if (action === "token-revoke") {
       if (!confirm("Revoke this token? Anything using it will stop working.")) return;
       p = api("DELETE", "/tokens/" + encodeURIComponent(btn.dataset.id)).then(function () { show("Token revoked."); reloadSoon(); });

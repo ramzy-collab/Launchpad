@@ -236,7 +236,8 @@ visits, lets an editor store a key, and calls `https://httpbin.org/anything` thr
 
 ### With the MCP `publish` tool (preferred)
 
-If the Formelab MCP server is connected (tools named `publish`, `list_sites`, …):
+If the Formelab MCP server is connected (tools named `publish`, `list_sites`, …). This works in
+Claude Code (deploy token) and in Claude chat (custom connector with sign-in):
 
 1. `list_namespaces` to see where you can publish. If there are none, pick a short namespace
    name; publishing to a free namespace creates it.
