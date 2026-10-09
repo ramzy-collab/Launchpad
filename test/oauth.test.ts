@@ -201,7 +201,7 @@ describe("OAuth for MCP (Claude chat connector)", () => {
     const { verifier, challenge } = await pkce();
     const page = await call(authorizeUrl(clientId, challenge).url, { as: OWNER });
     const html = await page.text();
-    expect(html).toContain('<script src="/_platform/consent.js" defer></script>');
+    expect(html).toContain('<script src="/_assets/consent.js" defer></script>');
     const handle = /name="handle" value="([^"]+)"/.exec(html)![1]!;
     const submit = () =>
       call(`${ORIGIN}/authorize`, {
@@ -221,7 +221,7 @@ describe("OAuth for MCP (Claude chat connector)", () => {
   });
 
   it("serves the consent script, allowed by the page's CSP", async () => {
-    const js = await call(`${ORIGIN}/_platform/consent.js`, { as: OWNER });
+    const js = await call(`${ORIGIN}/_assets/consent.js`);
     expect(js.status).toBe(200);
     expect(js.headers.get("content-type")).toContain("javascript");
     const clientId = await register();
@@ -270,7 +270,7 @@ describe("OAuth for MCP (Claude chat connector)", () => {
     const { tokens } = await connect(email);
     const list = await (await call("/_api/admin/connections", { as: email })).json<{ id: string; clientName: string }[]>();
     expect(list.map((c) => c.clientName)).toEqual(["Claude"]);
-    const html = await (await call("/", { as: email })).text();
+    const html = await (await call("/app", { as: email })).text();
     expect(html).toContain("Connected apps");
     expect(html).toContain(">Claude<");
 

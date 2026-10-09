@@ -2,12 +2,14 @@ import { Hono } from "hono";
 import { managementApi } from "./api";
 import { identifyBearer, identifyHuman } from "./auth";
 import { dashboardPage } from "./dashboard/page";
+import { homePage, loginPage } from "./dashboard/home";
 import type { AppEnv, Env } from "./env";
 import { forbidden, jsonError, onError, unauthorized } from "./errors";
-import { CONSENT_JS, DASHBOARD_CSS, DASHBOARD_JS, GUIDE_MD, SDK_JS } from "./generated/assets";
+import { CONSENT_JS, DASHBOARD_JS, FORMELAB_CSS, GUIDE_MD, SDK_JS, SITE_JS, THEME_JS } from "./generated/assets";
 import { apexOrigin, AUTHORIZE_PATH, authorizeGet, authorizePost, oauthProvider } from "./oauth";
 import { runtimeApi } from "./runtime";
 import { plainPage, serveAppFile } from "./serve";
+import { joinWaitlist } from "./waitlist";
 
 const text = (body: string, type: string, cache = "no-cache") =>
   new Response(body, {
@@ -39,10 +41,33 @@ apex.route("/_api/deploy", managementApi("deploy"));
 // /mcp, /oauth/* and /.well-known/oauth-* are answered by the OAuth provider before this app
 // (see the default export); it validates OAuth access tokens and fl_ deploy tokens for /mcp.
 
-// Everything else on the apex requires a Cloudflare Access identity.
+// Public pages: the home page with the waitlist, the login screen, and the files they load.
+// Someone already signed in (Access attached a JWT, e.g. when Access still covers the whole
+// apex) goes straight to their dashboard.
+apex.get("/", async (c) => {
+  if (c.req.header("cf-access-jwt-assertion") && (await identifyHuman(c.req.raw, c.env))) return c.redirect("/app", 302);
+  return homePage();
+});
+apex.get("/login", () => loginPage());
+apex.post("/_api/waitlist", async (c) => {
+  await joinWaitlist(c.req.raw, c.env);
+  return c.json({ ok: true });
+});
+const asset = (body: string, type: string) => () => text(body, type, "public, max-age=300");
+apex.get("/_assets/formelab.css", asset(FORMELAB_CSS, "text/css; charset=utf-8"));
+apex.get("/_assets/theme.js", asset(THEME_JS, "text/javascript; charset=utf-8"));
+apex.get("/_assets/site.js", asset(SITE_JS, "text/javascript; charset=utf-8"));
+apex.get("/_assets/dashboard.js", asset(DASHBOARD_JS, "text/javascript; charset=utf-8"));
+apex.get("/_assets/consent.js", asset(CONSENT_JS, "text/javascript; charset=utf-8"));
+
+// Everything else on the apex requires a Cloudflare Access identity. A visitor reaching the
+// dashboard without one is sent to the login screen.
 apex.use("*", async (c, next) => {
   const user = await identifyHuman(c.req.raw, c.env);
-  if (!user) return c.req.path.startsWith("/_api/") ? jsonError(unauthorized()) : unauthorizedPage();
+  if (!user) {
+    if (c.req.path.startsWith("/_api/")) return jsonError(unauthorized());
+    return c.req.path === "/app" ? c.redirect("/login", 302) : unauthorizedPage();
+  }
   c.set("user", user);
   await next();
 });
@@ -63,10 +88,7 @@ apex.get(AUTHORIZE_PATH, authorizeGet);
 apex.post(AUTHORIZE_PATH, authorizePost);
 
 apex.get("/_platform/guide.md", guide);
-apex.get("/_platform/dashboard.js", () => text(DASHBOARD_JS, "text/javascript; charset=utf-8"));
-apex.get("/_platform/dashboard.css", () => text(DASHBOARD_CSS, "text/css; charset=utf-8"));
-apex.get("/_platform/consent.js", () => text(CONSENT_JS, "text/javascript; charset=utf-8"));
-apex.get("/", async (c) => dashboardPage(c));
+apex.get("/app", async (c) => dashboardPage(c));
 apex.notFound(() => plainPage(404, "Not found", "There is nothing here."));
 
 // ---------------------------------------------------------------------------

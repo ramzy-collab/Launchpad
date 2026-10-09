@@ -3,7 +3,7 @@ import { call, OWNER, PAGE, publishHtml, uniq } from "./helpers";
 
 describe("dashboard", () => {
   it("renders with a strict CSP and no inline script", async () => {
-    const res = await call("/", { as: OWNER });
+    const res = await call("/app", { as: OWNER });
     expect(res.status).toBe(200);
     const csp = res.headers.get("content-security-policy")!;
     expect(csp).toContain("default-src 'self'");
@@ -11,12 +11,12 @@ describe("dashboard", () => {
     expect(csp).not.toContain("unsafe-inline");
     const html = await res.text();
     expect(html).toContain(`Signed in as <strong>${OWNER}</strong>`);
-    expect(html).toContain('<script src="/_platform/dashboard.js" defer></script>');
+    expect(html).toContain('<script src="/_assets/dashboard.js" defer></script>');
     expect(html).not.toMatch(/<script>(?!<\/script>)/);
     expect(html).not.toMatch(/\son[a-z]+=/i); // no inline event handlers
     expect(html).toContain("claude mcp add --transport http formelab https://example.com/mcp");
-    expect((await call("/_platform/dashboard.js", { as: OWNER })).headers.get("content-type")).toContain("javascript");
-    expect((await call("/_platform/dashboard.css", { as: OWNER })).headers.get("content-type")).toContain("text/css");
+    expect((await call("/_assets/dashboard.js")).headers.get("content-type")).toContain("javascript");
+    expect((await call("/_assets/formelab.css")).headers.get("content-type")).toContain("text/css");
   });
 
   it("security 11: escapes user-supplied strings", async () => {
@@ -25,7 +25,7 @@ describe("dashboard", () => {
     const res = await publishHtml(OWNER, ns, "xss", PAGE("x"), { title: evil });
     expect(res.status).toBe(201);
     await call("/_api/admin/tokens", { as: OWNER, method: "POST", json: { name: `<script>tok()</script>` } });
-    const html = await (await call("/", { as: OWNER })).text();
+    const html = await (await call("/app", { as: OWNER })).text();
     expect(html).not.toContain("<script>alert");
     expect(html).not.toContain("<script>tok()");
     expect(html).not.toContain("<img src=x");
@@ -37,7 +37,7 @@ describe("dashboard", () => {
     const ns = uniq();
     await publishHtml(OWNER, ns, "listed", PAGE("x"), { title: "Listed app" });
     await call("/_api/admin/tokens", { as: OWNER, method: "POST", json: { name: "laptop-token" } });
-    const html = await (await call("/", { as: OWNER })).text();
+    const html = await (await call("/app", { as: OWNER })).text();
     expect(html).toContain(`https://${ns}.example.com/listed/`);
     expect(html).toContain("Listed app");
     expect(html).toContain(`>${ns}</a>`);
@@ -48,7 +48,7 @@ describe("dashboard", () => {
   it("does not show other people's sites or activity", async () => {
     const ns = uniq();
     await publishHtml(OWNER, ns, "mine", PAGE("x"), { title: "Owner only title" });
-    const html = await (await call("/", { as: "someone-else@example.com" })).text();
+    const html = await (await call("/app", { as: "someone-else@example.com" })).text();
     expect(html).not.toContain("Owner only title");
     expect(html).not.toContain(ns);
   });

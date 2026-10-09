@@ -133,7 +133,26 @@ Choices made while building v1, including where the build differs from the spec 
 - The CSP is stricter than the spec's minimum: `default-src 'self'; script-src 'self'; style-src
   'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none';
   form-action 'self'`. CSS is a served file too, since inline styles would need `unsafe-inline`.
-- Dashboard JS/CSS are served from `/_platform/dashboard.{js,css}` on the apex.
+- Page JS/CSS are served from `/_assets/*` on the apex, without sign-in (they hold nothing
+  private), so the public home page and the dashboard share one stylesheet, `formelab.css`.
+- The only third party is Google Fonts (Bricolage Grotesque, Inter, Permanent Marker), allowed by
+  `style-src https://fonts.googleapis.com` and `font-src https://fonts.gstatic.com`.
+
+## Home page, login and waitlist
+
+- The look comes from the Formelab waitlist prototype (fl.formelab.ai/waitlist): warm canvas with
+  a dot grid, violet accent, coral/yellow/green pops, pill buttons, light and dark themes. The
+  theme follows the system until the toggle is used, then the choice is kept in `localStorage`.
+- `/` is the public home page with the waitlist; `/login` is the login screen; the dashboard
+  moved from `/` to `/app`. A request to `/` that already carries a valid Access JWT redirects to
+  `/app`, so older Access setups that cover the whole apex keep working.
+- **Login stays with Cloudflare Access.** The prototype had email and password fields, but
+  Formelab has no passwords: the login screen's button goes to `/app`, where Access asks for a
+  one-time code or the configured identity provider. `/cdn-cgi/access/logout` logs out.
+- Waitlist sign-ups (`POST /_api/waitlist`, JSON `{ email }`) go to the `waitlist` table in D1.
+  Joining twice gives the same answer, so the endpoint never reveals who is on the list.
+  Cross-origin posts are refused, and sign-ups are limited to 10 per minute per IP
+  (`WAITLIST_LIMITER`, with the D1 counter as fallback). Admins see the list on the dashboard.
 - "Recent activity" shows audit rows where you are the actor, or the target is one of your
   namespaces or sites.
 

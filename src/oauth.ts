@@ -14,6 +14,7 @@ import { notFound } from "./errors";
 import { handleMcp } from "./mcp";
 import { plainPage } from "./serve";
 import { escapeHtml as e } from "./util";
+import { FONT_CSP, head, nav } from "./dashboard/layout";
 
 /**
  * OAuth 2.1 for the MCP endpoint, so hosted clients such as Claude chat (claude.ai custom
@@ -110,15 +111,13 @@ function consentPage(user: string, d: ConsentDescription, handle: string): strin
   return `<!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Connect ${e(d.clientName)} to Formelab</title>
-<link rel="stylesheet" href="/_platform/dashboard.css">
-<script src="/_platform/consent.js" defer></script>
+${head(`Connect ${d.clientName} to Formelab`, ["consent.js"])}
 </head>
 <body>
-<main class="consent">
-<section>
+<div class="wrap">
+${nav("/app")}
+<main class="center">
+<section class="card wide consent">
   <h1>Connect ${e(d.clientName)} to Formelab?</h1>
   <p>${who} Access will be sent to <strong>${e(d.redirectHost)}</strong>.</p>
   ${local}
@@ -131,6 +130,7 @@ function consentPage(user: string, d: ConsentDescription, handle: string): strin
   </form>
 </section>
 </main>
+</div>
 </body>
 </html>`;
 }
@@ -141,7 +141,7 @@ const consentCsp = (redirectUri: string) => {
     target = " " + new URL(redirectUri).origin;
   } catch {}
   // form-action also governs the redirect after the POST, so it must allow the client's origin.
-  return `default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'${target}`;
+  return `default-src 'self'; script-src 'self'; ${FONT_CSP}; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'${target}`;
 };
 
 /**

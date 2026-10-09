@@ -12,7 +12,8 @@ get identity, per-app key/value storage, and secrets with a server-side proxy th
 browser SDK (`window.formelab`). Claude Code publishes apps through Formelab's MCP server; there
 is also a web dashboard.
 
-- One Worker (`src/index.ts`) serves the dashboard, APIs, MCP server, SDK and app files.
+- One Worker (`src/index.ts`) serves the public home page with a waitlist (`/`), the login screen
+  (`/login`), the dashboard (`/app`), APIs, MCP server, SDK and app files.
 - D1 holds structured data; R2 holds app files; Cloudflare Access handles all sign-in.
 - Agent build guide: [`src/guide.md`](src/guide.md), served at `/_platform/guide.md`.
 - Design choices and deviations from the spec: [`DECISIONS.md`](DECISIONS.md).
@@ -68,18 +69,24 @@ The routes `DOMAIN/*` and `*.DOMAIN/*` are created on deploy from `wrangler.toml
 In the [Zero Trust dashboard](https://one.dash.cloudflare.com/):
 
 1. **Settings → Authentication**: add an identity provider: Google, or **One-time PIN** (email codes, zero setup).
-2. **Access → Applications → Add an application → Self-hosted**, the **main app**:
-   - Application domains: `example.com` and `*.example.com` (add both).
+2. **Access → Applications → Add an application → Self-hosted**, the **main app**. It covers
+   only the signed-in parts of the apex, so the home page (`/`), the login screen (`/login`) and
+   the waitlist sign-up stay public:
+   - Application domains (add each one): `*.example.com`, `example.com/app`,
+     `example.com/authorize`, `example.com/_api/admin` and `example.com/_platform`.
    - Policy: **Allow**, include **Emails**: your email plus any invitees.
    - After saving, open the app's **Overview** and copy the **Application Audience (AUD) Tag**.
-3. Add a second **Self-hosted** application, the **bypass app**, for the paths the Worker
-   authenticates itself (deploy tokens, MCP, and the OAuth protocol endpoints):
-   - Application domains: `example.com/_api/deploy/*`, `example.com/mcp`,
-     `example.com/oauth/*` and `example.com/.well-known/*`.
-   - Policy: action **Bypass**, include **Everyone**.
-   (Access matches the most specific path, so these paths skip the login while everything else
-   still requires it. Do **not** bypass `/authorize`: that consent page relies on the Access
-   login to know who is approving.)
+
+   Don't cover all of `example.com`: Access would then put its login in front of the home page.
+   Paths outside Access are still safe, because the Worker rejects any request without a valid
+   Access JWT except the public pages, their `/_assets/*` files and `/_api/waitlist`. The deploy
+   API, `/mcp`, `/oauth/*` and `/.well-known/*` authenticate with tokens and must stay outside
+   Access, as they do here.
+3. **Upgrading an older setup:** if your main app covers all of `example.com` and you have a
+   **bypass** app for `/_api/deploy/*`, `/mcp`, `/oauth/*` and `/.well-known/*`, change the main
+   app's domains to the list above. The bypass app is then unnecessary (keeping it is harmless).
+   Until you change it, the home page sits behind the login, and signed-in visitors to `/` are
+   sent straight to their dashboard.
 4. Note your **team domain** (Settings → Custom Pages, or the URL of your login page):
    `<team>.cloudflareaccess.com`.
 
@@ -161,7 +168,8 @@ npm run dev                             # wrangler dev --env dev on http://local
   so wrangler keeps the real Host header.
 - In dev, `DEV_USER` from `.dev.vars` is the signed-in user (no Access). This bypass only works when
   `ENVIRONMENT` is exactly `dev`; production uses `ENVIRONMENT=production`.
-- Dashboard: <http://localhost:8787/>. Apps: `http://<ns>.localhost:8787/<path>/` (browsers resolve
+- Home page: <http://localhost:8787/>. Login: <http://localhost:8787/login>. Dashboard:
+  <http://localhost:8787/app>. Apps: `http://<ns>.localhost:8787/<path>/` (browsers resolve
   `*.localhost` to your machine; for curl use `--resolve` or rely on curl's own `*.localhost` handling).
 - In dev the secret proxy also allows `http://` URLs (still never private addresses).
 

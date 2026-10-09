@@ -12,10 +12,9 @@ describe("security 1: Access JWT required", () => {
     const ns = uniq();
     expect((await publishHtml(OWNER, ns, "", PAGE("hi"))).status).toBe(201);
     const urls = [
-      "https://example.com/",
       "https://example.com/_api/admin/whoami",
-      "https://example.com/_api/admin/sites",
       "https://example.com/_platform/guide.md",
+      "https://example.com/_api/admin/sites",
       `https://${ns}.example.com/`,
       `https://${ns}.example.com/index.html`,
       `https://${ns}.example.com/_api/me`,
@@ -27,6 +26,10 @@ describe("security 1: Access JWT required", () => {
       expect(res.status, u).toBe(401);
       expect(await res.text(), u).not.toContain("hi</body>");
     }
+    // The dashboard sends visitors without a JWT to the public login screen.
+    const dash = await call("/app");
+    expect(dash.status).toBe(302);
+    expect(dash.headers.get("location")).toBe("/login");
   });
 
   it("never trusts Cf-Access-Authenticated-User-Email on its own", async () => {

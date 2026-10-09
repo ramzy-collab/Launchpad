@@ -7,8 +7,8 @@ import { listNamespaces, listSites } from "../sites";
 import { escapeHtml as e } from "../util";
 import { ctxOf } from "../api";
 import { listConnections } from "../oauth";
-
-const CSP = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'";
+import { listWaitlist } from "../waitlist";
+import { head, htmlResponse, nav } from "./layout";
 
 const fmtTime = (ms: number | null) => (ms ? new Date(ms).toISOString().replace("T", " ").slice(0, 16) + " UTC" : "never");
 const fmtBytes = (n: number) => (n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`);
@@ -16,12 +16,13 @@ const fmtBytes = (n: number) => (n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${(n /
 export async function dashboardPage(c: Context<AppEnv>): Promise<Response> {
   const ctx = ctxOf(c);
   const user = ctx.user;
-  const [namespaces, sites, tokens, activity, connections] = await Promise.all([
+  const [namespaces, sites, tokens, activity, connections, waitlist] = await Promise.all([
     listNamespaces(ctx),
     listSites(ctx),
     listTokens(c.env, user),
     recentActivity(c.env, user.email, 50),
     listConnections(c.env, user.email).catch(() => []),
+    user.isAdmin ? listWaitlist(c.env) : null,
   ]);
   const origin = isDev(c.env) ? new URL(c.req.url).origin : `https://${c.env.DOMAIN}`;
   const mcpCommand = `claude mcp add --transport http formelab ${origin}/mcp \\\n  --header "Authorization: Bearer fl_..."`;
@@ -102,23 +103,40 @@ export async function dashboardPage(c: Context<AppEnv>): Promise<Response> {
     )
     .join("");
 
+  const waitlistRows = (waitlist?.entries ?? [])
+    .map((w) => `<tr><td>${e(w.email)}</td><td class="nowrap">${e(fmtTime(w.createdAt))}</td></tr>`)
+    .join("");
+  const waitlistSection = waitlist
+    ? `<section>
+  <h2>Waitlist<span class="count">${e(waitlist.total)}</span></h2>
+  ${
+    waitlist.entries.length
+      ? `<p class="muted">People who signed up on the home page, newest first${waitlist.total > waitlist.entries.length ? ` (latest ${waitlist.entries.length} shown)` : ""}. Only admins see this.</p>
+  <div class="scroll"><table><thead><tr><th>Email</th><th>Joined</th></tr></thead><tbody>${waitlistRows}</tbody></table></div>`
+      : `<p class="muted">No sign-ups yet. Share the home page at <a href="/">${e(origin)}/</a>.</p>`
+  }
+</section>`
+    : "";
+
   const nsOptions = namespaces.map((n) => `<option value="${e(n.label)}">`).join("");
 
   const html = `<!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Formelab</title>
-<link rel="stylesheet" href="/_platform/dashboard.css">
-<script src="/_platform/dashboard.js" defer></script>
+${head("Formelab", ["dashboard.js"])}
 </head>
-<body>
-<header>
-  <h1>Formelab</h1>
-  <div>Signed in as <strong>${e(user.email)}</strong>${user.isAdmin ? ' <span class="tag">admin</span>' : ""}</div>
-</header>
+<body class="dash">
+<div class="wrap">
+${nav(
+  "/app",
+  `<span class="who">Signed in as <strong>${e(user.email)}</strong>${user.isAdmin ? ' <span class="tag admin">admin</span>' : ""}</span>
+    <a class="link" href="/cdn-cgi/access/logout">Log out</a>`,
+)}
 <main>
+<div class="dash-hero">
+  <h1>Your studio</h1>
+  <p>Publish apps, manage who can see them, and connect your AI tools.</p>
+</div>
 <div id="flash" role="status" hidden></div>
 
 <section>
@@ -137,7 +155,7 @@ export async function dashboardPage(c: Context<AppEnv>): Promise<Response> {
 </section>
 
 <section>
-  <h2>Sites</h2>
+  <h2>Sites<span class="count">${e(sites.length)}</span></h2>
   ${
     sites.length
       ? `<div class="scroll"><table><thead><tr><th>URL</th><th>Title</th><th>Visibility</th><th>Updated</th><th>Size</th><th>Actions</th></tr></thead><tbody>${siteRows}</tbody></table></div>`
@@ -209,18 +227,11 @@ export async function dashboardPage(c: Context<AppEnv>): Promise<Response> {
       : `<p class="muted">Nothing yet.</p>`
   }
 </section>
+${waitlistSection}
 </main>
+</div>
 </body>
 </html>`;
 
-  return new Response(html, {
-    headers: {
-      "content-type": "text/html; charset=utf-8",
-      "cache-control": "no-store",
-      "content-security-policy": CSP,
-      "x-content-type-options": "nosniff",
-      "referrer-policy": "same-origin",
-      "x-frame-options": "DENY",
-    },
-  });
+  return htmlResponse(html);
 }

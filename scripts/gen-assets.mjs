@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Bundles the text assets the Worker serves (SDK, guide, dashboard JS/CSS)
+// Bundles the text assets the Worker serves (SDK, guide, web page JS/CSS)
 // into src/generated/assets.ts so both wrangler (esbuild) and vitest (vite)
 // can import them without loader-specific configuration.
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -11,7 +11,9 @@ const assets = {
   SDK_JS: "src/sdk.js",
   GUIDE_MD: "src/guide.md",
   DASHBOARD_JS: "src/dashboard/dashboard.js",
-  DASHBOARD_CSS: "src/dashboard/dashboard.css",
+  FORMELAB_CSS: "src/dashboard/formelab.css",
+  THEME_JS: "src/dashboard/theme.js",
+  SITE_JS: "src/dashboard/site.js",
   CONSENT_JS: "src/dashboard/consent.js",
   SKILL_MD: "skill/SKILL.md",
 };
