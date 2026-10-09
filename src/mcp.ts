@@ -4,9 +4,22 @@ import { CfWorkerJsonSchemaValidator } from "@modelcontextprotocol/sdk/validatio
 import { z } from "zod";
 import { filesFromJson } from "./api";
 import type { Env, User } from "./env";
-import { ApiError } from "./errors";
+import { ApiError, notFound } from "./errors";
 import { GUIDE_MD } from "./generated/assets";
-import { deleteSite, listNamespaces, listSites, publishSite, siteIdByMount, updateSite, type Ctx } from "./sites";
+import { canViewSite } from "./auth";
+import { apexOrigin } from "./oauth";
+import {
+  deleteSite,
+  getNamespace,
+  getSiteById,
+  listNamespaces,
+  listSites,
+  publishSite,
+  siteIdByMount,
+  siteView,
+  updateSite,
+  type Ctx,
+} from "./sites";
 
 type ToolResult = { content: { type: "text"; text: string }[]; isError?: boolean };
 
@@ -131,7 +144,91 @@ export function buildServer(ctx: Ctx): McpServer {
     () => run(async () => GUIDE_MD),
   );
 
+  // `search` and `fetch` follow the shape ChatGPT expects from connectors (outside Developer Mode
+  // it only offers tools with these names): search returns {results: [{id, title, url}]}, fetch
+  // returns {id, title, text, url, metadata}. Both are read-only.
+  server.registerTool(
+    "search",
+    {
+      description:
+        "Search your Formelab apps by title, namespace, path or URL, plus the Formelab app-building guide. Returns ids to pass to fetch. An empty query lists everything.",
+      inputSchema: { query: z.string().describe("Words to look for, e.g. \"budget\" or \"ramzy\"") },
+      annotations: { readOnlyHint: true },
+    },
+    ({ query }) => run(() => searchItems(ctx, query)),
+  );
+
+  server.registerTool(
+    "fetch",
+    {
+      description:
+        "Fetch one item returned by search: an app's details and its index.html source, or the full Formelab guide.",
+      inputSchema: { id: z.string().describe("An id from search, e.g. \"site:s_abc123\" or \"guide\"") },
+      annotations: { readOnlyHint: true },
+    },
+    ({ id }) => run(() => fetchItem(ctx, id)),
+  );
+
   return server;
+}
+
+const GUIDE_TITLE = "Formelab app-building guide";
+const SOURCE_LIMIT = 200 * 1024;
+
+async function searchItems(ctx: Ctx, query: string) {
+  const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
+  const matches = (hay: string) => terms.every((t) => hay.includes(t));
+  const sites = await listSites(ctx);
+  const results: { id: string; title: string; url: string }[] = sites
+    .filter((s) => matches(`${s.title ?? ""} ${s.namespace} ${s.mountPath} ${s.url}`.toLowerCase()))
+    .slice(0, 50)
+    .map((s) => ({ id: `site:${s.id}`, title: s.title || `${s.namespace}/${s.mountPath || "(root)"}`, url: s.url }));
+  const guideHay = `${GUIDE_TITLE} sdk guide help how build publish ${GUIDE_MD}`.toLowerCase();
+  if (matches(guideHay)) {
+    results.push({ id: "guide", title: GUIDE_TITLE, url: `${apexOrigin(ctx.env, ctx.requestUrl ?? "https://" + ctx.env.DOMAIN)}/_platform/guide.md` });
+  }
+  return { results };
+}
+
+async function fetchItem(ctx: Ctx, id: string) {
+  if (id === "guide") {
+    return {
+      id,
+      title: GUIDE_TITLE,
+      text: GUIDE_MD,
+      url: `${apexOrigin(ctx.env, ctx.requestUrl ?? "https://" + ctx.env.DOMAIN)}/_platform/guide.md`,
+      metadata: { type: "guide" },
+    };
+  }
+  const m = /^site:(s_[a-z2-7]+)$/.exec(id);
+  const site = m ? await getSiteById(ctx.env, m[1]!) : null;
+  const ns = site ? await getNamespace(ctx.env, site.namespace) : null;
+  // Same rule as opening the app in a browser: anyone who may view it may read it.
+  if (!site || !ns || !canViewSite(ctx.user, site, ns)) throw notFound("Item");
+  const view = siteView(ctx.env, site, ctx.requestUrl);
+  const obj = await ctx.env.BUCKET.get(`sites/${site.id}/${site.current_version}/index.html`);
+  let source = obj ? await obj.text() : "";
+  const truncated = source.length > SOURCE_LIMIT;
+  if (truncated) source = source.slice(0, SOURCE_LIMIT);
+  const text = [
+    `Title: ${view.title ?? "(none)"}`,
+    `URL: ${view.url}`,
+    `Namespace: ${view.namespace}`,
+    `Mount path: ${view.mountPath || "(root)"}`,
+    `Visibility: ${view.visibility}${view.visibility === "restricted" ? ` (${view.allowedEmails.join(", ") || "owner and editors only"})` : ""}`,
+    `Files: ${view.fileCount}, ${view.totalBytes} bytes`,
+    `Updated: ${new Date(view.updatedAt).toISOString()}`,
+    "",
+    `index.html${truncated ? " (first 200 KB)" : ""}:`,
+    source,
+  ].join("\n");
+  return {
+    id,
+    title: view.title || `${view.namespace}/${view.mountPath || "(root)"}`,
+    text,
+    url: view.url,
+    metadata: { namespace: view.namespace, mountPath: view.mountPath, visibility: view.visibility, updatedAt: view.updatedAt },
+  };
 }
 
 /** Stateless Streamable HTTP: a fresh server and transport per request, JSON responses. */

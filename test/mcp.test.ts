@@ -37,7 +37,7 @@ describe("MCP server", () => {
     expect(init.result.serverInfo.name).toBe("formelab");
     const { result } = await rpc(t, "tools/list");
     const names = result.tools.map((x: { name: string }) => x.name).sort();
-    expect(names).toEqual(["delete_site", "get_guide", "list_namespaces", "list_sites", "publish", "update_site", "whoami"]);
+    expect(names).toEqual(["delete_site", "fetch", "get_guide", "list_namespaces", "list_sites", "publish", "search", "update_site", "whoami"]);
     const del = result.tools.find((x: { name: string }) => x.name === "delete_site");
     expect(del.description).toMatch(/permanent/i);
   });
