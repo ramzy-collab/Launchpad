@@ -17,7 +17,7 @@ import { escapeHtml as e } from "./util";
 
 /**
  * OAuth 2.1 for the MCP endpoint, so hosted clients such as Claude chat (claude.ai custom
- * connectors) can connect with a "Connect" button instead of a pasted token.
+ * connectors) and ChatGPT (custom connectors) can connect with a "Connect" button instead of a pasted token.
  *
  * Only apex requests pass through the provider. It owns:
  *   /.well-known/oauth-authorization-server, /.well-known/oauth-protected-resource/mcp,
@@ -154,7 +154,7 @@ function consentSubmitFailure(err: unknown): Response {
     return plainPage(
       400,
       "This page has already been used",
-      "If Claude now shows Formelab as connected, you're all set and can close this tab. Otherwise, start connecting again from Claude.",
+      "If your AI app (Claude or ChatGPT) now shows Formelab as connected, you're all set and can close this tab. Otherwise, start connecting again from the app.",
     );
   }
   return authorizationFailure(err);

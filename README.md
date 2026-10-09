@@ -190,6 +190,21 @@ The MCP endpoint supports OAuth, so Claude chat connects without a token:
 The connection acts as you. It appears on the dashboard under **Connected apps**, where
 **Disconnect** revokes it immediately. Sign-ins last up to 30 days before Claude has to reconnect.
 
+### ChatGPT
+
+ChatGPT connects the same way (OAuth, no token):
+
+1. In ChatGPT, open **Settings → Apps & Connectors → Advanced settings** and turn on
+   **Developer mode** (needed for tools that change things, such as `publish`; available on paid
+   plans).
+2. **Create** a connector: name `Formelab`, URL `https://example.com/mcp`, authentication **OAuth**.
+3. Connect it, sign in through Cloudflare Access, and click **Allow** on the Formelab page.
+
+Without Developer mode, ChatGPT only offers tools named `search` and `fetch`. Formelab provides
+both, read-only: `search` finds your apps (and the build guide), and `fetch` returns an app's
+details and its `index.html` source. ChatGPT connections are listed and revoked under
+**Connected apps** like Claude's.
+
 ### Claude Code
 
 1. In the dashboard, create a deploy token (30 days is fine for personal use). It is shown once.
@@ -208,7 +223,7 @@ The connection acts as you. It appears on the dashboard under **Connected apps**
    ```
 
 Tools: `whoami`, `list_namespaces`, `list_sites`, `publish`, `update_site`, `delete_site`,
-`get_guide`. Then ask Claude Code something like *"Build me a habit tracker and publish it to
+`get_guide`, `search`, `fetch`. Then ask Claude Code something like *"Build me a habit tracker and publish it to
 Formelab at yourname/habits."*
 
 ## 5. Publishing from scripts

@@ -185,3 +185,16 @@ Choices made while building v1, including where the build differs from the spec 
   first deploy.
 - `wrangler.toml` now carries the real `formelab.ai` domain and D1 `database_id`. Neither is a
   secret, and keeping them in the repo means `git pull` doesn't fight local edits.
+
+## ChatGPT
+
+- ChatGPT's custom connectors use the same OAuth flow (dynamic registration or a Client ID Metadata
+  Document, authorization code with PKCE) and the same Streamable HTTP transport, so the existing
+  `/mcp` endpoint serves it unchanged. The consent page is client-neutral: it names the client and
+  shows the redirect host, and its CSP `form-action` follows whatever redirect origin the client
+  registered.
+- Outside Developer Mode, ChatGPT only offers tools named `search` and `fetch`. Both are added,
+  read-only, in the shape it expects (`{results: [{id, title, url}]}` and
+  `{id, title, text, url, metadata}`). `search` covers the sites you can manage plus the guide;
+  `fetch` applies the same rule as opening the app in a browser (`canViewSite`) and includes up to
+  200 KB of `index.html`, so an assistant can read an app before republishing it.

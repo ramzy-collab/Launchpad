@@ -179,11 +179,13 @@ export async function dashboardPage(c: Context<AppEnv>): Promise<Response> {
 </section>
 
 <section>
-  <h2>Connect Claude</h2>
-  <h3>Claude chat (claude.ai, desktop and mobile)</h3>
-  <p>In Claude, open <strong>Settings → Connectors → Add custom connector</strong>, name it <strong>Formelab</strong>, and use this URL:</p>
+  <h2>Connect an AI app</h2>
+  <p>Claude chat and ChatGPT both connect with this URL. You sign in and choose <strong>Allow</strong>; no token needed.</p>
   <div class="copyrow"><pre id="mcp-url">${e(origin)}/mcp</pre><button type="button" data-copy="#mcp-url">Copy</button></div>
-  <p class="muted">Click <strong>Connect</strong>, sign in, and choose <strong>Allow</strong>. No token needed.</p>
+  <h3>Claude chat (claude.ai, desktop and mobile)</h3>
+  <p>Open <strong>Settings → Connectors → Add custom connector</strong>, name it <strong>Formelab</strong>, paste the URL, then click <strong>Connect</strong>.</p>
+  <h3>ChatGPT</h3>
+  <p>In <strong>Settings → Apps &amp; Connectors → Advanced settings</strong>, turn on <strong>Developer mode</strong>. Then <strong>Create</strong> a connector named <strong>Formelab</strong> with the URL above and <strong>OAuth</strong> authentication, and connect it. Without Developer mode, ChatGPT can still use Formelab's read-only <code>search</code> and <code>fetch</code> tools.</p>
   <h3>Claude Code</h3>
   <p>Create a deploy token (30 days is fine for personal use), then run:</p>
   <div class="copyrow"><pre id="mcp-cmd">${e(mcpCommand)}</pre><button type="button" data-copy="#mcp-cmd">Copy</button></div>
