@@ -16,6 +16,8 @@ describe("home page and login", () => {
     expect(html).toContain("is <span class=\"dead\">dead.</span>");
     expect(html).toContain('id="wait-form"');
     expect(html).toContain('href="/login"');
+    expect(html).toContain("Built with Formelab");
+    expect(html).toContain('href="/_assets/home.css"');
     expect(html).not.toMatch(/<script>(?!<\/script>)/);
     expect(html).not.toMatch(/\son[a-z]+=/i);
     expect(html).not.toMatch(/\sstyle=/i);
@@ -38,6 +40,7 @@ describe("home page and login", () => {
   it("serves the shared assets without sign-in", async () => {
     for (const [path, type] of [
       ["/_assets/formelab.css", "text/css"],
+      ["/_assets/home.css", "text/css"],
       ["/_assets/theme.js", "javascript"],
       ["/_assets/site.js", "javascript"],
     ]) {

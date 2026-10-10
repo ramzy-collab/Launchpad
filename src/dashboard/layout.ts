@@ -14,15 +14,19 @@ const ICON = "data:image/svg+xml," + encodeURIComponent(
 
 export const PAGE_CSP = `default-src 'self'; script-src 'self'; ${FONT_CSP}; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'`;
 
-export function head(title: string, scripts: string[] = []): string {
+/** The public home and login pages use their own stylesheet and an extra font (Inter Tight). */
+export const HOME_FONTS = "https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,800&family=Inter+Tight:wght@500;600;700&family=Inter:wght@400;500;600;700&family=Permanent+Marker&display=swap";
+
+export function head(title: string, scripts: string[] = [], opts: { css?: string; fonts?: string } = {}): string {
+  const { css = "formelab.css", fonts = FONTS } = opts;
   return `<meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${e(title)}</title>
 <link rel="icon" href="${ICON}">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="${FONTS}">
-<link rel="stylesheet" href="/_assets/formelab.css">
+<link rel="stylesheet" href="${fonts}">
+<link rel="stylesheet" href="/_assets/${css}">
 <script src="/_assets/theme.js"></script>
 ${scripts.map((s) => `<script src="/_assets/${s}" defer></script>`).join("\n")}`;
 }

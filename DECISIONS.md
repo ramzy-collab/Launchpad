@@ -140,9 +140,13 @@ Choices made while building v1, including where the build differs from the spec 
 
 ## Home page, login and waitlist
 
-- The look comes from the Formelab waitlist prototype (fl.formelab.ai/waitlist): warm canvas with
-  a dot grid, violet accent, coral/yellow/green pops, pill buttons, light and dark themes. The
-  theme follows the system until the toggle is used, then the choice is kept in `localStorage`.
+- The home and login pages follow the "wall" prototype (fl.formelab.ai/wall): a big hero, a
+  scrolling rail of example apps, the waitlist form and "How it works". They use their own
+  stylesheet, `home.css`, and are light only, like the prototype. The rail's second copy (for a
+  seamless loop) is rendered on the server and hidden from screen readers.
+- The signed-in pages (dashboard, consent) follow the earlier waitlist prototype
+  (fl.formelab.ai/waitlist) through `formelab.css`: warm dot-grid canvas, violet accent, pill
+  buttons, and light and dark themes. The theme follows the system until the toggle is used.
 - `/` is the public home page with the waitlist; `/login` is the login screen; the dashboard
   moved from `/` to `/app`. A request to `/` that already carries a valid Access JWT redirects to
   `/app`, so older Access setups that cover the whole apex keep working.

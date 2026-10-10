@@ -5,7 +5,7 @@ import { dashboardPage } from "./dashboard/page";
 import { homePage, loginPage } from "./dashboard/home";
 import type { AppEnv, Env } from "./env";
 import { forbidden, jsonError, onError, unauthorized } from "./errors";
-import { CONSENT_JS, DASHBOARD_JS, FORMELAB_CSS, GUIDE_MD, SDK_JS, SITE_JS, THEME_JS } from "./generated/assets";
+import { CONSENT_JS, DASHBOARD_JS, FORMELAB_CSS, GUIDE_MD, HOME_CSS, SDK_JS, SITE_JS, THEME_JS } from "./generated/assets";
 import { apexOrigin, AUTHORIZE_PATH, authorizeGet, authorizePost, oauthProvider } from "./oauth";
 import { runtimeApi } from "./runtime";
 import { plainPage, serveAppFile } from "./serve";
@@ -55,6 +55,7 @@ apex.post("/_api/waitlist", async (c) => {
 });
 const asset = (body: string, type: string) => () => text(body, type, "public, max-age=300");
 apex.get("/_assets/formelab.css", asset(FORMELAB_CSS, "text/css; charset=utf-8"));
+apex.get("/_assets/home.css", asset(HOME_CSS, "text/css; charset=utf-8"));
 apex.get("/_assets/theme.js", asset(THEME_JS, "text/javascript; charset=utf-8"));
 apex.get("/_assets/site.js", asset(SITE_JS, "text/javascript; charset=utf-8"));
 apex.get("/_assets/dashboard.js", asset(DASHBOARD_JS, "text/javascript; charset=utf-8"));

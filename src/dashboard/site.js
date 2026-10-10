@@ -4,12 +4,12 @@
   var $ = function (id) { return document.getElementById(id); };
   var form = $("wait-form");
   if (!form) return;
-  var field = $("field"), email = $("email"), msg = $("msg"), btn = $("join-btn");
+  var email = $("email"), msg = $("msg"), btn = $("join-btn");
   var DEFAULT_MSG = msg.textContent;
   var isEmail = function (v) { return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v); };
 
   function setError(text) {
-    field.classList.add("err");
+    email.classList.add("err");
     msg.classList.add("err");
     msg.textContent = text;
     email.focus();
@@ -18,7 +18,7 @@
   function setLoading(on) {
     btn.disabled = on;
     btn.classList.toggle("loading", on);
-    btn.querySelector(".lbl").textContent = on ? "Saving your spot..." : "Save my spot";
+    btn.querySelector(".lbl").textContent = on ? "Saving your spot..." : "Join the waitlist";
   }
 
   function show(id) {
@@ -27,8 +27,22 @@
     window.scrollTo(0, 0);
   }
 
+  function toJoin() {
+    show("landing");
+    $("signup").scrollIntoView({ behavior: "smooth", block: "center" });
+    setTimeout(function () { email.focus({ preventScroll: true }); }, 450);
+  }
+
+  // The nav's "Join the waitlist" scrolls to the form and focuses it.
+  document.addEventListener("click", function (ev) {
+    if (!ev.target.closest("[data-join]")) return;
+    ev.preventDefault();
+    toJoin();
+  });
+  if (location.hash === "#signup") setTimeout(toJoin, 50);
+
   email.addEventListener("input", function () {
-    field.classList.remove("err");
+    email.classList.remove("err");
     msg.classList.remove("err");
     msg.textContent = DEFAULT_MSG;
   });
@@ -37,7 +51,7 @@
     ev.preventDefault();
     var value = email.value.trim();
     if (!isEmail(value)) {
-      setError(value ? "Hmm, that email looks a little off. Mind checking it?" : "Pop your email in and we'll save you a spot.");
+      setError(value ? "That email looks a little off. Mind checking it?" : "Add your email to save a spot.");
       return;
     }
     setLoading(true);
@@ -59,7 +73,6 @@
         $("share-msg").textContent = "";
         email.value = "";
         show("confirm");
-        confetti();
       })
       .catch(function (e) {
         setError(e && e.message ? e.message : "We couldn't reach Formelab. Check your connection and try again.");
@@ -82,19 +95,4 @@
       function () { out.textContent = url; }
     );
   });
-
-  function confetti() {
-    if (window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    var box = document.createElement("div");
-    box.className = "confetti";
-    for (var i = 0; i < 60; i++) {
-      var p = document.createElement("i");
-      p.style.left = Math.random() * 100 + "vw";
-      p.style.animationDelay = Math.random() * 0.35 + "s";
-      p.style.transform = "rotate(" + Math.random() * 360 + "deg)";
-      box.appendChild(p);
-    }
-    document.body.appendChild(box);
-    setTimeout(function () { box.remove(); }, 2000);
-  }
 })();
