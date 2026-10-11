@@ -11,7 +11,7 @@ const CHECK = (stroke: string, width = 3.5) =>
 function topNav(): string {
   return `<div class="container">
   <nav>
-    <a class="logo" href="/" aria-label="Formelab home"><span class="mark" aria-hidden="true"></span>Formelab</a>
+    <a class="logo" href="/" aria-label="Formelab home"><span class="mark" aria-hidden="true">F</span>Formelab</a>
     <div class="nav-r">
       <a class="nbtn" href="/login">Log in</a>
       <a class="cta" href="/#signup" data-join><span class="long">Join the waitlist</span><span class="short">Join</span></a>

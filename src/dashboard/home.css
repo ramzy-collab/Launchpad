@@ -21,13 +21,13 @@ a { color: inherit; }
 /* ---------- Nav ---------- */
 nav { display: flex; align-items: center; justify-content: space-between; height: 96px; }
 .logo { display: flex; align-items: center; gap: 12px; font-family: "Bricolage Grotesque", system-ui, sans-serif; font-weight: 800; font-size: 28px; letter-spacing: -.02em; color: var(--ink); text-decoration: none; }
-.mark { width: 38px; height: 38px; border-radius: 12px; background: var(--accent); position: relative; transform: rotate(-6deg); flex: none; }
-.mark::after { content: ""; position: absolute; width: 12px; height: 12px; border-radius: 50%; background: #FFC93C; right: -4px; top: -4px; }
+.mark { width: 38px; height: 38px; border-radius: 12px; background: var(--accent); position: relative; transform: rotate(-6deg); flex: none; display: grid; place-items: center; color: #fff; font-size: 25px; line-height: 1; font-weight: 800; padding-top: 1px; }
+.mark::after { content: ""; position: absolute; width: 12px; height: 12px; border-radius: 50%; background: var(--pop-1); right: -4px; top: -4px; }
 .nav-r { display: flex; align-items: center; gap: 12px; }
 .nbtn { color: var(--soft); font-size: 20px; font-weight: 500; padding: 12px; border-radius: 12px; min-height: 52px; display: inline-flex; align-items: center; text-decoration: none; }
 .nbtn:hover { color: var(--ink); background: var(--line); }
-.cta { height: 52px; padding: 0 22px; border-radius: 14px; background: #E8502E; color: #fff; font-size: 18px; font-weight: 600; white-space: nowrap; text-decoration: none; display: inline-flex; align-items: center; transition: background .15s, transform .15s; }
-.cta:hover { background: #D4431F; }
+.cta { height: 52px; padding: 0 22px; border-radius: 14px; background: var(--accent); color: #fff; font-size: 18px; font-weight: 600; white-space: nowrap; text-decoration: none; display: inline-flex; align-items: center; transition: background .15s, transform .15s; }
+.cta:hover { background: #4A3BE0; }
 .cta:active { transform: scale(.98); }
 .cta .short { display: none; }
 
@@ -48,8 +48,8 @@ h1 .dead { color: var(--accent); }
 .join input { flex: 1; min-width: 0; height: 68px; padding: 0 24px; font-size: 20px; border: 1.5px solid var(--line); background: var(--surface); border-radius: 16px; outline: none; transition: border-color .15s, box-shadow .15s; }
 .join input:focus { border-color: var(--accent); box-shadow: 0 0 0 4px var(--accent-soft); }
 .join input.err { border-color: var(--red); }
-.btn { height: 68px; padding: 0 32px; font-size: 20px; border: 0; border-radius: 16px; background: var(--ink); color: var(--bg); font-weight: 600; cursor: pointer; white-space: nowrap; text-decoration: none; display: inline-flex; align-items: center; justify-content: center; gap: 8px; transition: opacity .15s, transform .15s; }
-.btn:hover { opacity: .88; }
+.btn { height: 68px; padding: 0 32px; font-size: 20px; border: 0; border-radius: 16px; background: var(--accent); color: #fff; font-weight: 600; cursor: pointer; white-space: nowrap; text-decoration: none; display: inline-flex; align-items: center; justify-content: center; gap: 8px; transition: background .15s, transform .15s; }
+.btn:hover { background: #4A3BE0; }
 .btn:active { transform: scale(.98); }
 .btn[disabled] { opacity: .6; cursor: progress; }
 .spin { width: 14px; height: 14px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: sp .7s linear infinite; display: none; }
@@ -66,7 +66,6 @@ h1 .dead { color: var(--accent); }
   -webkit-mask-image: linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent);
           mask-image: linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent); }
 .track { display: flex; gap: 28px; width: max-content; animation: marquee 90s linear infinite; }
-.rail:hover .track { animation-play-state: paused; }
 @keyframes marquee { to { transform: translateX(calc(-50% - 14px)); } }
 figure { margin: 0; flex: none; }
 figure figcaption { margin-top: 16px; font-size: 17px; color: var(--soft); }
@@ -249,7 +248,7 @@ footer a:hover { color: var(--ink); }
 @media (max-width: 720px) {
   nav { height: 72px; }
   .logo { font-size: 22px; gap: 10px; }
-  .mark { width: 30px; height: 30px; border-radius: 9px; }
+  .mark { width: 30px; height: 30px; border-radius: 9px; font-size: 20px; }
   .mark::after { width: 10px; height: 10px; right: -3px; top: -3px; }
   .nav-r { gap: 4px; }
   .nbtn { font-size: 16px; padding: 8px 10px; min-height: 44px; }
