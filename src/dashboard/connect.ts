@@ -20,8 +20,8 @@ export function connectPage(c: Context<AppEnv>): Response {
 
 <section class="howto" id="claude">
   <h2>Claude</h2>
-  <p class="muted">claude.ai, the Claude desktop app, and the mobile apps. Custom connectors need a paid plan.</p>
-  <h3>Pro and Max plans</h3>
+  <p class="muted">claude.ai, the Claude desktop app, and the mobile apps. Works on every plan, including Free. Free accounts can add one custom connector, so if you already use yours, remove it first.</p>
+  <h3>Free, Pro and Max plans</h3>
   <ol>
     <li>On <a href="https://claude.ai/settings/connectors" rel="noopener">claude.ai</a>, open <strong>Settings → Connectors</strong>.</li>
     <li>Click <strong>Add custom connector</strong>.</li>
