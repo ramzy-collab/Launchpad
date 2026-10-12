@@ -60,7 +60,7 @@ apex.get("/login", async (c) => {
 apex.get("/auth/login", loginStart);
 apex.get("/auth/callback", loginCallback);
 apex.post("/_api/waitlist", async (c) => {
-  await joinWaitlist(c.req.raw, c.env);
+  await joinWaitlist(c.req.raw, c.env, (p) => c.executionCtx.waitUntil(p));
   return c.json({ ok: true });
 });
 const asset = (body: string, type: string) => () => text(body, type, "public, max-age=300");

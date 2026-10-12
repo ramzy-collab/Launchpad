@@ -138,6 +138,27 @@ How accounts work:
 - Each namespace host (`<ns>.example.com`) gets its own session cookie, handed over from the
   dashboard's through a single-use code, so an app's JavaScript can't touch the dashboard login.
 
+### 1.8 Notification emails (Resend)
+
+Formelab emails people when they join the waitlist, when they're let in, when an app is shared
+with them, and when they're made a namespace editor. Sign-in emails come from WorkOS (1.7).
+Without a Resend key nothing is sent; skipped messages are logged.
+
+1. Create a Resend account at <https://resend.com> (free: 3,000 emails a month, 100 a day).
+2. **Domains → Add domain** `example.com`, then add the DNS records it shows in Cloudflare (DNS →
+   Records). Wait until Resend says the domain is **Verified**.
+3. **API Keys → Create API key** with **Sending access**, then:
+   ```bash
+   npx wrangler secret put RESEND_API_KEY
+   ```
+4. Set the sender in `wrangler.toml` (`[vars] EMAIL_FROM`, default `Formelab <hello@example.com>`)
+   to an address on the verified domain, then deploy.
+
+Each message goes out once: a repeated waitlist sign-up, approving someone twice, or publishing a
+new version of a shared app doesn't send it again. Only people newly added to an app's
+**Share with** or **Editors** list (or a namespace's editors) are emailed, never the person
+making the change.
+
 ## 2. Production deploy runbook
 
 First deploy, and every deploy after:
@@ -198,8 +219,8 @@ write a new forward migration if you need to undo a schema change.
   browsers. Plan for: buying the domain, adding it to Cloudflare with a wildcard DNS record and a
   Worker route, a `APPS_DOMAIN` setting, and redirects from the old app URLs.
 - [ ] Use your own Google OAuth client in WorkOS (1.7) so the consent screen shows Formelab.
-- [ ] Decide how people hear they were let in from the waitlist (an email through Cloudflare
-  Email Service or Resend; WorkOS only sends sign-in emails).
+- [ ] Set up notification emails (1.8) so people hear when they're let in and when apps are
+  shared with them.
 
 ## 3. Local development
 

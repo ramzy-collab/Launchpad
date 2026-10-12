@@ -7,6 +7,7 @@ import type { Context } from "hono";
 import { isOwnerEmail, upsertUser } from "./auth";
 import type { AppEnv, Env } from "./env";
 import { now } from "./env";
+import { acceptedEmail, publicOrigin, sendEmail, waitlistJoinedEmail } from "./email";
 import { plainPage } from "./serve";
 import {
   cookieHeader,
@@ -95,7 +96,8 @@ export async function loginCallback(c: Context<AppEnv>): Promise<Response> {
   const user = await upsertUser(env, email, name, { status, workosId: wu.id });
   // Someone who signs in before being let in lands on the waitlist, so an admin can approve them.
   if (!user.active) {
-    await env.DB.prepare("INSERT INTO waitlist (email, created_at) VALUES (?, ?) ON CONFLICT(email) DO NOTHING").bind(email, now()).run();
+    const added = await env.DB.prepare("INSERT INTO waitlist (email, created_at) VALUES (?, ?) ON CONFLICT(email) DO NOTHING").bind(email, now()).run();
+    if (added.meta.changes) c.executionCtx.waitUntil(sendEmail(env, waitlistJoinedEmail(publicOrigin(env, c.req.url), email)));
   }
 
   const headers = new Headers({ location: returnTo, "cache-control": "no-store" });
@@ -156,10 +158,11 @@ export async function appCallback(c: Context<AppEnv>): Promise<Response> {
   return new Response(null, { status: 302, headers });
 }
 
-/** Admin: let someone in from the waitlist, or invite a new address. */
-export async function approveWaitlist(env: Env, rawEmail: string): Promise<void> {
+/** Admin: let someone in from the waitlist, or invite a new address. Emails them the first time. */
+export async function approveWaitlist(env: Env, rawEmail: string, opts: { requestUrl?: string; waitUntil?: (p: Promise<unknown>) => void } = {}): Promise<void> {
   const email = normEmail(rawEmail);
   const t = now();
+  const before = await env.DB.prepare("SELECT approved_at FROM waitlist WHERE email = ?").bind(email).first<{ approved_at: number | null }>();
   await env.DB.batch([
     env.DB.prepare(
       `INSERT INTO waitlist (email, created_at, approved_at) VALUES (?1, ?2, ?2)
@@ -167,4 +170,9 @@ export async function approveWaitlist(env: Env, rawEmail: string): Promise<void>
     ).bind(email, t),
     env.DB.prepare("UPDATE users SET status = 'active' WHERE email = ?").bind(email),
   ]);
+  if (!before?.approved_at) {
+    const send = sendEmail(env, acceptedEmail(publicOrigin(env, opts.requestUrl), email));
+    if (opts.waitUntil) opts.waitUntil(send);
+    else await send;
+  }
 }

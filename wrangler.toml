@@ -22,6 +22,8 @@ cpu_ms = 30000
 [vars]
 DOMAIN = "formelab.ai"
 ENVIRONMENT = "production"
+# Sender for notification emails (needs RESEND_API_KEY and a domain verified in Resend; README 1.8).
+EMAIL_FROM = "Formelab <hello@formelab.ai>"
 
 [[d1_databases]]
 binding = "DB"

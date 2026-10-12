@@ -2,6 +2,7 @@ import type { Env } from "./env";
 import { now } from "./env";
 import { badRequest, err, forbidden } from "./errors";
 import { normEmail } from "./util";
+import { publicOrigin, sendEmail, waitlistJoinedEmail } from "./email";
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 export const WAITLIST_RATE_PER_MINUTE = 10;
@@ -16,7 +17,7 @@ export interface WaitlistEntry {
  * Public, unauthenticated sign-up. Joining twice is a no-op with the same answer, so the response
  * never reveals whether an address was already on the list.
  */
-export async function joinWaitlist(req: Request, env: Env): Promise<void> {
+export async function joinWaitlist(req: Request, env: Env, waitUntil: (p: Promise<unknown>) => void): Promise<void> {
   const origin = req.headers.get("origin");
   if (origin && origin !== new URL(req.url).origin) throw forbidden("Cross-origin requests are not allowed.");
   if (!(req.headers.get("content-type") ?? "").includes("application/json")) {
@@ -34,9 +35,11 @@ export async function joinWaitlist(req: Request, env: Env): Promise<void> {
     throw badRequest("That email address is not valid.", "Hmm, that email looks a little off. Mind checking it?");
   }
   await checkRate(env, req.headers.get("cf-connecting-ip") ?? "unknown");
-  await env.DB.prepare("INSERT INTO waitlist (email, created_at) VALUES (?, ?) ON CONFLICT(email) DO NOTHING")
+  const res = await env.DB.prepare("INSERT INTO waitlist (email, created_at) VALUES (?, ?) ON CONFLICT(email) DO NOTHING")
     .bind(email, now())
     .run();
+  // Only the first sign-up sends the confirmation, so the form can't be used to repeat-email someone.
+  if (res.meta.changes) waitUntil(sendEmail(env, waitlistJoinedEmail(publicOrigin(env, req.url), email)));
 }
 
 export async function listWaitlist(env: Env, limit = 200): Promise<{ total: number; entries: WaitlistEntry[] }> {

@@ -252,3 +252,15 @@ Choices made while building v1, including where the build differs from the spec 
   `editors` on `publish` only apply to a new app; republishing ignores them and, when they differ
   from what the app has, returns a `note` pointing to `update_site`. A blank title or an unticked
   SPA box (as the dashboard form sends) also leaves those settings as they are.
+
+## Notification emails
+
+- **Resend over HTTPS**, not Cloudflare Email Service, which was still in beta. One `fetch` per
+  message from `src/email.ts`; no SDK. Sends run in `waitUntil`, so a slow or failing email
+  service never slows down or fails the request; failures are logged.
+- **Sent once per event:** the waitlist confirmation only on the first insert (so the public form
+  can't be used to email someone repeatedly), "you're in" only when `approved_at` goes from empty
+  to set, and sharing emails only to addresses newly added to `allowed_emails`, `editors` or a
+  namespace's editors. The person making the change is never emailed.
+- User-supplied text (app titles, names) is HTML-escaped in the email body.
+

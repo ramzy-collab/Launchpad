@@ -6,6 +6,25 @@ import { badRequest, err, forbidden, notFound } from "./errors";
 import { contentTypeFor } from "./mime";
 import type { FileMap } from "./upload";
 import { isEmail, normEmail, parseJsonArray, randomId, sortableId } from "./util";
+import { appSharedEmail, namespaceSharedEmail, publicOrigin, sendEach } from "./email";
+
+/** Addresses in `next` that weren't in `prev` (both normalized). */
+const added = (next: string[], prev: string[]) => {
+  const before = new Set(prev.map(normEmail));
+  return next.map(normEmail).filter((e) => !before.has(e));
+};
+
+/** Emails the people newly given access to an app. */
+function notifyShared(ctx: Ctx, site: SiteRow, viewers: string[], editors: string[]) {
+  if (!viewers.length && !editors.length) return;
+  const origin = publicOrigin(ctx.env, ctx.requestUrl);
+  const by = ctx.user.name || ctx.user.email;
+  const title = site.title || `${site.namespace}/${site.mount_path}`;
+  const url = siteUrl(ctx.env, site.namespace, site.mount_path, ctx.requestUrl);
+  const editorSet = new Set(editors);
+  const everyone = [...new Set([...editors, ...viewers])];
+  ctx.waitUntil(sendEach(ctx.env, everyone, ctx.user.email, (to) => appSharedEmail(origin, to, { by, title, url, canEdit: editorSet.has(to) })));
+}
 
 export interface NamespaceRow {
   label: string;
@@ -259,6 +278,13 @@ export async function updateNamespaceEditors(ctx: Ctx, rawLabel: string, rawEdit
   const editors = emailList(rawEditors, "editors");
   await ctx.env.DB.prepare("UPDATE namespaces SET editors = ? WHERE label = ?").bind(JSON.stringify(editors), ns.label).run();
   await audit(ctx.env, ctx.user.email, "namespace_editors", ns.label, { editors });
+  const newEditors = added(editors, parseJsonArray(ns.editors));
+  if (newEditors.length) {
+    const origin = publicOrigin(ctx.env, ctx.requestUrl);
+    const by = ctx.user.name || ctx.user.email;
+    const url = nsOrigin(ctx.env, ns.label, ctx.requestUrl) + "/";
+    ctx.waitUntil(sendEach(ctx.env, newEditors, ctx.user.email, (to) => namespaceSharedEmail(origin, to, { by, namespace: ns.label, url })));
+  }
   return namespaceView({ ...ns, editors: JSON.stringify(editors) }, ctx.user, ctx.env, ctx.requestUrl);
 }
 
@@ -486,6 +512,7 @@ export async function publishSite(ctx: Ctx, input: PublishInput) {
     files: input.files.size,
     bytes: totalBytes,
   });
+  if (!existing) notifyShared(ctx, row, allowed ?? [], editors ?? []);
   const site = siteView(env, row, ctx.requestUrl);
   return { url: site.url, site, replaced: !!existing, ...(sharingNote ? { note: sharingNote } : {}) };
 }
@@ -524,17 +551,27 @@ export async function updateSite(ctx: Ctx, id: string, patch: SitePatch) {
   if (spa !== undefined) set("spa", spa ? 1 : 0);
   const visibility = parseVisibility(patch.visibility);
   if (visibility) set("visibility", visibility);
-  if (patch.allowed_emails !== undefined) set("allowed_emails", JSON.stringify(emailList(patch.allowed_emails, "allowed_emails")));
+  let newViewers: string[] = [];
+  let newEditors: string[] = [];
+  if (patch.allowed_emails !== undefined) {
+    const list = emailList(patch.allowed_emails, "allowed_emails");
+    newViewers = added(list, parseJsonArray(site.allowed_emails));
+    set("allowed_emails", JSON.stringify(list));
+  }
   if (patch.editors !== undefined) {
     if (site.owner_email !== ctx.user.email && !isNamespaceOwner(ctx.user, ns)) throw ownerOnly();
-    set("editors", JSON.stringify(emailList(patch.editors, "editors")));
+    const list = emailList(patch.editors, "editors");
+    newEditors = added(list, parseJsonArray(site.editors));
+    set("editors", JSON.stringify(list));
   }
   if (sets.length) {
     set("updated_at", now());
     await ctx.env.DB.prepare(`UPDATE sites SET ${sets.join(", ")} WHERE id = ?`).bind(...binds, id).run();
     await audit(ctx.env, ctx.user.email, "update_site", `${site.namespace}/${site.mount_path}`, { siteId: id, fields: changed.slice(0, -1) });
   }
-  return siteView(ctx.env, (await getSiteById(ctx.env, id))!, ctx.requestUrl);
+  const updated = (await getSiteById(ctx.env, id))!;
+  notifyShared(ctx, updated, newViewers, newEditors);
+  return siteView(ctx.env, updated, ctx.requestUrl);
 }
 
 /** Removes a site's files, KV rows, secret rows and the site row itself. */
