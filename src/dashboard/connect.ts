@@ -64,15 +64,7 @@ export function connectPage(c: Context<AppEnv>): Response {
 
 <section class="howto" id="gemini">
   <h2>Gemini</h2>
-  <h3>Gemini app</h3>
-  <p class="muted">Custom apps can only be added on <a href="https://gemini.google.com" rel="noopener">gemini.google.com</a> on the web, in English for now. Google is still rolling this out, so if you don't see the option yet, use Claude or Gemini CLI.</p>
-  <ol>
-    <li>Open <strong>Settings → Connected apps</strong>.</li>
-    <li>Choose to add a custom app, name it <strong>Formelab</strong>, and paste the connector URL above.</li>
-    <li>A Formelab window opens: log in and click <strong>Allow</strong>.</li>
-  </ol>
-  <p>Then mention Formelab in a chat, for example:</p>
-  <p class="example">Use Formelab to build a sign-up sheet for our book club and publish it.</p>
+  <p class="muted">Gemini CLI is the dependable way to use Formelab with Gemini today.</p>
   <h3>Gemini CLI (and Antigravity)</h3>
   <ol>
     <li>Add Formelab to <code>~/.gemini/settings.json</code> (merge it with anything already there):</li>
@@ -82,6 +74,15 @@ export function connectPage(c: Context<AppEnv>): Response {
     <li>Start <code>gemini</code> and run <code>/mcp auth formelab</code>. Your browser opens Formelab: log in and click <strong>Allow</strong>. Formelab warns that access goes to an app on your computer; that's expected here.</li>
     <li>Run <code>/mcp</code> to check that Formelab is connected.</li>
   </ol>
+  <h3>Gemini app (if your account has custom apps)</h3>
+  <p class="muted">Google hasn't made custom apps available to every Gemini account yet, and many people won't see the option. If <strong>Settings → Connected apps</strong> on <a href="https://gemini.google.com" rel="noopener">gemini.google.com</a> doesn't offer a way to add a custom app, use Gemini CLI above, or Claude, which works on every plan.</p>
+  <ol>
+    <li>Open <strong>Settings → Connected apps</strong>.</li>
+    <li>Choose to add a custom app, name it <strong>Formelab</strong>, and paste the connector URL above.</li>
+    <li>A Formelab window opens: log in and click <strong>Allow</strong>.</li>
+  </ol>
+  <p>Then mention Formelab in a chat, for example:</p>
+  <p class="example">Use Formelab to build a sign-up sheet for our book club and publish it.</p>
   <p class="muted">Antigravity CLI, which Google is moving Gemini CLI users to, takes the same server URL. On Gemini Enterprise, an admin adds custom MCP servers for the whole organization.</p>
 </section>
 

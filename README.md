@@ -261,8 +261,8 @@ details and its `index.html` source. ChatGPT connections are listed and revoked 
 
 ### Gemini
 
-The Gemini app (gemini.google.com, web only for now): **Settings → Connected apps**, add a custom
-app named `Formelab` with the URL `https://example.com/mcp`, then sign in and click **Allow**.
+The Gemini app doesn't offer custom apps to most accounts yet. Where it does (gemini.google.com,
+**Settings → Connected apps**), add one named `Formelab` with the URL `https://example.com/mcp`.
 
 Gemini CLI (and Antigravity CLI): add the server to `~/.gemini/settings.json`, then run
 `/mcp auth formelab` inside `gemini` to sign in:
