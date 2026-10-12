@@ -259,6 +259,22 @@ both, read-only: `search` finds your apps (and the build guide), and `fetch` ret
 details and its `index.html` source. ChatGPT connections are listed and revoked under
 **Connected apps** like Claude's.
 
+### Gemini
+
+The Gemini app (gemini.google.com, web only for now): **Settings → Connected apps**, add a custom
+app named `Formelab` with the URL `https://example.com/mcp`, then sign in and click **Allow**.
+
+Gemini CLI (and Antigravity CLI): add the server to `~/.gemini/settings.json`, then run
+`/mcp auth formelab` inside `gemini` to sign in:
+
+```json
+{ "mcpServers": { "formelab": { "httpUrl": "https://example.com/mcp" } } }
+```
+
+Gemini clients register themselves with OAuth dynamic client registration, like Claude and
+ChatGPT; Gemini CLI uses a `localhost` redirect, so the consent page shows the "app on your
+computer" warning.
+
 ### Claude Code
 
 1. In the dashboard, create a deploy token (30 days is fine for personal use). It is shown once.

@@ -9,11 +9,12 @@ export function connectPage(c: Context<AppEnv>): Response {
   const user = c.get("user");
   const origin = isDev(c.env) ? new URL(c.req.url).origin : `https://${c.env.DOMAIN}`;
   const url = `${origin}/mcp`;
+  const geminiConfig = JSON.stringify({ mcpServers: { formelab: { httpUrl: url } } }, null, 2);
   const cmd = `claude mcp add --transport http formelab ${url} \\\n  --header "Authorization: Bearer fl_..."`;
 
   const body = `<section class="howto">
   <h2>Your connector URL</h2>
-  <p>Claude and ChatGPT both connect to Formelab with this address. You'll sign in to Formelab and click <strong>Allow</strong>; there's no key to copy.</p>
+  <p>Claude, ChatGPT and Gemini all connect to Formelab with this address. You'll sign in to Formelab and click <strong>Allow</strong>; there's no key to copy.</p>
   <div class="copyrow"><pre id="mcp-url">${e(url)}</pre><button type="button" data-copy="#mcp-url">Copy</button></div>
   ${user.active ? "" : `<p class="note">Your account is still on the waitlist. You can connect now, but your AI can only create apps once you're let in.</p>`}
 </section>
@@ -59,6 +60,29 @@ export function connectPage(c: Context<AppEnv>): Response {
   <p>In a new chat, open the <strong>+</strong> menu, pick <strong>Developer mode</strong>, and turn on Formelab. Then ask, for example:</p>
   <p class="example">Make a lunch poll for my team and publish it to Formelab.</p>
   <p class="muted">Without Developer mode, ChatGPT can still use Formelab's read-only tools to find your apps and read their code, but it can't publish.</p>
+</section>
+
+<section class="howto" id="gemini">
+  <h2>Gemini</h2>
+  <h3>Gemini app</h3>
+  <p class="muted">Custom apps can only be added on <a href="https://gemini.google.com" rel="noopener">gemini.google.com</a> on the web, in English for now. Google is still rolling this out, so if you don't see the option yet, use Claude or Gemini CLI.</p>
+  <ol>
+    <li>Open <strong>Settings → Connected apps</strong>.</li>
+    <li>Choose to add a custom app, name it <strong>Formelab</strong>, and paste the connector URL above.</li>
+    <li>A Formelab window opens: log in and click <strong>Allow</strong>.</li>
+  </ol>
+  <p>Then mention Formelab in a chat, for example:</p>
+  <p class="example">Use Formelab to build a sign-up sheet for our book club and publish it.</p>
+  <h3>Gemini CLI (and Antigravity)</h3>
+  <ol>
+    <li>Add Formelab to <code>~/.gemini/settings.json</code> (merge it with anything already there):</li>
+  </ol>
+  <div class="copyrow"><pre id="gemini-config">${e(geminiConfig)}</pre><button type="button" data-copy="#gemini-config">Copy</button></div>
+  <ol start="2">
+    <li>Start <code>gemini</code> and run <code>/mcp auth formelab</code>. Your browser opens Formelab: log in and click <strong>Allow</strong>. Formelab warns that access goes to an app on your computer; that's expected here.</li>
+    <li>Run <code>/mcp</code> to check that Formelab is connected.</li>
+  </ol>
+  <p class="muted">Antigravity CLI, which Google is moving Gemini CLI users to, takes the same server URL. On Gemini Enterprise, an admin adds custom MCP servers for the whole organization.</p>
 </section>
 
 <section class="howto" id="claude-code">

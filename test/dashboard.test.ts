@@ -60,7 +60,8 @@ describe("dashboard", () => {
     const html = await res.text();
     expect(html).toContain('<a href="/app/connect" aria-current="page">Connect your AI</a>');
     expect(html).toContain('<pre id="mcp-url">https://example.com/mcp</pre>');
-    for (const id of ['id="claude"', 'id="chatgpt"', 'id="claude-code"']) expect(html).toContain(id);
+    for (const id of ['id="claude"', 'id="chatgpt"', 'id="gemini"', 'id="claude-code"']) expect(html).toContain(id);
+    expect(html).toContain("&quot;httpUrl&quot;: &quot;https://example.com/mcp&quot;"); // Gemini CLI settings
     expect(html).toContain("claude mcp add --transport http formelab https://example.com/mcp");
     expect(html).not.toMatch(/\son[a-z]+=/i);
     expect((await call("/app/connect")).status).toBe(302); // signed out: to the login screen

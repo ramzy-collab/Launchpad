@@ -255,8 +255,8 @@ export async function dashboardPage(c: Context<AppEnv>): Promise<Response> {
 
 <section>
   <h2>Connect an AI app</h2>
-  <p>Build and publish apps by asking Claude or ChatGPT. Your connector URL is <code>${e(origin)}/mcp</code>.</p>
-  <p><a href="/app/connect">Step-by-step instructions for Claude, ChatGPT and Claude Code →</a></p>
+  <p>Build and publish apps by asking Claude, ChatGPT or Gemini. Your connector URL is <code>${e(origin)}/mcp</code>.</p>
+  <p><a href="/app/connect">Step-by-step instructions for Claude, ChatGPT, Gemini and Claude Code →</a></p>
 </section>
 
 <section>
