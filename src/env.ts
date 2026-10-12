@@ -18,8 +18,8 @@ export interface Env {
   /** WorkOS AuthKit (Formelab's own login). When both are set, sign-in goes through WorkOS. */
   WORKOS_CLIENT_ID?: string;
   WORKOS_API_KEY?: string;
-  /** Notification emails through Resend. Both must be set, e.g. EMAIL_FROM="Formelab <hello@formelab.ai>". */
-  RESEND_API_KEY?: string;
+  /** Notification emails: Cloudflare Email Service's send_email binding, and the sender, e.g. "Formelab <hello@formelab.ai>". */
+  EMAIL?: SendEmail;
   EMAIL_FROM?: string;
 }
 

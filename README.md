@@ -138,21 +138,24 @@ How accounts work:
 - Each namespace host (`<ns>.example.com`) gets its own session cookie, handed over from the
   dashboard's through a single-use code, so an app's JavaScript can't touch the dashboard login.
 
-### 1.8 Notification emails (Resend)
+### 1.8 Notification emails (Cloudflare Email Service)
 
 Formelab emails people when they join the waitlist, when they're let in, when an app is shared
 with them, and when they're made a namespace editor. Sign-in emails come from WorkOS (1.7).
-Without a Resend key nothing is sent; skipped messages are logged.
+Emails go through Cloudflare Email Service via the `EMAIL` binding in `wrangler.toml`: it's part
+of the Workers Paid plan (3,000 emails a month included, then $0.35 per 1,000) and, at the time
+of writing, in beta.
 
-1. Create a Resend account at <https://resend.com> (free: 3,000 emails a month, 100 a day).
-2. **Domains → Add domain** `example.com`, then add the DNS records it shows in Cloudflare (DNS →
-   Records). Wait until Resend says the domain is **Verified**.
-3. **API Keys → Create API key** with **Sending access**, then:
-   ```bash
-   npx wrangler secret put RESEND_API_KEY
-   ```
-4. Set the sender in `wrangler.toml` (`[vars] EMAIL_FROM`, default `Formelab <hello@example.com>`)
-   to an address on the verified domain, then deploy.
+1. In the Cloudflare dashboard, open **Email Service** (search "Email Service" if it isn't in the
+   sidebar) and **onboard** `example.com` for sending. Because the domain is already on
+   Cloudflare, it adds the SPF, DKIM and DMARC records for you. Wait until the domain shows as
+   verified.
+2. Check the sender in `wrangler.toml`: `[vars] EMAIL_FROM` (default `Formelab <hello@example.com>`)
+   and the matching `allowed_sender_addresses` on the `[[send_email]]` binding.
+3. Deploy. Nothing else to set: no API key.
+
+Until the domain is onboarded, sends fail; Formelab logs the failure (`email failed …` in
+`wrangler tail`) and carries on. In `npm run dev`, wrangler logs emails instead of sending them.
 
 Each message goes out once: a repeated waitlist sign-up, approving someone twice, or publishing a
 new version of a shared app doesn't send it again. Only people newly added to an app's

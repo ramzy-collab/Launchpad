@@ -3,24 +3,27 @@ import { env } from "cloudflare:workers";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import worker from "../src/index";
 import type { Env } from "../src/env";
-import { accessJwt, call, onOutbound, OWNER, PAGE, uniq } from "./helpers";
+import { accessJwt, onOutbound, OWNER, PAGE, uniq } from "./helpers";
 
-// The Worker with notification emails on. Resend itself is mocked via onOutbound.
-const EENV = { ...(env as unknown as Env), RESEND_API_KEY: "re_test", EMAIL_FROM: "Formelab <hello@example.com>" } as Env;
-
-type Sent = { from: string; to: string[]; subject: string; text: string; html: string };
+type Sent = { from: string | { name: string; email: string }; to: string; subject: string; text: string; html: string };
 let sent: Sent[] = [];
+let failWith: Error | null = null;
+
+// A stand-in for the send_email binding that records what would be sent.
+const fakeEmail = {
+  async send(m: Sent) {
+    if (failWith) throw failWith;
+    sent.push(m);
+    return { messageId: "msg_" + sent.length };
+  },
+} as unknown as SendEmail;
+
+// The Worker with notification emails on.
+const EENV = { ...(env as unknown as Env), EMAIL: fakeEmail, EMAIL_FROM: "Formelab <hello@example.com>" } as Env;
 
 beforeEach(() => {
   sent = [];
-  onOutbound(async (req) => {
-    if (req.url === "https://api.resend.com/emails") {
-      expect(req.headers.get("authorization")).toBe("Bearer re_test");
-      sent.push(await req.json<Sent>());
-      return Response.json({ id: "email_" + sent.length });
-    }
-    return new Response("unexpected", { status: 599 });
-  });
+  failWith = null;
 });
 afterEach(() => onOutbound(undefined));
 
@@ -40,7 +43,7 @@ async function w(url: string, opts: { as?: string; method?: string; json?: unkno
   return res;
 }
 
-const to = (email: string) => sent.filter((m) => m.to.includes(email));
+const to = (email: string) => sent.filter((m) => m.to === email);
 
 describe("notification emails", () => {
   it("confirms a waitlist sign-up once, not on repeats", async () => {
@@ -49,7 +52,7 @@ describe("notification emails", () => {
     expect((await w("/_api/waitlist", { method: "POST", json: { email }, headers: { "cf-connecting-ip": "203.0.113.50" } })).status).toBe(200);
     expect(to(email)).toHaveLength(1);
     expect(to(email)[0]!.subject).toBe("You're on the Formelab waitlist");
-    expect(to(email)[0]!.from).toBe("Formelab <hello@example.com>");
+    expect(to(email)[0]!.from).toEqual({ name: "Formelab", email: "hello@example.com" });
   });
 
   it("tells people when they're let in, only the first time", async () => {
@@ -89,7 +92,7 @@ describe("notification emails", () => {
     sent = [];
     const newcomer = `n-${uniq()}@example.com`;
     await w(`/_api/admin/sites/${site.id}`, { as: OWNER, method: "PATCH", json: { allowed_emails: `${viewer}, ${newcomer}`, title: "Trip planner" } });
-    expect(sent.map((m) => m.to[0])).toEqual([newcomer]);
+    expect(sent.map((m) => m.to)).toEqual([newcomer]);
 
     // Publishing a new version doesn't re-send anything.
     sent = [];
@@ -112,13 +115,25 @@ describe("notification emails", () => {
   });
 
   it("a failing email service never breaks the request", async () => {
-    onOutbound(() => new Response("boom", { status: 500 }));
+    failWith = Object.assign(new Error("sender not verified"), { code: "E_SENDER_NOT_VERIFIED" });
     const res = await w("/_api/waitlist", { method: "POST", json: { email: `fail-${uniq()}@example.com` }, headers: { "cf-connecting-ip": "203.0.113.51" } });
     expect(res.status).toBe(200);
   });
 
-  it("sends nothing when no Resend key is set", async () => {
-    await call("/_api/admin/waitlist/approve", { as: OWNER, method: "POST", json: { email: `nokey-${uniq()}@example.com` } });
+  it("sends nothing without the EMAIL binding or a sender", async () => {
+    const off = { ...EENV, EMAIL: undefined } as Env;
+    const ctx = createExecutionContext();
+    const headers = new Headers({ "cf-access-jwt-assertion": await accessJwt(OWNER), "content-type": "application/json", "x-formelab-request": "1" });
+    const req = new Request("https://example.com/_api/admin/waitlist/approve", { method: "POST", headers, body: JSON.stringify({ email: `nokey-${uniq()}@example.com` }) });
+    expect((await worker.fetch(req, off, ctx)).status).toBe(200);
+    await waitOnExecutionContext(ctx);
     expect(sent).toHaveLength(0);
+  });
+
+  it("reads a display name from EMAIL_FROM", async () => {
+    const { parseSender } = await import("../src/email");
+    expect(parseSender("Formelab <hello@formelab.ai>")).toEqual({ name: "Formelab", email: "hello@formelab.ai" });
+    expect(parseSender('"The Lab" <lab@formelab.ai>')).toEqual({ name: "The Lab", email: "lab@formelab.ai" });
+    expect(parseSender("hello@formelab.ai")).toBe("hello@formelab.ai");
   });
 });

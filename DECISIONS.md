@@ -255,9 +255,11 @@ Choices made while building v1, including where the build differs from the spec 
 
 ## Notification emails
 
-- **Resend over HTTPS**, not Cloudflare Email Service, which was still in beta. One `fetch` per
-  message from `src/email.ts`; no SDK. Sends run in `waitUntil`, so a slow or failing email
-  service never slows down or fails the request; failures are logged.
+- **Cloudflare Email Service** (the `send_email` binding `EMAIL`), chosen over Resend for its
+  higher volume on the Workers plan we already pay for (3,000/month included, no daily cap),
+  and because it needs no extra account or API key. It was in beta when added. The binding only
+  allows the `EMAIL_FROM` address. Sends run in `waitUntil`, so a slow or failing email service
+  never slows down or fails the request; failures are logged with Cloudflare's error code.
 - **Sent once per event:** the waitlist confirmation only on the first insert (so the public form
   can't be used to email someone repeatedly), "you're in" only when `approved_at` goes from empty
   to set, and sharing emails only to addresses newly added to `allowed_emails`, `editors` or a

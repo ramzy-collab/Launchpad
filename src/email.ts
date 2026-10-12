@@ -1,6 +1,6 @@
-// Notification emails, sent through Resend (https://resend.com). Without RESEND_API_KEY and
-// EMAIL_FROM nothing is sent; each skipped message is logged instead. Sending never fails the
-// request that triggered it: callers hand the promise to waitUntil.
+// Notification emails, sent through Cloudflare Email Service (the `EMAIL` send_email binding).
+// Without the binding or EMAIL_FROM nothing is sent; each skipped message is logged instead.
+// Sending never fails the request that triggered it: callers hand the promise to waitUntil.
 import type { Env } from "./env";
 import { isDev } from "./env";
 import { escapeHtml as e, normEmail } from "./util";
@@ -12,7 +12,13 @@ export interface Email {
   html: string;
 }
 
-export const emailEnabled = (env: Env) => !!(env.RESEND_API_KEY && env.EMAIL_FROM);
+export const emailEnabled = (env: Env) => !!(env.EMAIL && env.EMAIL_FROM);
+
+/** "Formelab <hello@formelab.ai>" -> { name, email }; a bare address stays a string. */
+export function parseSender(from: string): string | { name: string; email: string } {
+  const m = /^\s*(.*?)\s*<([^<>\s]+@[^<>\s]+)>\s*$/.exec(from);
+  return m ? { name: m[1]!.replace(/^"|"$/g, ""), email: m[2]! } : from.trim();
+}
 
 /** The address people should click: the dashboard's origin (the request's own in dev). */
 export const publicOrigin = (env: Env, requestUrl?: string) =>
@@ -20,18 +26,14 @@ export const publicOrigin = (env: Env, requestUrl?: string) =>
 
 export async function sendEmail(env: Env, msg: Email): Promise<void> {
   if (!emailEnabled(env)) {
-    console.log("email skipped (no RESEND_API_KEY / EMAIL_FROM)", msg.subject);
+    console.log("email skipped (no EMAIL binding / EMAIL_FROM)", msg.subject);
     return;
   }
   try {
-    const res = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: { authorization: `Bearer ${env.RESEND_API_KEY}`, "content-type": "application/json" },
-      body: JSON.stringify({ from: env.EMAIL_FROM, to: [msg.to], subject: msg.subject, text: msg.text, html: msg.html }),
-    });
-    if (!res.ok) console.error("email failed", res.status, msg.subject);
+    await env.EMAIL!.send({ from: parseSender(env.EMAIL_FROM!), to: msg.to, subject: msg.subject, text: msg.text, html: msg.html });
   } catch (err) {
-    console.error("email failed", err instanceof Error ? err.message : "unknown", msg.subject);
+    const code = err && typeof err === "object" && "code" in err ? String((err as { code: unknown }).code) : "";
+    console.error("email failed", code, err instanceof Error ? err.message : "unknown", msg.subject);
   }
 }
 

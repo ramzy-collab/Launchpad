@@ -22,7 +22,7 @@ cpu_ms = 30000
 [vars]
 DOMAIN = "formelab.ai"
 ENVIRONMENT = "production"
-# Sender for notification emails (needs RESEND_API_KEY and a domain verified in Resend; README 1.8).
+# Sender for notification emails, on a domain onboarded to Cloudflare Email Service (README 1.8).
 EMAIL_FROM = "Formelab <hello@formelab.ai>"
 
 [[d1_databases]]
@@ -51,6 +51,11 @@ simple = { limit = 60, period = 60 }
 name = "WAITLIST_LIMITER"
 namespace_id = "1002"
 simple = { limit = 10, period = 60 }
+
+# Notification emails through Cloudflare Email Service (Workers Paid). Only this sender may be used.
+[[send_email]]
+name = "EMAIL"
+allowed_sender_addresses = ["hello@formelab.ai"]
 
 [observability]
 enabled = true
@@ -89,3 +94,7 @@ simple = { limit = 60, period = 60 }
 name = "WAITLIST_LIMITER"
 namespace_id = "1002"
 simple = { limit = 10, period = 60 }
+
+# In local dev, emails are logged by wrangler instead of being sent.
+[[env.dev.send_email]]
+name = "EMAIL"
