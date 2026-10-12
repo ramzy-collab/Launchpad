@@ -132,6 +132,8 @@ export interface AdminStats {
   users: number;
   active: number;
   waiting: number;
+  /** Let in from the waitlist (or invited) but never logged in, so no account yet. */
+  letInNotSignedIn: number;
   admins: number;
   apps: number;
   namespaces: number;
@@ -144,17 +146,20 @@ export async function adminStats(env: Env): Promise<AdminStats> {
     `SELECT (SELECT COUNT(*) FROM users) AS users,
             (SELECT COUNT(*) FROM users WHERE status = 'active') AS active,
             (SELECT COUNT(*) FROM waitlist WHERE approved_at IS NULL) AS waiting,
+            (SELECT COUNT(*) FROM waitlist w WHERE w.approved_at IS NOT NULL
+                AND NOT EXISTS (SELECT 1 FROM users u WHERE u.email = w.email)) AS let_in,
             (SELECT COUNT(*) FROM users WHERE is_admin = 1) AS admins,
             (SELECT COUNT(*) FROM sites) AS apps,
             (SELECT COUNT(*) FROM namespaces) AS namespaces,
             (SELECT COUNT(*) FROM waitlist WHERE created_at >= ?) AS signups`,
   )
     .bind(weekAgo)
-    .first<{ users: number; active: number; waiting: number; admins: number; apps: number; namespaces: number; signups: number }>();
+    .first<{ users: number; active: number; waiting: number; let_in: number; admins: number; apps: number; namespaces: number; signups: number }>();
   return {
     users: row?.users ?? 0,
     active: row?.active ?? 0,
     waiting: row?.waiting ?? 0,
+    letInNotSignedIn: row?.let_in ?? 0,
     admins: row?.admins ?? 0,
     apps: row?.apps ?? 0,
     namespaces: row?.namespaces ?? 0,

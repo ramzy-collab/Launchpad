@@ -61,6 +61,7 @@ async function overviewBody(c: Context<AppEnv>): Promise<string> {
   <div class="stats">
     ${stat("People", s.users, "/users")}
     ${stat("Waiting to get in", s.waiting, "/waitlist")}
+    ${stat("Let in, not logged in yet", s.letInNotSignedIn, "/users#not-signed-in")}
     ${stat("Sign-ups this week", s.signupsThisWeek, "/waitlist")}
     ${stat("Apps", s.apps)}
     ${stat("Namespaces", s.namespaces)}
@@ -94,7 +95,7 @@ const statusTag = (u: { isAdmin: boolean; status: string }) =>
 
 async function usersBody(c: Context<AppEnv>): Promise<string> {
   const me = c.get("user");
-  const users = await listUsers(c.env);
+  const [users, notSignedIn] = await Promise.all([listUsers(c.env), listWaitlist(c.env, 500, "let-in-not-signed-in")]);
   const rows = users
     .map((u) => {
       const owner = isOwnerEmail(c.env, u.email);
@@ -114,6 +115,18 @@ async function usersBody(c: Context<AppEnv>): Promise<string> {
   <h2>People<span class="count">${e(users.length)}</span></h2>
   <p class="muted"><strong>Make admin</strong> gives someone this admin area (and lets them in if they were waiting). <strong>Delete</strong> removes the account and everything it owns: its namespaces and apps (with their data and secrets), its place on other people's share lists, tokens and connected AI apps.</p>
   <div class="scroll"><table><thead><tr><th>Email</th><th>Status</th><th>Apps</th><th>Joined</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
+</section>
+
+<section id="not-signed-in">
+  <h2>Let in, not logged in yet<span class="count">${e(notSignedIn.total)}</span></h2>
+  ${
+    notSignedIn.entries.length
+      ? `<p class="muted">You let these people in (or invited them), but they haven't logged in yet. Their account is created the first time they do, and they move up to People.</p>
+  <div class="scroll"><table><thead><tr><th>Email</th><th>Joined the waitlist</th><th>Let in</th></tr></thead><tbody>${notSignedIn.entries
+    .map((w) => `<tr><td>${e(w.email)}</td><td class="nowrap">${e(fmtTime(w.createdAt))}</td><td class="nowrap">${e(fmtTime(w.approvedAt!))}</td></tr>`)
+    .join("")}</tbody></table></div>`
+      : `<p class="muted">Everyone you've let in has logged in.</p>`
+  }
 </section>`;
 }
 
@@ -122,11 +135,12 @@ async function waitlistBody(c: Context<AppEnv>): Promise<string> {
   const rows = waitlist.entries
     .map(
       (w) => `<tr><td>${e(w.email)}</td><td class="nowrap">${e(fmtTime(w.createdAt))}</td>
-  <td>${w.approvedAt ? `<span class="tag">let in ${e(fmtTime(w.approvedAt).slice(0, 10))}</span>` : `<button data-action="waitlist-approve" data-email="${e(w.email)}">Let in</button>`}</td></tr>`,
+  <td>${w.approvedAt ? `<span class="tag">let in ${e(fmtTime(w.approvedAt).slice(0, 10))}</span>${w.signedIn ? "" : ' <span class="muted">not logged in yet</span>'}` : `<button data-action="waitlist-approve" data-email="${e(w.email)}">Let in</button>`}</td></tr>`,
     )
     .join("");
   return `<section id="waitlist">
   <h2>Waitlist<span class="count">${e(waitlist.total)}</span></h2>
+  <p class="muted">${e(waitlist.entries.filter((w) => !w.approvedAt).length)} waiting, ${e(waitlist.entries.filter((w) => w.approvedAt).length)} let in.</p>
   ${
     waitlist.entries.length
       ? `<p class="muted">People who signed up on the home page or tried to log in, newest first${waitlist.total > waitlist.entries.length ? ` (latest ${waitlist.entries.length} shown)` : ""}. <strong>Let in</strong> lets them create apps and emails them.</p>

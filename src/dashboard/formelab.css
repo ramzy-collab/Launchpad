@@ -110,7 +110,7 @@ pre { margin: 0; white-space: pre-wrap; word-break: break-all; }
 .stat a, .stat:not(:has(a)) { display: flex; flex-direction: column; gap: 2px; padding: 14px 16px; }
 .stat a:hover { background: var(--fl-surface); border-radius: var(--fl-radius-md); }
 .stat-value { font-family: var(--fl-display); font-size: 2rem; font-weight: 800; letter-spacing: -.02em; color: var(--fl-ink); line-height: 1.1; }
-.stat-label { font-size: .875rem; color: var(--fl-ink-soft); }
+.stat-label { font-size: .875rem; color: var(--fl-ink-soft); word-break: normal; }
 .tabs { display: flex; gap: 6px; margin: 20px 0 0; flex-wrap: wrap; }
 .tabs a { color: var(--fl-ink-soft); text-decoration: none; font-weight: 600; padding: 8px 16px; border-radius: 999px; border: 1.5px solid var(--fl-line); background: var(--fl-surface); word-break: normal; }
 .tabs a:hover { color: var(--fl-ink); border-color: var(--fl-ink-soft); }

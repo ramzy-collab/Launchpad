@@ -106,3 +106,25 @@ describe("admin: users", () => {
     expect((await call("/_api/admin/users/x@example.com", { as: OWNER, method: "DELETE", csrf: false })).status).toBe(403);
   });
 });
+
+describe("admin: people let in who haven't logged in yet", () => {
+  it("counts and lists them until their first login", async () => {
+    const email = `letin-${uniq()}@example.com`;
+    const count = async () => {
+      const html = await (await call("https://admin.example.com/", { as: OWNER })).text();
+      return Number(html.match(/<span class="stat-value">(\d+)<\/span><span class="stat-label">Let in, not logged in yet</)![1]);
+    };
+    const before = await count();
+    expect((await call("/_api/admin/waitlist/approve", { as: OWNER, method: "POST", json: { email } })).status).toBe(200);
+    expect(await count()).toBe(before + 1);
+    const users = await (await call("https://admin.example.com/users", { as: OWNER })).text();
+    expect(users).toContain('id="not-signed-in"');
+    expect(users.slice(users.indexOf('id="not-signed-in"'))).toContain(email);
+    expect(await (await call("https://admin.example.com/waitlist", { as: OWNER })).text()).toContain("not logged in yet");
+
+    await call("/_api/admin/whoami", { as: email }); // their first login creates the account
+    expect(await count()).toBe(before);
+    const after = await (await call("https://admin.example.com/users", { as: OWNER })).text();
+    expect(after.slice(after.indexOf('id="not-signed-in"'))).not.toContain(email);
+  });
+});

@@ -11,6 +11,8 @@ export interface WaitlistEntry {
   email: string;
   createdAt: number;
   approvedAt: number | null;
+  /** Whether they have logged in at least once (and so have an account). */
+  signedIn: boolean;
 }
 
 /**
@@ -46,16 +48,22 @@ export async function joinWaitlist(req: Request, env: Env, waitUntil: (p: Promis
   }
 }
 
-export async function listWaitlist(env: Env, limit = 200): Promise<{ total: number; entries: WaitlistEntry[] }> {
+export async function listWaitlist(
+  env: Env,
+  limit = 200,
+  filter: "all" | "let-in-not-signed-in" = "all",
+): Promise<{ total: number; entries: WaitlistEntry[] }> {
+  const where = filter === "all" ? "" : "WHERE w.approved_at IS NOT NULL AND u.email IS NULL";
+  const from = "FROM waitlist w LEFT JOIN users u ON u.email = w.email";
   const [count, rows] = await Promise.all([
-    env.DB.prepare("SELECT COUNT(*) AS n FROM waitlist").first<{ n: number }>(),
-    env.DB.prepare("SELECT email, created_at, approved_at FROM waitlist ORDER BY created_at DESC LIMIT ?")
+    env.DB.prepare(`SELECT COUNT(*) AS n ${from} ${where}`).first<{ n: number }>(),
+    env.DB.prepare(`SELECT w.email, w.created_at, w.approved_at, u.email IS NOT NULL AS signed_in ${from} ${where} ORDER BY w.created_at DESC LIMIT ?`)
       .bind(limit)
-      .all<{ email: string; created_at: number; approved_at: number | null }>(),
+      .all<{ email: string; created_at: number; approved_at: number | null; signed_in: number }>(),
   ]);
   return {
     total: count?.n ?? 0,
-    entries: rows.results.map((r) => ({ email: r.email, createdAt: r.created_at, approvedAt: r.approved_at })),
+    entries: rows.results.map((r) => ({ email: r.email, createdAt: r.created_at, approvedAt: r.approved_at, signedIn: r.signed_in === 1 })),
   };
 }
 
