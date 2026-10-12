@@ -9,6 +9,7 @@ import type { AppEnv, Env } from "./env";
 import { now } from "./env";
 import { acceptedEmail, notifyAdminOfSignup, publicOrigin, sendEmail, waitlistJoinedEmail } from "./email";
 import { plainPage } from "./serve";
+import { aiOrigin, hostKind } from "./hosts";
 import {
   cookieHeader,
   createSession,
@@ -17,6 +18,9 @@ import {
   readCookie,
   redeemAppCode,
   SESSION_COOKIE,
+  ADMIN_SESSION_TTL_MS,
+  APEX_SESSION_TTL_MS,
+  APP_SESSION_TTL_MS,
 } from "./session";
 import { base32, normEmail, randomBytes } from "./util";
 
@@ -100,7 +104,7 @@ export async function loginCallback(c: Context<AppEnv>): Promise<Response> {
     if (added.meta.changes) {
       const origin = publicOrigin(env, c.req.url);
       c.executionCtx.waitUntil(sendEmail(env, waitlistJoinedEmail(origin, email)));
-      c.executionCtx.waitUntil(notifyAdminOfSignup(env, origin, email, "login"));
+      c.executionCtx.waitUntil(notifyAdminOfSignup(env, c.req.url, email, "login"));
     }
   }
 
@@ -121,16 +125,16 @@ export async function logout(c: Context<AppEnv>): Promise<Response> {
   if (origin && origin !== new URL(c.req.url).origin) return plainPage(403, "Not allowed", "Log out from Formelab itself.");
   const id = c.get("sessionId");
   if (id) await destroySession(c.env, id);
-  const headers = new Headers({ location: "/", "cache-control": "no-store" });
+  const headers = new Headers({ location: `${aiOrigin(c.env, c.req.url)}/`, "cache-control": "no-store" });
   headers.append("set-cookie", cookieHeader(SESSION_COOKIE, "", 0));
   return new Response(null, { status: 302, headers });
 }
 
 /**
- * GET /auth/app?return=https://<ns>.DOMAIN/path (apex, signed in): hands the session to a
- * namespace host with a single-use code.
+ * GET /auth/app?return=https://<host>/path (on DOMAIN, signed in): hands the sign-in to the web
+ * app, the admin panel or a published app's host with a single-use code.
  */
-export async function appHandoff(c: Context<AppEnv>, namespaceOf: (host: string) => string | null): Promise<Response> {
+export async function appHandoff(c: Context<AppEnv>): Promise<Response> {
   let target: URL;
   try {
     target = new URL(c.req.query("return") ?? "");
@@ -138,12 +142,14 @@ export async function appHandoff(c: Context<AppEnv>, namespaceOf: (host: string)
     return plainPage(400, "Bad request", "The address to return to is missing or not valid.");
   }
   const here = new URL(c.req.url);
-  if (target.protocol !== here.protocol || !namespaceOf(target.hostname)) {
+  const kind = hostKind(target.hostname, c.env);
+  if (target.protocol !== here.protocol || (kind !== "app" && kind !== "admin" && kind !== "ns")) {
     return plainPage(400, "Bad request", "Formelab only signs you in to its own apps.");
   }
   const sessionId = c.get("sessionId");
-  // Signed in through Cloudflare Access instead: Access covers the namespace hosts itself.
-  if (!sessionId) return c.redirect(target.toString(), 302);
+  // Signed in through Cloudflare Access instead: there is no session to hand over, and sending
+  // the visitor back would only bring them here again. Access has to cover that host itself.
+  if (!sessionId) return plainPage(403, "Sign-in required", `Log in to Formelab to open ${target.hostname}.`);
   const code = await mintAppCode(c.env, sessionId, target.hostname);
   const back = new URL("/_auth/callback", target.origin);
   back.searchParams.set("code", code);
@@ -154,7 +160,9 @@ export async function appHandoff(c: Context<AppEnv>, namespaceOf: (host: string)
 /** GET /_auth/callback?code=...&return=/path (namespace host) */
 export async function appCallback(c: Context<AppEnv>): Promise<Response> {
   const host = new URL(c.req.url).hostname;
-  const cookie = await redeemAppCode(c.env, c.req.query("code") ?? "", host);
+  const kind = hostKind(host, c.env);
+  const ttl = kind === "admin" ? ADMIN_SESSION_TTL_MS : kind === "app" ? APEX_SESSION_TTL_MS : APP_SESSION_TTL_MS;
+  const cookie = await redeemAppCode(c.env, c.req.query("code") ?? "", host, ttl);
   if (!cookie) return plainPage(400, "Sign-in expired", "This link was already used or took too long. Open the app again.");
   const returnTo = c.req.query("return") ?? "/";
   const headers = new Headers({ location: returnTo.startsWith("/") && !returnTo.startsWith("//") ? returnTo : "/", "cache-control": "no-store" });

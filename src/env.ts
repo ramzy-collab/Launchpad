@@ -8,7 +8,10 @@ export interface Env {
   OAUTH_KV: KVNamespace;
   /** Injected by OAuthProvider into requests it hands to the default handler. */
   OAUTH_PROVIDER?: import("@cloudflare/workers-oauth-provider").OAuthHelpers;
+  /** Home page, sign-in, waitlist, MCP connector, admin.DOMAIN (e.g. formelab.ai). */
   DOMAIN: string;
+  /** The web app and published apps, <ns>.APP_DOMAIN (e.g. formelab.app). See src/hosts.ts. */
+  APP_DOMAIN: string;
   ENVIRONMENT: string;
   DEV_USER?: string;
   SECRETS_KEK: string;

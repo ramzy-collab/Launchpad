@@ -12,6 +12,8 @@ import { base32, randomBytes, sha256Hex } from "./util";
 export const SESSION_COOKIE = "__Host-fl_session";
 export const APEX_SESSION_TTL_MS = 30 * 24 * 3600_000;
 export const APP_SESSION_TTL_MS = 12 * 3600_000;
+/** The admin panel's session is shorter than the dashboard's. */
+export const ADMIN_SESSION_TTL_MS = 8 * 3600_000;
 const CODE_TTL_MS = 60_000;
 
 export function readCookie(req: Request, name: string): string | null {
@@ -77,8 +79,13 @@ export async function sessionFromRequest(req: Request, env: Env): Promise<{ user
   return { user: userOf(row), sessionId: row.id };
 }
 
-/** Ends a session and every namespace-host session created from it. */
+/**
+ * Ends a sign-in everywhere: the session, the sign-in it was handed over from (if any), and every
+ * other session handed over from that sign-in.
+ */
 export async function destroySession(env: Env, sessionId: string): Promise<void> {
+  const row = await env.DB.prepare("SELECT parent_id FROM sessions WHERE id = ?").bind(sessionId).first<{ parent_id: string | null }>();
+  if (row?.parent_id) sessionId = row.parent_id;
   await env.DB.batch([
     env.DB.prepare("DELETE FROM sessions WHERE parent_id = ?").bind(sessionId),
     env.DB.prepare("DELETE FROM sessions WHERE id = ?").bind(sessionId),
@@ -95,7 +102,7 @@ export async function mintAppCode(env: Env, sessionId: string, host: string): Pr
 }
 
 /** Spends a code minted for this host. Returns the cookie for the new namespace-host session. */
-export async function redeemAppCode(env: Env, code: string, host: string): Promise<string | null> {
+export async function redeemAppCode(env: Env, code: string, host: string, maxTtlMs = APP_SESSION_TTL_MS): Promise<string | null> {
   if (!/^[a-z2-7]{20,100}$/.test(code)) return null;
   const row = await env.DB.prepare("DELETE FROM auth_codes WHERE id = ? RETURNING session_id, host, expires_at")
     .bind(await sha256Hex(code))
@@ -107,6 +114,6 @@ export async function redeemAppCode(env: Env, code: string, host: string): Promi
   if (!parent || parent.expires_at <= now()) return null;
   return createSession(env, parent.email, host, {
     parentId: row.session_id,
-    expiresAt: Math.min(parent.expires_at, now() + APP_SESSION_TTL_MS),
+    expiresAt: Math.min(parent.expires_at, now() + maxTtlMs),
   });
 }

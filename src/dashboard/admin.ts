@@ -2,7 +2,7 @@
 import type { Context } from "hono";
 import { isOwnerEmail } from "../auth";
 import type { AppEnv } from "../env";
-import { publicOrigin } from "../email";
+import { aiOrigin, appOrigin } from "../hosts";
 import { plainPage } from "../serve";
 import { adminStats, listUsers } from "../users";
 import { escapeHtml as e } from "../util";
@@ -23,9 +23,9 @@ ${head("Formelab admin", ["dashboard.js"])}
 <body class="dash admin">
 <div class="wrap">
 ${nav(
-  "/admin",
+  "/",
   `<span class="who">Signed in as <strong>${e(user.email)}</strong> <span class="tag admin">admin</span></span>
-    <a class="link" href="/app">My lab</a>
+    <a class="link" href="${e(appOrigin(c.env, c.req.url))}/">My lab</a>
     ${logoutControl(c)}`,
 )}
 <main>
@@ -34,7 +34,7 @@ ${nav(
   <h1>Run Formelab</h1>
   <p>People, the waitlist and admin access. Changes here affect everyone on Formelab.</p>
 </div>
-<nav class="tabs" aria-label="Admin sections"><a href="/admin"${current("overview")}>Overview</a><a href="/admin/users"${current("users")}>Users</a><a href="/admin/waitlist"${current("waitlist")}>Waitlist</a></nav>
+<nav class="tabs" aria-label="Admin sections"><a href="/"${current("overview")}>Overview</a><a href="/users"${current("users")}>Users</a><a href="/waitlist"${current("waitlist")}>Waitlist</a></nav>
 <div id="flash" role="status" hidden></div>
 ${body}
 </main>
@@ -60,12 +60,12 @@ async function overviewBody(c: Context<AppEnv>): Promise<string> {
   return `<section>
   <h2>At a glance</h2>
   <div class="stats">
-    ${stat("People", s.users, "/admin/users")}
-    ${stat("Waiting to get in", s.waiting, "/admin/waitlist")}
-    ${stat("Sign-ups this week", s.signupsThisWeek, "/admin/waitlist")}
+    ${stat("People", s.users, "/users")}
+    ${stat("Waiting to get in", s.waiting, "/waitlist")}
+    ${stat("Sign-ups this week", s.signupsThisWeek, "/waitlist")}
     ${stat("Apps", s.apps)}
     ${stat("Namespaces", s.namespaces)}
-    ${stat("Admins", s.admins, "/admin/users")}
+    ${stat("Admins", s.admins, "/users")}
   </div>
 </section>
 
@@ -76,8 +76,8 @@ async function overviewBody(c: Context<AppEnv>): Promise<string> {
       ? `<div class="scroll"><table><thead><tr><th>Email</th><th>Joined</th><th></th></tr></thead><tbody>${pending
           .map((w) => `<tr><td>${e(w.email)}</td><td class="nowrap">${e(fmtTime(w.createdAt))}</td><td><button data-action="waitlist-approve" data-email="${e(w.email)}">Let in</button></td></tr>`)
           .join("")}</tbody></table></div>
-  <p><a href="/admin/waitlist">See the whole waitlist →</a></p>`
-      : `<p class="muted">Nobody is waiting. Share the home page at <a href="/">${e(publicOrigin(c.env, c.req.url))}/</a>.</p>`
+  <p><a href="/waitlist">See the whole waitlist →</a></p>`
+      : `<p class="muted">Nobody is waiting. Share the home page at <a href="${e(aiOrigin(c.env, c.req.url))}/">${e(aiOrigin(c.env, c.req.url))}/</a>.</p>`
   }
 </section>
 
@@ -86,7 +86,7 @@ async function overviewBody(c: Context<AppEnv>): Promise<string> {
   <div class="scroll"><table><thead><tr><th>Email</th><th>Status</th><th>Joined</th></tr></thead><tbody>${users
     .map((u) => `<tr><td>${e(u.email)}</td><td>${statusTag(u)}</td><td class="nowrap">${e(fmtTime(u.createdAt))}</td></tr>`)
     .join("")}</tbody></table></div>
-  <p><a href="/admin/users">Manage people →</a></p>
+  <p><a href="/users">Manage people →</a></p>
 </section>`;
 }
 
@@ -132,7 +132,7 @@ async function waitlistBody(c: Context<AppEnv>): Promise<string> {
     waitlist.entries.length
       ? `<p class="muted">People who signed up on the home page or tried to log in, newest first${waitlist.total > waitlist.entries.length ? ` (latest ${waitlist.entries.length} shown)` : ""}. <strong>Let in</strong> lets them create apps and emails them.</p>
   <div class="scroll"><table><thead><tr><th>Email</th><th>Joined</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`
-      : `<p class="muted">No sign-ups yet. Share the home page at <a href="/">${e(publicOrigin(c.env, c.req.url))}/</a>.</p>`
+      : `<p class="muted">No sign-ups yet. Share the home page at <a href="${e(aiOrigin(c.env, c.req.url))}/">${e(aiOrigin(c.env, c.req.url))}/</a>.</p>`
   }
   <h3>Invite someone</h3>
   <p class="muted">They can create apps as soon as they log in, and get a "You're in" email.</p>

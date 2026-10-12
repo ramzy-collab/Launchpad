@@ -24,8 +24,8 @@ describe("admin: users", () => {
     // Their own namespace with an app, data and a secret.
     const pub = await publishHtml(gone, ns, "mine", PAGE("theirs"));
     const { site } = await pub.json<{ site: { id: string } }>();
-    await call(`https://${ns}.example.com/_api/kv/k`, { as: gone, mount: "/mine/", method: "PUT", body: '"v"' });
-    await call(`https://${ns}.example.com/_api/secrets/s`, { as: gone, mount: "/mine/", method: "PUT", json: { value: "shh" } });
+    await call(`https://${ns}.example.app/_api/kv/k`, { as: gone, mount: "/mine/", method: "PUT", body: '"v"' });
+    await call(`https://${ns}.example.app/_api/secrets/s`, { as: gone, mount: "/mine/", method: "PUT", json: { value: "shh" } });
     await call("/_api/admin/tokens", { as: gone, method: "POST", json: { name: "t" } });
     // An app of the owner's shared with them, and a namespace they edit.
     const ownerNs = uniq();
@@ -58,17 +58,21 @@ describe("admin: users", () => {
     expect(res.status).toBe(200);
     const html = await res.text();
     expect(html).toContain("Run Formelab");
-    expect(html).toContain('<a href="/admin" aria-current="page">Overview</a>');
+    expect(html).toContain('<a href="/" aria-current="page">Overview</a>');
     expect(html).toContain('class="stat-label">People<');
     expect(html).not.toMatch(/\son[a-z]+=/i);
-    for (const path of ["/admin", "/admin/users", "/admin/waitlist"]) {
-      expect((await call(path, { as: `nope-${uniq()}@example.com` })).status, path).toBe(404);
-      const out = await call(path);
+    for (const path of ["/", "/users", "/waitlist"]) {
+      const url = `https://admin.example.com${path}`;
+      expect((await call(url, { as: `nope-${uniq()}@example.com` })).status, path).toBe(404);
+      const out = await call(url);
       expect(out.status, path).toBe(302);
-      expect(out.headers.get("location"), path).toBe(`/login?return=${encodeURIComponent(path)}`);
+      expect(out.headers.get("location"), path).toBe(`https://example.com/auth/app?return=${encodeURIComponent(url)}`);
     }
+    // The admin API answers on the admin host too, for admins only.
+    expect((await call("https://admin.example.com/_api/admin/users", { as: OWNER })).status).toBe(200);
+    expect((await call("https://admin.example.com/_api/admin/users", { as: `nope-${uniq()}@example.com` })).status).toBe(403);
     // Non-admins don't get an Admin link in their own lab.
-    expect(await (await call("/app", { as: `plain-${uniq()}@example.com` })).text()).not.toContain('href="/admin"');
+    expect(await (await call("/app", { as: `plain-${uniq()}@example.com` })).text()).not.toContain("admin.example.com");
   });
 
   it("admins can make and remove other admins, but not the owner or themselves", async () => {

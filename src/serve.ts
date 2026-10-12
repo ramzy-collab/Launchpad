@@ -45,7 +45,7 @@ function candidatesFor(rel: string, spa: boolean): string[] {
 }
 
 /**
- * Serves an app file for `<ns>.DOMAIN`. Identity has already been established;
+ * Serves an app file for `<ns>.APP_DOMAIN`. Identity has already been established;
  * this does mount resolution, the visibility check, and file lookup.
  */
 export async function serveAppFile(req: Request, env: Env, ns: string, user: User): Promise<Response> {

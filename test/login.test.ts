@@ -46,6 +46,19 @@ async function signIn(email: string, returnTo = "/app"): Promise<{ cookie: strin
   return { cookie: cookieFrom(back, "__Host-fl_session")!, location: back.headers.get("location")! };
 }
 
+/** Trades a DOMAIN session for one on another Formelab host, the way a browser does on its first visit. */
+async function hostCookie(cookie: string, origin: string): Promise<string> {
+  const handoff = await w(`/auth/app?return=${encodeURIComponent(origin + "/")}`, { headers: { cookie } });
+  expect(handoff.status).toBe(302);
+  const cb = await w(handoff.headers.get("location")!);
+  return cookieFrom(cb, "__Host-fl_session")!;
+}
+
+const APP = "https://example.app";
+const ADMIN = "https://admin.example.com";
+/** A page of the web app on APP_DOMAIN, signed in as the holder of a DOMAIN session. */
+const onApp = async (path: string, cookie: string) => w(APP + path, { headers: { cookie: await hostCookie(cookie, APP) } });
+
 afterEach(() => {
   onOutbound(undefined);
   authenticated = [];
@@ -104,9 +117,26 @@ describe("login page and WorkOS redirect", () => {
   });
 
   it("sends people without a session to the login screen, then back", async () => {
-    const res = await w("/app/shared");
+    const res = await w(`${APP}/shared`);
     expect(res.status).toBe(302);
-    expect(res.headers.get("location")).toBe("/login?return=%2Fapp%2Fshared");
+    const handoff = res.headers.get("location")!;
+    expect(handoff).toBe(`https://example.com/auth/app?return=${encodeURIComponent(`${APP}/shared`)}`);
+    const login = await w(handoff);
+    expect(login.headers.get("location")).toBe(`/login?return=${encodeURIComponent(new URL(handoff).pathname + new URL(handoff).search)}`);
+  });
+
+  it("moves the old dashboard and admin addresses to their own hosts", async () => {
+    for (const [from, to] of [
+      ["/app", `${APP}/`],
+      ["/app/shared?x=1", `${APP}/shared?x=1`],
+      ["/app/connect", `${APP}/connect`],
+      ["/admin", `${ADMIN}/`],
+      ["/admin/waitlist", `${ADMIN}/waitlist`],
+    ]) {
+      const res = await w(from!);
+      expect(res.status, from).toBe(301);
+      expect(res.headers.get("location"), from).toBe(to);
+    }
   });
 });
 
@@ -114,12 +144,12 @@ describe("accounts and the waitlist", () => {
   it("new people land on the waitlist: they can sign in but not create", async () => {
     const email = `new-${uniq()}@example.com`;
     const { cookie } = await signIn(email);
-    const html = await (await w("/app", { headers: { cookie } })).text();
+    const html = await (await onApp("/", cookie)).text();
     expect(html).toContain("You're on the waitlist");
     expect(html).not.toContain('data-action="upload"');
-    const create = await w("/_api/admin/namespaces", {
+    const create = await w(`${APP}/_api/admin/namespaces`, {
       method: "POST",
-      headers: { cookie, "content-type": "application/json", "x-formelab-request": "1" },
+      headers: { cookie: await hostCookie(cookie, APP), "content-type": "application/json", "x-formelab-request": "1" },
       body: JSON.stringify({ label: uniq() }),
     });
     expect(create.status).toBe(403);
@@ -133,7 +163,7 @@ describe("accounts and the waitlist", () => {
     const { cookie } = await signIn(email);
     const approve = await call("/_api/admin/waitlist/approve", { as: OWNER, method: "POST", json: { email } });
     expect(approve.status).toBe(200);
-    const html = await (await w("/app", { headers: { cookie } })).text();
+    const html = await (await onApp("/", cookie)).text();
     expect(html).toContain('data-action="upload"');
   });
 
@@ -142,13 +172,26 @@ describe("accounts and the waitlist", () => {
     expect((await call("/_api/admin/waitlist/approve", { as: "someone@example.com", method: "POST", json: { email } })).status).toBe(403);
     expect((await call("/_api/admin/waitlist/approve", { as: OWNER, method: "POST", json: { email } })).status).toBe(200);
     const { cookie } = await signIn(email);
-    expect(await (await w("/app", { headers: { cookie } })).text()).not.toContain("You're on the waitlist");
+    expect(await (await onApp("/", cookie)).text()).not.toContain("You're on the waitlist");
   });
 
   it("the owner is active on first sign-in", async () => {
     const { cookie } = await signIn(OWNER);
-    expect(await (await w("/app", { headers: { cookie } })).text()).toContain('<a class="link" href="/admin">Admin</a>');
-    expect((await w("/admin", { headers: { cookie } })).status).toBe(200);
+    expect(await (await onApp("/", cookie)).text()).toContain(`<a class="link" href="${ADMIN}/">Admin</a>`);
+    expect((await w(`${ADMIN}/`, { headers: { cookie: await hostCookie(cookie, ADMIN) } })).status).toBe(200);
+  });
+
+  it("admin sessions are shorter than web app sessions", async () => {
+    const { cookie } = await signIn(OWNER);
+    const expiry = async (origin: string) => {
+      const c = await hostCookie(cookie, origin);
+      const token = decodeURIComponent(c.split("=")[1]!);
+      const rows = await env.DB.prepare("SELECT expires_at, created_at FROM sessions WHERE host = ? ORDER BY created_at DESC LIMIT 1").bind(new URL(origin).hostname).first<{ expires_at: number; created_at: number }>();
+      expect(token).toBeTruthy();
+      return rows!.expires_at - rows!.created_at;
+    };
+    expect(await expiry(ADMIN)).toBeLessThanOrEqual(8 * 3600_000);
+    expect(await expiry(APP)).toBeGreaterThan(24 * 3600_000);
   });
 
   it("logging out ends the session", async () => {
@@ -156,13 +199,25 @@ describe("accounts and the waitlist", () => {
     const res = await w("/auth/logout", { method: "POST", headers: { cookie, origin: "https://example.com" } });
     expect(res.status).toBe(302);
     expect(res.headers.getSetCookie().join("\n")).toContain("Max-Age=0");
-    expect((await w("/app", { headers: { cookie } })).status).toBe(302);
+    expect((await w("/auth/app?return=" + encodeURIComponent(APP + "/"), { headers: { cookie } })).status).toBe(302);
+    expect((await w("/auth/app?return=" + encodeURIComponent(APP + "/"), { headers: { cookie } })).headers.get("location")).toMatch(/^\/login/);
+  });
+
+  it("logging out on the web app ends the sign-in everywhere", async () => {
+    const { cookie } = await signIn(`out2-${uniq()}@example.com`);
+    const appCookie = await hostCookie(cookie, APP);
+    expect((await w(`${APP}/`, { headers: { cookie: appCookie } })).status).toBe(200);
+    const res = await w(`${APP}/auth/logout`, { method: "POST", headers: { cookie: appCookie, origin: APP } });
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toBe("https://example.com/");
+    expect((await w(`${APP}/`, { headers: { cookie: appCookie } })).status).toBe(302);
+    expect((await w("/auth/app?return=" + encodeURIComponent(APP + "/"), { headers: { cookie } })).headers.get("location")).toMatch(/^\/login/);
   });
 
   it("a session cookie only works on the host it was made for", async () => {
     const { cookie } = await signIn(`host-${uniq()}@example.com`);
     const ns = uniq();
-    const res = await w(`https://${ns}.example.com/`, { headers: { cookie } });
+    const res = await w(`https://${ns}.example.app/`, { headers: { cookie } });
     expect(res.status).toBe(302);
     expect(res.headers.get("location")).toContain("https://example.com/auth/app?return=");
   });
@@ -176,13 +231,13 @@ describe("my apps and shared with me", () => {
     await publishHtml(OWNER, ns, "shared", PAGE("s"), { title: "Shared app", allowed_emails: friend });
 
     const { cookie } = await signIn(friend);
-    const shared = await (await w("/app/shared", { headers: { cookie } })).text();
+    const shared = await (await onApp("/shared", cookie)).text();
     expect(shared).toContain("Shared app");
     expect(shared).not.toContain("Private app");
     expect(shared).toContain("Can open");
 
     const stranger = await signIn(`stranger-${uniq()}@example.com`);
-    expect(await (await w("/app/shared", { headers: { cookie: stranger.cookie } })).text()).not.toContain("Shared app");
+    expect(await (await onApp("/shared", stranger.cookie)).text()).not.toContain("Shared app");
 
     // The owner sees both under My apps, not under Shared with me.
     const mine = await (await call("/app", { as: OWNER })).text();
@@ -200,14 +255,14 @@ describe("namespace hosts get their own session", () => {
     const { cookie } = await signIn(friend);
 
     // 1. The app host sends the visitor to the apex.
-    const first = await w(`https://${ns}.example.com/app/?x=1`);
+    const first = await w(`https://${ns}.example.app/app/?x=1`);
     const handoffUrl = first.headers.get("location")!;
-    expect(handoffUrl).toBe(`https://example.com/auth/app?return=${encodeURIComponent(`https://${ns}.example.com/app/?x=1`)}`);
+    expect(handoffUrl).toBe(`https://example.com/auth/app?return=${encodeURIComponent(`https://${ns}.example.app/app/?x=1`)}`);
 
     // 2. The apex, signed in, sends back a code.
     const handoff = await w(handoffUrl, { headers: { cookie } });
     const back = new URL(handoff.headers.get("location")!);
-    expect(back.origin + back.pathname).toBe(`https://${ns}.example.com/_auth/callback`);
+    expect(back.origin + back.pathname).toBe(`https://${ns}.example.app/_auth/callback`);
     expect(back.searchParams.get("return")).toBe("/app/?x=1");
 
     // 3. The app host trades the code for its own cookie.
@@ -216,33 +271,33 @@ describe("namespace hosts get their own session", () => {
     const appCookie = cookieFrom(cb, "__Host-fl_session")!;
     expect(appCookie).toBeTruthy();
     expect(appCookie).not.toBe(cookie);
-    const page = await w(`https://${ns}.example.com/app/`, { headers: { cookie: appCookie } });
+    const page = await w(`https://${ns}.example.app/app/`, { headers: { cookie: appCookie } });
     expect(await page.text()).toContain("hello friend");
 
     // The code works once, and only on its own host.
     expect((await w(back.toString())).status).toBe(400);
-    expect((await w(`https://other${ns}.example.com/_auth/callback?code=${back.searchParams.get("code")}`)).status).toBe(400);
+    expect((await w(`https://other${ns}.example.app/_auth/callback?code=${back.searchParams.get("code")}`)).status).toBe(400);
 
     // The app-host cookie isn't a dashboard login, and logging out ends both.
-    expect((await w("/app", { headers: { cookie: appCookie } })).status).toBe(302);
+    expect((await w(`${APP}/`, { headers: { cookie: appCookie } })).status).toBe(302);
     await w("/auth/logout", { method: "POST", headers: { cookie } });
-    expect((await w(`https://${ns}.example.com/app/`, { headers: { cookie: appCookie } })).status).toBe(302);
+    expect((await w(`https://${ns}.example.app/app/`, { headers: { cookie: appCookie } })).status).toBe(302);
   });
 
   it("people who weren't shared the app still can't open it", async () => {
     const ns = uniq();
     await publishHtml(OWNER, ns, "", PAGE("secret stuff"));
     const { cookie } = await signIn(`nope-${uniq()}@example.com`);
-    const handoff = await w(`/auth/app?return=${encodeURIComponent(`https://${ns}.example.com/`)}`, { headers: { cookie } });
+    const handoff = await w(`/auth/app?return=${encodeURIComponent(`https://${ns}.example.app/`)}`, { headers: { cookie } });
     const cb = await w(handoff.headers.get("location")!);
-    const page = await w(`https://${ns}.example.com/`, { headers: { cookie: cookieFrom(cb, "__Host-fl_session")! } });
+    const page = await w(`https://${ns}.example.app/`, { headers: { cookie: cookieFrom(cb, "__Host-fl_session")! } });
     expect(page.status).toBe(403);
     expect(await page.text()).not.toContain("secret stuff");
   });
 
-  it("only hands sessions to Formelab's own namespace hosts", async () => {
+  it("only hands sessions to Formelab's own hosts", async () => {
     const { cookie } = await signIn(`evil-${uniq()}@example.com`);
-    for (const target of ["https://evil.test/", "https://example.com/app", "http://x.example.com/", "not a url"]) {
+    for (const target of ["https://evil.test/", "https://example.com/app", "http://x.example.app/", "https://x.example.com/", "not a url"]) {
       expect((await w(`/auth/app?return=${encodeURIComponent(target)}`, { headers: { cookie } })).status, target).toBe(400);
     }
   });

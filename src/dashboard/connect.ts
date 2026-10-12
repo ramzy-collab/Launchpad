@@ -1,13 +1,13 @@
 // "Connect your AI": how to add Formelab to Claude, ChatGPT and Claude Code.
 import type { Context } from "hono";
 import type { AppEnv } from "../env";
-import { isDev } from "../env";
 import { escapeHtml as e } from "../util";
+import { aiOrigin } from "../hosts";
 import { shell } from "./page";
 
 export function connectPage(c: Context<AppEnv>): Response {
   const user = c.get("user");
-  const origin = isDev(c.env) ? new URL(c.req.url).origin : `https://${c.env.DOMAIN}`;
+  const origin = aiOrigin(c.env, c.req.url);
   const url = `${origin}/mcp`;
   const geminiConfig = JSON.stringify({ mcpServers: { formelab: { httpUrl: url } } }, null, 2);
   const cmd = `claude mcp add --transport http formelab ${url} \\\n  --header "Authorization: Bearer fl_..."`;
@@ -88,7 +88,7 @@ export function connectPage(c: Context<AppEnv>): Response {
 <section class="howto" id="claude-code">
   <h2>Claude Code</h2>
   <ol>
-    <li>On <a href="/app">My apps</a>, under <strong>Deploy tokens</strong>, create a token (30 days is fine for personal use) and copy it.</li>
+    <li>On <a href="/">My apps</a>, under <strong>Deploy tokens</strong>, create a token (30 days is fine for personal use) and copy it.</li>
     <li>Run this in your terminal, with your token in place of <code>fl_...</code>:</li>
   </ol>
   <div class="copyrow"><pre id="mcp-cmd">${e(cmd)}</pre><button type="button" data-copy="#mcp-cmd">Copy</button></div>
@@ -101,8 +101,8 @@ export function connectPage(c: Context<AppEnv>): Response {
     <li><strong>"Your account is still on the waitlist":</strong> your AI can connect but can't create apps until you're let in.</li>
     <li><strong>It asks you to sign in again:</strong> connections last up to 30 days, then the AI app asks you to reconnect.</li>
     <li><strong>Wrong account:</strong> the Formelab window shows who you're signed in as. Log out of Formelab and connect again with the right one.</li>
-    <li><strong>To disconnect:</strong> go to <a href="/app">My apps → Connected apps</a> and click <strong>Disconnect</strong>.</li>
-    <li><strong>Who can see what your AI publishes:</strong> new apps are private to you. Share them from <a href="/app">My apps</a>, under each app's <strong>Settings</strong>.</li>
+    <li><strong>To disconnect:</strong> go to <a href="/">My apps → Connected apps</a> and click <strong>Disconnect</strong>.</li>
+    <li><strong>Who can see what your AI publishes:</strong> new apps are private to you. Share them from <a href="/">My apps</a>, under each app's <strong>Settings</strong>.</li>
   </ul>
 </section>`;
   return shell(c, user, "connect", body);

@@ -17,6 +17,7 @@ export default defineConfig(async () => {
           bindings: {
             TEST_MIGRATIONS: migrations,
             DOMAIN: "example.com",
+            APP_DOMAIN: "example.app",
             ENVIRONMENT: "test",
             SECRETS_KEK: TEST_KEK,
             ACCESS_TEAM_DOMAIN: "team.cloudflareaccess.com",

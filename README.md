@@ -4,7 +4,7 @@ A small, personal app host on Cloudflare. You (and a few people you invite) publ
 web apps and get a live URL for each:
 
 ```
-https://<namespace>.<DOMAIN>/<mount-path>/
+https://<namespace>.<APP_DOMAIN>/<mount-path>/
 ```
 
 Apps are plain HTML/CSS/JS (a single `.html` file or a `.zip` with `index.html` at its root). They
@@ -12,8 +12,20 @@ get identity, per-app key/value storage, and secrets with a server-side proxy th
 browser SDK (`window.formelab`). Claude Code publishes apps through Formelab's MCP server; there
 is also a web dashboard.
 
-- One Worker (`src/index.ts`) serves the public home page with a waitlist (`/`), the login screen
-  (`/login`), the dashboard (`/app`), APIs, MCP server, SDK and app files.
+- One Worker (`src/index.ts`) serves every host (see [`src/hosts.ts`](src/hosts.ts)):
+
+  | Host | What it serves |
+  | --- | --- |
+  | `DOMAIN` (formelab.ai) | Home page with the waitlist, `/login`, sign-in, the MCP connector (`/mcp`), OAuth, deploy API |
+  | `admin.DOMAIN` | The admin panel (8-hour sessions) |
+  | `APP_DOMAIN` (formelab.app) | The web app: My lab, Shared with me, Connect your AI |
+  | `<namespace>.APP_DOMAIN` | Published apps |
+  | `<namespace>.DOMAIN` | Old app addresses; redirected (301) to `<namespace>.APP_DOMAIN` |
+
+  Apps sit on their own registrable domain, the way GitHub serves pages from `github.io`, so
+  browsers never treat an app as "same site" with Formelab's sign-in. You sign in once on
+  `DOMAIN`; the web app, the admin panel and each app host get their own session from it, and
+  logging out anywhere ends all of them.
 - D1 holds structured data; R2 holds app files; Cloudflare Access handles all sign-in.
 - Agent build guide: [`src/guide.md`](src/guide.md), served at `/_platform/guide.md`.
 - Design choices and deviations from the spec: [`DECISIONS.md`](DECISIONS.md).
@@ -24,10 +36,12 @@ is also a web dashboard.
 
 Do these once. Replace `example.com` everywhere with your domain.
 
-### 1.1 A dedicated domain on Cloudflare DNS
+### 1.1 Two domains on Cloudflare DNS
 
-Use a domain just for Formelab (for example `myformelab.dev`) so namespaces sit **one level
-down**: `ramzy.myformelab.dev`.
+Formelab uses two domains: `DOMAIN` for the home page, sign-in and admin, and `APP_DOMAIN` for the
+web app and published apps, with namespaces **one level down**: `ramzy.myformelab.app`. Add both
+to Cloudflare, and in each zone create two **proxied** DNS records (the Worker answers them, so the
+address is a placeholder): `AAAA @ 100::` and `AAAA * 100::`.
 
 > **Important:** Cloudflare's free Universal SSL certificate covers `DOMAIN` and `*.DOMAIN`, but
 > **not** `*.sub.DOMAIN`. If you nest Formelab under a subdomain (`ramzy.apps.example.com`) you
@@ -60,9 +74,11 @@ npx wrangler d1 create launchpad      # copy the database_id it prints
 Edit `wrangler.toml`:
 
 - Set `database_id` (top-level `[[d1_databases]]`) to the id printed above.
-- Replace `example.com` in `routes` and in `[vars] DOMAIN` with your domain.
+- Replace `formelab.ai` in `routes` and `[vars] DOMAIN`, and `formelab.app` in `routes` and
+  `[vars] APP_DOMAIN`, with your two domains.
 
-The routes `DOMAIN/*` and `*.DOMAIN/*` are created on deploy from `wrangler.toml`.
+The routes `DOMAIN/*`, `*.DOMAIN/*`, `APP_DOMAIN/*` and `*.APP_DOMAIN/*` are created on deploy
+from `wrangler.toml`.
 
 ### 1.5 Cloudflare Zero Trust (free for up to 50 users)
 
@@ -216,12 +232,7 @@ write a new forward migration if you need to undo a schema change.
 
 ### 2.5 Before a wider launch
 
-- [ ] **Move user apps to their own domain** (for example `formelab.app`, the way GitHub serves
-  pages from `github.io`). Today apps live on `*.example.com`, next to the dashboard. Session
-  cookies are host-only and `__Host-` prefixed, so an app can't read or overwrite the dashboard
-  login, but a separate registrable domain also keeps apps out of the dashboard's "same site" for
-  browsers. Plan for: buying the domain, adding it to Cloudflare with a wildcard DNS record and a
-  Worker route, a `APPS_DOMAIN` setting, and redirects from the old app URLs.
+- [x] Move user apps to their own domain (`APP_DOMAIN`, see the top of this file).
 - [ ] Use your own Google OAuth client in WorkOS (1.7) so the consent screen shows Formelab.
 - [ ] Set up notification emails (1.8) so people hear when they're let in and when apps are
   shared with them.
@@ -235,12 +246,13 @@ npm run db:migrate:local
 npm run dev                             # wrangler dev --env dev on http://localhost:8787
 ```
 
-- `[env.dev]` in `wrangler.toml` sets `ENVIRONMENT=dev` and `DOMAIN=localhost`, and has no routes,
-  so wrangler keeps the real Host header.
+- `[env.dev]` in `wrangler.toml` sets `ENVIRONMENT=dev`, `DOMAIN=localhost` and
+  `APP_DOMAIN=app.localhost`, and has no routes, so wrangler keeps the real Host header.
 - In dev, `DEV_USER` from `.dev.vars` is the signed-in user (no Access). This bypass only works when
   `ENVIRONMENT` is exactly `dev`; production uses `ENVIRONMENT=production`.
-- Home page: <http://localhost:8787/>. Login: <http://localhost:8787/login>. Dashboard:
-  <http://localhost:8787/app>. Apps: `http://<ns>.localhost:8787/<path>/` (browsers resolve
+- Home page: <http://localhost:8787/>. Login: <http://localhost:8787/login>. Web app:
+  <http://app.localhost:8787/>. Admin: <http://admin.localhost:8787/>. Apps:
+  `http://<ns>.app.localhost:8787/<path>/` (browsers resolve
   `*.localhost` to your machine; for curl use `--resolve` or rely on curl's own `*.localhost` handling).
 - In dev the secret proxy also allows `http://` URLs (still never private addresses).
 
@@ -340,7 +352,7 @@ The script never prints the token (it passes it to curl on stdin). For local dev
 
 All errors are JSON: `{ "error": { "code", "message", "hint" } }`.
 
-**Management API**: `https://DOMAIN/_api/admin/*` (Access session; writes need the
+**Management API**: `https://APP_DOMAIN/_api/admin/*` (signed-in session; writes need the
 `x-formelab-request: 1` header, which the dashboard sends) and `https://DOMAIN/_api/deploy/*`
 (`Authorization: Bearer fl_...`; same endpoints except `/tokens`).
 
@@ -358,7 +370,7 @@ All errors are JSON: `{ "error": { "code", "message", "hint" } }`.
 | `POST /tokens` `{ name, ttlHours }` | `/_api/admin` only: returns the token once (1–720 hours, default 24) |
 | `GET /tokens`, `DELETE /tokens/:id` | `/_api/admin` only: list / revoke your tokens |
 
-**Runtime API**: `https://<ns>.DOMAIN/_api/*`, used by the SDK (see the guide):
+**Runtime API**: `https://<ns>.APP_DOMAIN/_api/*`, used by the SDK (see the guide):
 `GET /me`, `GET /kv?prefix=`, `GET|PUT|DELETE /kv/:key`, `GET /secrets`,
 `PUT|DELETE /secrets/:name`, `POST /secrets/:name/proxy`.
 

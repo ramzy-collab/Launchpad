@@ -42,7 +42,7 @@ export async function joinWaitlist(req: Request, env: Env, waitUntil: (p: Promis
   if (res.meta.changes) {
     const origin = publicOrigin(env, req.url);
     waitUntil(sendEmail(env, waitlistJoinedEmail(origin, email)));
-    waitUntil(notifyAdminOfSignup(env, origin, email, "form"));
+    waitUntil(notifyAdminOfSignup(env, req.url, email, "form"));
   }
 }
 

@@ -257,7 +257,8 @@ export async function proxy(env: Env, site: SiteRow, viewer: User, name: string,
   const values = placeholderValues(await loadSecret(env, site.id, name));
 
   const url = substitute(req.url, values, "url");
-  const reason = checkProxyUrl(url, { domain: env.DOMAIN, allowHttp: isDev(env) });
+  const reason =
+    checkProxyUrl(url, { domain: env.DOMAIN, allowHttp: isDev(env) }) ?? checkProxyUrl(url, { domain: env.APP_DOMAIN, allowHttp: isDev(env) });
   if (reason) throw err(400, "url_blocked", `That URL is not allowed: ${reason}.`, "The proxy only calls public https APIs.");
 
   const headers = new Headers();

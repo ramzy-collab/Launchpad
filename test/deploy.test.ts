@@ -18,7 +18,7 @@ describe("deploy API (bearer token)", () => {
     const pub = await call("/_api/deploy/sites", { token: t, method: "POST", body: fd });
     expect(pub.status).toBe(201);
     const { url, site } = await pub.json<{ url: string; site: { id: string; ownerEmail: string } }>();
-    expect(url).toBe(`https://${ns}.example.com/d/`);
+    expect(url).toBe(`https://${ns}.example.app/d/`);
     expect(site.ownerEmail).toBe(OWNER);
 
     const list = await (await call(`/_api/deploy/sites?namespace=${ns}`, { token: t })).json<{ id: string }[]>();

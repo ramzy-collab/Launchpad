@@ -2,9 +2,9 @@ import type { Context } from "hono";
 import { recentActivity } from "../audit";
 import { listTokens } from "../auth";
 import type { AppEnv, User } from "../env";
-import { isDev } from "../env";
 import { listNamespaces, listOwnSites, listSharedSites, type SiteView } from "../sites";
 import { escapeHtml as e } from "../util";
+import { adminOrigin, aiOrigin } from "../hosts";
 import { ctxOf } from "../api";
 import { listConnections } from "../oauth";
 import { head, htmlResponse, nav } from "./layout";
@@ -37,9 +37,9 @@ ${head("Formelab", ["dashboard.js"])}
 <body class="dash">
 <div class="wrap">
 ${nav(
-  "/app",
+  "/",
   `<span class="who">Signed in as <strong>${e(user.email)}</strong></span>
-    ${user.isAdmin ? '<a class="link" href="/admin">Admin</a>' : ""}
+    ${user.isAdmin ? `<a class="link" href="${e(adminOrigin(c.env, c.req.url))}/">Admin</a>` : ""}
     ${logout}`,
 )}
 <main>
@@ -47,7 +47,7 @@ ${nav(
   <h1>My lab</h1>
   <p>${user.active ? "Publish apps, choose who can open them, and connect your AI tools." : "Apps people share with you show up here."}</p>
 </div>
-<nav class="tabs" aria-label="Sections"><a href="/app"${current("mine")}>My apps</a><a href="/app/shared"${current("shared")}>Shared with me</a><a href="/app/connect"${current("connect")}>Connect your AI</a></nav>
+<nav class="tabs" aria-label="Sections"><a href="/"${current("mine")}>My apps</a><a href="/shared"${current("shared")}>Shared with me</a><a href="/connect"${current("connect")}>Connect your AI</a></nav>
 <div id="flash" role="status" hidden></div>
 ${body}
 </main>
@@ -59,7 +59,7 @@ ${body}
 const waitlistedNotice = `<section class="notice">
   <h2>You're on the waitlist</h2>
   <p>Thanks for signing up. We're letting people in a few at a time, and we'll email you when you can create your own apps.</p>
-  <p>Until then, anything someone shares with you appears under <a href="/app/shared">Shared with me</a>.</p>
+  <p>Until then, anything someone shares with you appears under <a href="/shared">Shared with me</a>.</p>
 </section>`;
 
 /** "Shared with me": apps other people own that they shared with this person by name. */
@@ -99,7 +99,7 @@ export async function dashboardPage(c: Context<AppEnv>): Promise<Response> {
     recentActivity(c.env, user.email, 50),
     listConnections(c.env, user.email).catch(() => []),
   ]);
-  const origin = isDev(c.env) ? new URL(c.req.url).origin : `https://${c.env.DOMAIN}`;
+  const origin = aiOrigin(c.env, c.req.url);
   const t = Date.now();
 
   const nsRows = namespaces
@@ -237,7 +237,7 @@ export async function dashboardPage(c: Context<AppEnv>): Promise<Response> {
 <section>
   <h2>Connect an AI app</h2>
   <p>Build and publish apps by asking Claude, ChatGPT or Gemini. Your connector URL is <code>${e(origin)}/mcp</code>.</p>
-  <p><a href="/app/connect">Step-by-step instructions for Claude, ChatGPT, Gemini and Claude Code →</a></p>
+  <p><a href="/connect">Step-by-step instructions for Claude, ChatGPT, Gemini and Claude Code →</a></p>
 </section>
 
 <section>

@@ -49,7 +49,7 @@ describe("MCP server", () => {
 
     const pub = await tool(t, "publish", { html: PAGE("<h1>Hello, world</h1>"), namespace: ns, mount_path: "hello", title: "Hello" });
     expect(pub.isError).toBe(false);
-    expect(pub.data.url).toBe(`https://${ns}.example.com/hello/`);
+    expect(pub.data.url).toBe(`https://${ns}.example.app/hello/`);
     const page = await call(pub.data.url, { as: OWNER });
     expect(await page.text()).toContain("Hello, world");
 

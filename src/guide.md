@@ -9,7 +9,7 @@ Formelab hosts small, self-contained web apps: plain HTML, CSS and JavaScript, w
 and no backend of your own. Each app gets a URL:
 
 ```
-https://<namespace>.<DOMAIN>/<mount-path>/
+https://<namespace>.<APP_DOMAIN>/<mount-path>/
 ```
 
 - A **namespace** is a subdomain, such as `ramzy`. Its owner and editors can publish into it.

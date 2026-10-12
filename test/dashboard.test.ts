@@ -18,7 +18,7 @@ describe("dashboard", () => {
     expect(ASSET_VERSION).toMatch(/^[0-9a-f]{10}$/);
     expect(html).not.toMatch(/<script>(?!<\/script>)/);
     expect(html).not.toMatch(/\son[a-z]+=/i); // no inline event handlers
-    expect(html).toContain('href="/app/connect"');
+    expect(html).toContain('href="/connect"');
     expect((await call("/_assets/dashboard.js")).headers.get("content-type")).toContain("javascript");
     expect((await call("/_assets/formelab.css")).headers.get("content-type")).toContain("text/css");
   });
@@ -42,8 +42,8 @@ describe("dashboard", () => {
     await publishHtml(OWNER, ns, "listed", PAGE("x"), { title: "Listed app" });
     await call("/_api/admin/tokens", { as: OWNER, method: "POST", json: { name: "laptop-token" } });
     const html = await (await call("/app", { as: OWNER })).text();
-    expect(html).toContain(`https://${ns}.example.com/listed/`);
-    expect(html).toContain(`<a href="https://${ns}.example.com/listed/" target="_blank" rel="noopener">`); // apps open in a new tab
+    expect(html).toContain(`https://${ns}.example.app/listed/`);
+    expect(html).toContain(`<a href="https://${ns}.example.app/listed/" target="_blank" rel="noopener">`); // apps open in a new tab
     expect(html).toContain("Listed app");
     expect(html).toContain(`>${ns}</a>`);
     expect(html).toContain("laptop-token");
@@ -62,7 +62,7 @@ describe("dashboard", () => {
     const res = await call("/app/connect", { as: OWNER });
     expect(res.status).toBe(200);
     const html = await res.text();
-    expect(html).toContain('<a href="/app/connect" aria-current="page">Connect your AI</a>');
+    expect(html).toContain('<a href="/connect" aria-current="page">Connect your AI</a>');
     expect(html).toContain('<pre id="mcp-url">https://example.com/mcp</pre>');
     for (const id of ['id="claude"', 'id="chatgpt"', 'id="gemini"', 'id="claude-code"']) expect(html).toContain(id);
     expect(html).toContain("&quot;httpUrl&quot;: &quot;https://example.com/mcp&quot;"); // Gemini CLI settings
@@ -72,7 +72,7 @@ describe("dashboard", () => {
   });
 
   it("serves the guide on the apex and namespace hosts", async () => {
-    for (const url of ["https://example.com/_platform/guide.md", `https://${uniq()}.example.com/_platform/guide.md`]) {
+    for (const url of ["https://example.com/_platform/guide.md", `https://${uniq()}.example.app/_platform/guide.md`]) {
       const res = await call(url, { as: OWNER });
       expect(res.status).toBe(200);
       expect(res.headers.get("content-type")).toContain("text/markdown");
@@ -81,7 +81,7 @@ describe("dashboard", () => {
   });
 
   it("serves the SDK under 5 KB, defining formelab and archie", async () => {
-    const res = await call(`https://${uniq()}.example.com/_platform/sdk.js`, { as: OWNER });
+    const res = await call(`https://${uniq()}.example.app/_platform/sdk.js`, { as: OWNER });
     const js = await res.text();
     expect(res.headers.get("content-type")).toContain("javascript");
     expect(new TextEncoder().encode(js).length).toBeLessThan(5 * 1024);

@@ -1,6 +1,6 @@
 ---
 name: formelab-app
-description: Build and publish a small web app to the user's Formelab host (https://<namespace>.<DOMAIN>/<path>/). Use when the user asks to make, ship, host, publish or update a web app, dashboard, tool, tracker or page "on Formelab" (or "on Archie"), or wants a quick internal app with sign-in, shared storage or an API key kept server-side.
+description: Build and publish a small web app to the user's Formelab host (https://<namespace>.<APP_DOMAIN>/<path>/). Use when the user asks to make, ship, host, publish or update a web app, dashboard, tool, tracker or page "on Formelab" (or "on Archie"), or wants a quick internal app with sign-in, shared storage or an API key kept server-side.
 ---
 
 # Formelab app builder

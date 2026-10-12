@@ -135,7 +135,7 @@ describe("OAuth for MCP (Claude chat connector)", () => {
   });
 
   it("does not expose OAuth endpoints on namespace hosts", async () => {
-    const res = await call(`https://${uniq()}.example.com/.well-known/oauth-authorization-server`, { as: OWNER });
+    const res = await call(`https://${uniq()}.example.app/.well-known/oauth-authorization-server`, { as: OWNER });
     expect(res.status).toBe(404);
   });
 

@@ -4,6 +4,9 @@ import { exportJWK, generateKeyPair, SignJWT, type CryptoKey as JoseKey } from "
 import { zipSync, strToU8 } from "fflate";
 
 export const DOMAIN = "example.com";
+export const APP_DOMAIN = "example.app";
+export const APP = `https://${APP_DOMAIN}`;
+export const ADMIN = `https://admin.${DOMAIN}`;
 export const TEAM = "team.cloudflareaccess.com";
 export const AUD = "test-aud";
 export const OWNER = "owner@example.com";
@@ -33,7 +36,7 @@ export function installFetchMock() {
     if (url.hostname === TEAM && url.pathname === "/cdn-cgi/access/certs") {
       return Response.json((await accessKeys()).jwks);
     }
-    if (url.hostname === DOMAIN || url.hostname.endsWith("." + DOMAIN) || url.hostname === "other.test") {
+    if (url.hostname === DOMAIN || url.hostname.endsWith("." + DOMAIN) || url.hostname === APP_DOMAIN || url.hostname.endsWith("." + APP_DOMAIN) || url.hostname === "other.test") {
       return realFetch(input as RequestInfo, init);
     }
     if (g.__lpOutbound) return g.__lpOutbound(req);
@@ -78,9 +81,17 @@ export async function call(url: string, opts: CallOpts = {}): Promise<Response> 
     headers.set("content-type", "application/json");
     body = JSON.stringify(opts.json);
   }
-  const full = url.startsWith("http") ? url : `https://${DOMAIN}${url}`;
-  if (opts.csrf !== false && full.startsWith(`https://${DOMAIN}/_api/admin`) && opts.method && opts.method !== "GET") headers.set("x-formelab-request", "1");
+  const full = url.startsWith("http") ? url : resolvePath(url);
+  if (opts.csrf !== false && new URL(full).pathname.startsWith("/_api/admin") && opts.method && opts.method !== "GET") headers.set("x-formelab-request", "1");
   return exports.default.fetch(new Request(full, { ...opts, headers, body, redirect: "manual" }));
+}
+
+/** Bare paths go to the host that serves them: the management API and web app on APP_DOMAIN, "/admin..." on the admin host, the rest on DOMAIN. */
+export function resolvePath(path: string): string {
+  if (path.startsWith("/_api/admin")) return APP + path;
+  if (path === "/app" || path.startsWith("/app/") || path.startsWith("/app?")) return APP + (path.slice(4) || "/");
+  if (path === "/admin" || path.startsWith("/admin/") || path.startsWith("/admin?")) return ADMIN + (path.slice(6) || "/");
+  return `https://${DOMAIN}${path}`;
 }
 
 let seq = 0;

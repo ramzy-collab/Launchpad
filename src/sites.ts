@@ -6,7 +6,8 @@ import { badRequest, err, forbidden, notFound } from "./errors";
 import { contentTypeFor } from "./mime";
 import type { FileMap } from "./upload";
 import { isEmail, normEmail, parseJsonArray, randomId, sortableId } from "./util";
-import { appSharedEmail, namespaceSharedEmail, publicOrigin, sendEach } from "./email";
+import { appSharedEmail, namespaceSharedEmail, sendEach } from "./email";
+import { appOrigin, nsOrigin } from "./hosts";
 
 /** Addresses in `next` that weren't in `prev` (both normalized). */
 const added = (next: string[], prev: string[]) => {
@@ -17,7 +18,7 @@ const added = (next: string[], prev: string[]) => {
 /** Emails the people newly given access to an app. */
 function notifyShared(ctx: Ctx, site: SiteRow, viewers: string[], editors: string[]) {
   if (!viewers.length && !editors.length) return;
-  const origin = publicOrigin(ctx.env, ctx.requestUrl);
+  const origin = appOrigin(ctx.env, ctx.requestUrl);
   const by = ctx.user.name || ctx.user.email;
   const title = site.title || `${site.namespace}/${site.mount_path}`;
   const url = siteUrl(ctx.env, site.namespace, site.mount_path, ctx.requestUrl);
@@ -146,13 +147,7 @@ export function parseTitle(raw: unknown): string | null | undefined {
 // URLs
 // ---------------------------------------------------------------------------
 
-export function nsOrigin(env: Env, ns: string, requestUrl?: string): string {
-  if (isDev(env) && requestUrl) {
-    const u = new URL(requestUrl);
-    return `${u.protocol}//${ns}.${env.DOMAIN}${u.port ? ":" + u.port : ""}`;
-  }
-  return `https://${ns}.${env.DOMAIN}`;
-}
+export { nsOrigin };
 
 export const siteUrl = (env: Env, ns: string, mount: string, requestUrl?: string) =>
   `${nsOrigin(env, ns, requestUrl)}/${mount ? mount + "/" : ""}`;
@@ -280,7 +275,7 @@ export async function updateNamespaceEditors(ctx: Ctx, rawLabel: string, rawEdit
   await audit(ctx.env, ctx.user.email, "namespace_editors", ns.label, { editors });
   const newEditors = added(editors, parseJsonArray(ns.editors));
   if (newEditors.length) {
-    const origin = publicOrigin(ctx.env, ctx.requestUrl);
+    const origin = appOrigin(ctx.env, ctx.requestUrl);
     const by = ctx.user.name || ctx.user.email;
     const url = nsOrigin(ctx.env, ns.label, ctx.requestUrl) + "/";
     ctx.waitUntil(sendEach(ctx.env, newEditors, ctx.user.email, (to) => namespaceSharedEmail(origin, to, { by, namespace: ns.label, url })));

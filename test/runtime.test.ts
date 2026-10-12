@@ -11,7 +11,7 @@ async function newSite(opts: Record<string, string> = {}, mount = "app") {
   const ns = uniq();
   const res = await publishHtml(OWNER, ns, mount, PAGE("app"), opts);
   const { site } = await res.json<{ site: { id: string } }>();
-  const origin = `https://${ns}.example.com`;
+  const origin = `https://${ns}.example.app`;
   const api = (path: string, init: Parameters<typeof call>[1] = {}) =>
     call(`${origin}/_api/${path}`, { as: OWNER, mount: `/${mount}/`, ...init });
   return { ns, id: site.id, origin, api };
@@ -73,7 +73,7 @@ describe("security 4: namespace isolation", () => {
     expect(await (await b.api("kv/private")).json()).toEqual({ value: "b-data" });
 
     // Forged mounts: another namespace's label, absolute URLs, traversal.
-    for (const forged of [`/${b.ns}/shared/`, `https://${b.ns}.example.com/shared/`, "/../shared/", "/shared/../x/", "/SHARED/"]) {
+    for (const forged of [`/${b.ns}/shared/`, `https://${b.ns}.example.app/shared/`, "/../shared/", "/shared/../x/", "/SHARED/"]) {
       const res = await call(`${a.origin}/_api/kv/private`, { as: OWNER, mount: forged });
       expect([400, 404], forged).toContain(res.status);
     }
@@ -90,7 +90,7 @@ describe("security 4: namespace isolation", () => {
 describe("security 10: cross-origin requests", () => {
   it("rejects cross-origin and preflight requests to /_api/*", async () => {
     const { origin, ns } = await newSite();
-    for (const bad of ["https://evil.test", `https://other.example.com`, "null", `http://${ns}.example.com`]) {
+    for (const bad of ["https://evil.test", `https://other.example.com`, "null", `http://${ns}.example.app`]) {
       const res = await call(`${origin}/_api/kv/x`, { as: OWNER, mount: "/app/", method: "PUT", body: "1", headers: { origin: bad } });
       expect(res.status, bad).toBe(403);
     }

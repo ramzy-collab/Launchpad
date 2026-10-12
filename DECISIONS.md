@@ -245,8 +245,7 @@ Choices made while building v1, including where the build differs from the spec 
   everyone's "Shared with me".
 - **Strangers get 404, not 403,** for private apps in the management API and MCP tools, so an app's
   existence isn't revealed.
-- **User apps still share the `formelab.ai` domain.** Moving them to their own domain is on the
-  launch checklist (README 2.5).
+- **User apps live on their own domain** (see "Hosts" below).
 
 - **Publishing a new version keeps an app's sharing.** `visibility`, `allowed_emails` and
   `editors` on `publish` only apply to a new app; republishing ignores them and, when they differ
@@ -279,8 +278,30 @@ Choices made while building v1, including where the build differs from the spec 
 
 ## Formelab admin area
 
-- Running Formelab lives at `/admin` (Overview, Users, Waitlist), apart from anyone's own lab at
-  `/app`. Admins get an **Admin** link in their lab's nav; for everyone else `/admin` is a 404.
+- Running Formelab lives on `admin.DOMAIN` (Overview, Users, Waitlist), apart from anyone's own
+  lab on `APP_DOMAIN`. Admins get an **Admin** link in their lab's nav; for everyone else the admin
+  pages are a 404.
 - Admins can make other people admins (which also lets them in from the waitlist) and remove
   admin access. The `OWNER_EMAIL` account is always an admin, and nobody can remove their own
   access, so Formelab can't be left without an admin.
+
+## Hosts
+
+- `DOMAIN` (formelab.ai) keeps everything public or protocol-facing: the home page and waitlist,
+  `/login` and the WorkOS callback, the MCP connector and its OAuth endpoints, and the deploy API.
+  The connector URL (`https://DOMAIN/mcp`) doesn't move, so connected AI apps keep working.
+- `APP_DOMAIN` (formelab.app) serves the web app at its root (`/`, `/shared`, `/connect`) and the
+  management API; `<ns>.APP_DOMAIN` serves published apps. Apps get a separate registrable domain
+  so browsers never count them as "same site" with the sign-in and admin hosts.
+- `admin.DOMAIN` serves the admin panel and the management API. `admin` is a reserved namespace
+  label, so no one can claim it as an old-style app host.
+- Old addresses redirect with 301, keeping path and query: `DOMAIN/app/*` to `APP_DOMAIN/*`,
+  `DOMAIN/admin/*` to `admin.DOMAIN/*`, and `<ns>.DOMAIN/*` to `<ns>.APP_DOMAIN/*`.
+- **One sign-in, a session per host.** Only `DOMAIN` talks to WorkOS. Every other host sends
+  visitors without a session to `DOMAIN/auth/app`, which hands back a single-use code that the
+  host trades for its own host-only cookie (as app hosts already did). Child sessions never
+  outlive the `DOMAIN` session; logging out on any host deletes the `DOMAIN` session and all its
+  children. Session lengths: `DOMAIN` and the web app 30 days, app hosts 12 hours, and the admin
+  panel 8 hours, so a stolen admin cookie is useful for a working day at most.
+- With Cloudflare Access instead of WorkOS there is no session to hand over, so `/auth/app`
+  answers with a sign-in page instead of looping; Access must then cover the other hosts itself.

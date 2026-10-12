@@ -3,7 +3,7 @@ import { env } from "cloudflare:workers";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import worker from "../src/index";
 import type { Env } from "../src/env";
-import { accessJwt, onOutbound, OWNER, PAGE, uniq } from "./helpers";
+import { accessJwt, onOutbound, OWNER, PAGE, resolvePath, uniq } from "./helpers";
 
 type Sent = { from: string | { name: string; email: string }; to: string; subject: string; text: string; html: string };
 let sent: Sent[] = [];
@@ -38,7 +38,7 @@ async function w(url: string, opts: { as?: string; method?: string; json?: unkno
   }
   if (url.startsWith("/_api/admin") && opts.method && opts.method !== "GET") headers.set("x-formelab-request", "1");
   const ctx = createExecutionContext();
-  const res = await worker.fetch(new Request(`https://example.com${url}`, { method: opts.method ?? "GET", headers, body, redirect: "manual" }), EENV, ctx);
+  const res = await worker.fetch(new Request(url.startsWith("http") ? url : resolvePath(url), { method: opts.method ?? "GET", headers, body, redirect: "manual" }), EENV, ctx);
   await waitOnExecutionContext(ctx);
   return res;
 }
@@ -64,7 +64,7 @@ describe("notification emails", () => {
     expect(forAdmin[0]!.subject).toBe(`New waitlist sign-up: ${email}`);
     expect(forAdmin[0]!.text).toContain("signed up on the home page");
     expect(forAdmin[0]!.text).toMatch(/Waitlist total: \d+\./);
-    expect(forAdmin[0]!.text).toContain("https://example.com/admin/waitlist");
+    expect(forAdmin[0]!.text).toContain("https://admin.example.com/waitlist");
   });
 
   it("tells people when they're let in, only the first time", async () => {
@@ -93,7 +93,7 @@ describe("notification emails", () => {
 
     expect(to(viewer)).toHaveLength(1);
     expect(to(viewer)[0]!.subject).toBe(`${OWNER} shared "Trip <planner>" with you on Formelab`);
-    expect(to(viewer)[0]!.text).toContain(`https://${ns}.example.com/planner/`);
+    expect(to(viewer)[0]!.text).toContain(`https://${ns}.example.app/planner/`);
     expect(to(viewer)[0]!.text).toContain("You can open it.");
     expect(to(viewer)[0]!.html).toContain("Trip &lt;planner&gt;"); // escaped in HTML
     expect(to(viewer)[0]!.html).not.toContain("Trip <planner>");
@@ -136,7 +136,7 @@ describe("notification emails", () => {
     const off = { ...EENV, EMAIL: undefined } as Env;
     const ctx = createExecutionContext();
     const headers = new Headers({ "cf-access-jwt-assertion": await accessJwt(OWNER), "content-type": "application/json", "x-formelab-request": "1" });
-    const req = new Request("https://example.com/_api/admin/waitlist/approve", { method: "POST", headers, body: JSON.stringify({ email: `nokey-${uniq()}@example.com` }) });
+    const req = new Request("https://example.app/_api/admin/waitlist/approve", { method: "POST", headers, body: JSON.stringify({ email: `nokey-${uniq()}@example.com` }) });
     expect((await worker.fetch(req, off, ctx)).status).toBe(200);
     await waitOnExecutionContext(ctx);
     expect(sent).toHaveLength(0);

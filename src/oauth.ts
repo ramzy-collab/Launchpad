@@ -14,6 +14,7 @@ import { notFound } from "./errors";
 import { handleMcp } from "./mcp";
 import { plainPage } from "./serve";
 import { escapeHtml as e } from "./util";
+import { aiOrigin } from "./hosts";
 import { FONT_CSP, head, nav } from "./dashboard/layout";
 
 /**
@@ -40,8 +41,9 @@ interface McpProps {
 }
 
 /** The apex origin: https://DOMAIN in production, the request's own origin in dev (http://localhost:8787). */
+/** The origin of DOMAIN, where the connector, OAuth and sign-in live. */
 export function apexOrigin(env: Env, requestUrl: string): string {
-  return isDev(env) ? new URL(requestUrl).origin : `https://${env.DOMAIN.toLowerCase()}`;
+  return aiOrigin(env, requestUrl);
 }
 
 const mcpApiHandler = {

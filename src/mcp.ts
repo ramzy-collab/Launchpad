@@ -46,7 +46,7 @@ export function buildServer(ctx: Ctx): McpServer {
       jsonSchemaValidator: new CfWorkerJsonSchemaValidator(),
       instructions:
         "Formelab hosts small self-contained web apps at https://<namespace>." +
-        ctx.env.DOMAIN +
+        ctx.env.APP_DOMAIN +
         "/<mount_path>/. Call get_guide before building an app for the first time, then publish with the publish tool.",
     },
   );
@@ -59,7 +59,7 @@ export function buildServer(ctx: Ctx): McpServer {
 
   server.registerTool(
     "list_namespaces",
-    { description: "List the namespaces you own or can edit. Each namespace is a subdomain: https://<namespace>." + ctx.env.DOMAIN + "/", annotations: { readOnlyHint: true } },
+    { description: "List the namespaces you own or can edit. Each namespace is a subdomain: https://<namespace>." + ctx.env.APP_DOMAIN + "/", annotations: { readOnlyHint: true } },
     () => run(() => listNamespaces(ctx)),
   );
 

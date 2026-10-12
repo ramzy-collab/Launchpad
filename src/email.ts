@@ -2,7 +2,7 @@
 // Without the binding or EMAIL_FROM nothing is sent; each skipped message is logged instead.
 // Sending never fails the request that triggered it: callers hand the promise to waitUntil.
 import type { Env } from "./env";
-import { isDev } from "./env";
+import { adminOrigin, aiOrigin } from "./hosts";
 import { escapeHtml as e, normEmail } from "./util";
 
 export interface Email {
@@ -20,9 +20,8 @@ export function parseSender(from: string): string | { name: string; email: strin
   return m ? { name: m[1]!.replace(/^"|"$/g, ""), email: m[2]! } : from.trim();
 }
 
-/** The address people should click: the dashboard's origin (the request's own in dev). */
-export const publicOrigin = (env: Env, requestUrl?: string) =>
-  isDev(env) && requestUrl ? new URL(requestUrl).origin : `https://${env.DOMAIN.toLowerCase()}`;
+/** The home page / sign-in origin (DOMAIN), for links in emails. */
+export const publicOrigin = (env: Env, requestUrl?: string) => aiOrigin(env, requestUrl);
 
 export async function sendEmail(env: Env, msg: Email): Promise<void> {
   if (!emailEnabled(env)) {
@@ -116,7 +115,7 @@ export function appSharedEmail(origin: string, to: string, opts: { by: string; t
     text: plain([
       `${opts.by} shared "${opts.title}" with you on Formelab. You can ${access} it.`,
       `Open it: ${opts.url}`,
-      `Everything shared with you: ${origin}/app/shared (log in as ${to}).`,
+      `Everything shared with you: ${origin}/shared (log in as ${to}).`,
     ]),
   };
 }
@@ -130,19 +129,19 @@ export function namespaceSharedEmail(origin: string, to: string, opts: { by: str
       [
         `<strong>${e(opts.by)}</strong> added you as an editor of the <strong>${e(opts.namespace)}</strong> namespace. You can open, update and publish the apps in it; they appear under <strong>Shared with me</strong>.`,
       ],
-      { label: "See shared apps", url: `${origin}/app/shared` },
+      { label: "See shared apps", url: `${origin}/shared` },
     ),
     text: plain([
       `${opts.by} added you as an editor of the "${opts.namespace}" namespace on Formelab.`,
       `Its apps: ${opts.url}`,
-      `Everything shared with you: ${origin}/app/shared`,
+      `Everything shared with you: ${origin}/shared`,
     ]),
   };
 }
 
 export function adminSignupEmail(origin: string, to: string, opts: { email: string; via: "form" | "login"; total: number }): Email {
   const how = opts.via === "form" ? "signed up on the home page" : "logged in before being let in";
-  const url = `${origin}/admin/waitlist`;
+  const url = `${origin}/waitlist`;
   return {
     to,
     subject: `New waitlist sign-up: ${opts.email}`,
@@ -159,7 +158,8 @@ export function adminSignupEmail(origin: string, to: string, opts: { email: stri
 }
 
 /** Tells the admin about a new waitlist sign-up (ADMIN_EMAIL, else OWNER_EMAIL). */
-export async function notifyAdminOfSignup(env: Env, origin: string, email: string, via: "form" | "login"): Promise<void> {
+export async function notifyAdminOfSignup(env: Env, requestUrl: string, email: string, via: "form" | "login"): Promise<void> {
+  const origin = adminOrigin(env, requestUrl);
   const to = env.ADMIN_EMAIL || env.OWNER_EMAIL;
   if (!to || normEmail(to) === normEmail(email)) return;
   const row = await env.DB.prepare("SELECT COUNT(*) AS n FROM waitlist WHERE approved_at IS NULL").first<{ n: number }>();
