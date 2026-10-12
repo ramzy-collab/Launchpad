@@ -17,15 +17,15 @@ is also a web dashboard.
   | Host | What it serves |
   | --- | --- |
   | `DOMAIN` (formelab.ai) | Home page with the waitlist, `/login`, sign-in, the MCP connector (`/mcp`), OAuth, deploy API |
-  | `admin.DOMAIN` | The admin panel (8-hour sessions) |
+  | `admin.DOMAIN` | The admin panel, with its own admins-only sign-in (8-hour sessions) |
   | `APP_DOMAIN` (formelab.app) | The web app: My lab, Shared with me, Connect your AI |
   | `<namespace>.APP_DOMAIN` | Published apps |
   | `<namespace>.DOMAIN` | Old app addresses; redirected (301) to `<namespace>.APP_DOMAIN` |
 
   Apps sit on their own registrable domain, the way GitHub serves pages from `github.io`, so
   browsers never treat an app as "same site" with Formelab's sign-in. You sign in once on
-  `DOMAIN`; the web app, the admin panel and each app host get their own session from it, and
-  logging out anywhere ends all of them.
+  `DOMAIN`; the web app and each app host get their own session from it, and logging out anywhere
+  ends all of them. The admin panel is the exception: admins sign in to it separately.
 - D1 holds structured data; R2 holds app files; Cloudflare Access handles all sign-in.
 - Agent build guide: [`src/guide.md`](src/guide.md), served at `/_platform/guide.md`.
 - Design choices and deviations from the spec: [`DECISIONS.md`](DECISIONS.md).
@@ -131,8 +131,10 @@ when ready.
    - Turn on **Email + Magic Auth** (one-time email codes) and **Google OAuth**. In production,
      Google needs your own OAuth client: create one in Google Cloud Console and paste its client
      ID and secret into WorkOS (WorkOS's setup page links the steps).
-2. **Redirects**: add `https://example.com/auth/callback` and make it the default. For local
-   development, also add `http://localhost:8787/auth/callback` in the staging environment.
+2. **Redirects**: add `https://example.com/auth/callback` and make it the default, and add
+   `https://admin.example.com/auth/callback` for the admin panel's own sign-in. For local
+   development, also add `http://localhost:8787/auth/callback` and
+   `http://admin.localhost:8787/auth/callback` in the staging environment.
 3. Copy the **Client ID** and **API key** from **API Keys**, then:
    ```bash
    npx wrangler secret put WORKOS_CLIENT_ID

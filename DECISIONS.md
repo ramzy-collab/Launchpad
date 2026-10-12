@@ -297,11 +297,17 @@ Choices made while building v1, including where the build differs from the spec 
   label, so no one can claim it as an old-style app host.
 - Old addresses redirect with 301, keeping path and query: `DOMAIN/app/*` to `APP_DOMAIN/*`,
   `DOMAIN/admin/*` to `admin.DOMAIN/*`, and `<ns>.DOMAIN/*` to `<ns>.APP_DOMAIN/*`.
-- **One sign-in, a session per host.** Only `DOMAIN` talks to WorkOS. Every other host sends
+- **One sign-in, a session per host.** `DOMAIN` talks to WorkOS for everything but the admin
+  panel. The web app and app hosts send
   visitors without a session to `DOMAIN/auth/app`, which hands back a single-use code that the
   host trades for its own host-only cookie (as app hosts already did). Child sessions never
   outlive the `DOMAIN` session; logging out on any host deletes the `DOMAIN` session and all its
-  children. Session lengths: `DOMAIN` and the web app 30 days, app hosts 12 hours, and the admin
-  panel 8 hours, so a stolen admin cookie is useful for a working day at most.
+  children. Session lengths: `DOMAIN` and the web app 30 days, app hosts 12 hours.
+- **The admin panel signs in separately.** `admin.DOMAIN` runs the WorkOS flow on its own host
+  (`/login`, `/auth/login`, `/auth/callback`, so WorkOS needs that redirect URI too) and never
+  accepts a session handed over from `DOMAIN`. Only admins (or `OWNER_EMAIL`) can finish it;
+  anyone else gets a 403 and isn't added to the users or the waitlist. Its session lasts 8 hours,
+  so a stolen admin cookie is useful for a working day at most, and logging in or out of the lab
+  doesn't touch it (or the other way round). The panel has no link back to the lab.
 - With Cloudflare Access instead of WorkOS there is no session to hand over, so `/auth/app`
   answers with a sign-in page instead of looping; Access must then cover the other hosts itself.

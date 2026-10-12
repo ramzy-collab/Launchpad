@@ -65,8 +65,7 @@ describe("admin: users", () => {
       const url = `https://admin.example.com${path}`;
       expect((await call(url, { as: `nope-${uniq()}@example.com` })).status, path).toBe(404);
       const out = await call(url);
-      expect(out.status, path).toBe(302);
-      expect(out.headers.get("location"), path).toBe(`https://example.com/auth/app?return=${encodeURIComponent(url)}`);
+      expect(out.status, path).toBe(401); // Access-only setups: no WorkOS, so no admin login screen
     }
     // The admin API answers on the admin host too, for admins only.
     expect((await call("https://admin.example.com/_api/admin/users", { as: OWNER })).status).toBe(200);

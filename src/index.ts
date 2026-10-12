@@ -116,13 +116,27 @@ apex.notFound(() => plainPage(404, "Not found", "There is nothing here."));
 // Signed-in hosts: the web app (APP_DOMAIN) and the admin panel (admin.DOMAIN)
 // ---------------------------------------------------------------------------
 
-/** Pages without a sign-in go to DOMAIN, which signs the visitor in and hands the session back. */
+/** The web app: pages without a sign-in go to DOMAIN, which signs the visitor in and hands the session back. */
 const requireSignIn: MiddlewareHandler<AppEnv> = async (c, next) => {
   const who = await identifyBrowser(c.req.raw, c.env);
   if (!who) {
     if (c.req.path.startsWith("/_api/")) return jsonError(unauthorized());
     if (c.req.method !== "GET") return unauthorizedPage();
     return c.redirect(`${aiOrigin(c.env, c.req.url)}/auth/app?return=${encodeURIComponent(c.req.url)}`, 302);
+  }
+  c.set("user", who.user);
+  c.set("sessionId", who.sessionId);
+  await next();
+};
+
+/** The admin panel signs people in itself (see login.ts), separately from the web app. */
+const requireAdminSignIn: MiddlewareHandler<AppEnv> = async (c, next) => {
+  const who = await identifyBrowser(c.req.raw, c.env);
+  if (!who) {
+    if (c.req.path.startsWith("/_api/")) return jsonError(unauthorized());
+    if (c.req.method !== "GET" || !workosEnabled(c.env)) return unauthorizedPage();
+    const url = new URL(c.req.url);
+    return c.redirect(`/login?return=${encodeURIComponent(url.pathname + url.search)}`, 302);
   }
   c.set("user", who.user);
   c.set("sessionId", who.sessionId);
@@ -139,12 +153,13 @@ const sameOriginWrites: MiddlewareHandler<AppEnv> = async (c, next) => {
   await next();
 };
 
-function signedInHost() {
+/** The web app and admin panel share these; `requireSignIn` decides how each signs people in. */
+function signedInHost(requireSignIn: MiddlewareHandler<AppEnv>, routes: (app: Hono<AppEnv>) => void) {
   const app = new Hono<AppEnv>();
   app.onError(onError);
   app.get("/healthz", () => text("ok", "text/plain; charset=utf-8", "no-store"));
-  app.get("/_auth/callback", appCallback);
   for (const [path, handler] of assetRoutes) app.get(path, handler);
+  routes(app);
   app.use("*", requireSignIn);
   app.post("/auth/logout", logout);
   app.use("/_api/admin/*", sameOriginWrites);
@@ -154,14 +169,22 @@ function signedInHost() {
 }
 
 // The web app: My lab, Shared with me, Connect your AI.
-const webApp = signedInHost();
+const webApp = signedInHost(requireSignIn, (app) => app.get("/_auth/callback", appCallback));
 webApp.get("/", async (c) => dashboardPage(c));
 webApp.get("/shared", async (c) => sharedPage(c));
 webApp.get("/connect", (c) => connectPage(c));
 webApp.notFound(() => plainPage(404, "Not found", "There is nothing here."));
 
 // The admin panel (admins only; adminPage answers 404 to everyone else).
-const adminApp = signedInHost();
+const adminApp = signedInHost(requireAdminSignIn, (app) => {
+  app.get("/login", async (c) => {
+    const returnTo = safeReturn(c.req.query("return"), "/");
+    if (hasSignIn(c.req.raw) && (await identifyBrowser(c.req.raw, c.env))) return c.redirect(returnTo, 302);
+    return loginPage({ workos: workosEnabled(c.env), returnTo, admin: true });
+  });
+  app.get("/auth/login", loginStart);
+  app.get("/auth/callback", loginCallback);
+});
 adminApp.get("/", (c) => adminPage(c, "overview"));
 adminApp.get("/users", (c) => adminPage(c, "users"));
 adminApp.get("/waitlist", (c) => adminPage(c, "waitlist"));

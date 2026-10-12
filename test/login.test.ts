@@ -37,13 +37,20 @@ function mockWorkos(email: string, verified = true) {
 }
 
 /** Goes through /auth/login → (WorkOS) → /auth/callback and returns the session cookie. */
-async function signIn(email: string, returnTo = "/app"): Promise<{ cookie: string; location: string }> {
-  mockWorkos(email);
-  const start = await w(`/auth/login?provider=google&return=${encodeURIComponent(returnTo)}`);
-  const state = new URL(start.headers.get("location")!).searchParams.get("state")!;
-  const back = await w(`/auth/callback?code=code123&state=${state}`, { headers: { cookie: cookieFrom(start, "__Host-fl_login")! } });
+async function signIn(email: string, returnTo = "/app", origin = "https://example.com"): Promise<{ cookie: string; location: string }> {
+  const back = await signInRaw(email, returnTo, origin);
   expect(back.status).toBe(302);
   return { cookie: cookieFrom(back, "__Host-fl_session")!, location: back.headers.get("location")! };
+}
+
+/** The WorkOS round trip on `origin`, returning the callback's response. */
+async function signInRaw(email: string, returnTo: string, origin: string): Promise<Response> {
+  mockWorkos(email);
+  const start = await w(`${origin}/auth/login?provider=google&return=${encodeURIComponent(returnTo)}`);
+  const authorize = new URL(start.headers.get("location")!);
+  expect(authorize.searchParams.get("redirect_uri")).toBe(`${origin}/auth/callback`);
+  const state = authorize.searchParams.get("state")!;
+  return w(`${origin}/auth/callback?code=code123&state=${state}`, { headers: { cookie: cookieFrom(start, "__Host-fl_login")! } });
 }
 
 /** Trades a DOMAIN session for one on another Formelab host, the way a browser does on its first visit. */
@@ -178,21 +185,59 @@ describe("accounts and the waitlist", () => {
   it("the owner is active on first sign-in", async () => {
     const { cookie } = await signIn(OWNER);
     expect(await (await onApp("/", cookie)).text()).toContain(`<a class="link" href="${ADMIN}/" target="_blank" rel="noopener">Admin</a>`);
-    expect((await w(`${ADMIN}/`, { headers: { cookie: await hostCookie(cookie, ADMIN) } })).status).toBe(200);
+  });
+});
+
+describe("the admin panel's own sign-in", () => {
+  const sessionLength = async (host: string) => {
+    const row = await env.DB.prepare("SELECT expires_at - created_at AS len FROM sessions WHERE host = ? ORDER BY created_at DESC LIMIT 1").bind(host).first<{ len: number }>();
+    return row!.len;
+  };
+
+  it("is separate from the web app's: a lab sign-in doesn't open the admin panel", async () => {
+    const { cookie } = await signIn(OWNER);
+    // The lab's session isn't valid on the admin host, and can't be handed over to it.
+    const first = await w(`${ADMIN}/users`, { headers: { cookie } });
+    expect(first.status).toBe(302);
+    expect(first.headers.get("location")).toBe("/login?return=%2Fusers");
+    expect((await w(`/auth/app?return=${encodeURIComponent(ADMIN + "/")}`, { headers: { cookie } })).status).toBe(400);
+    expect((await w(`${ADMIN}/_auth/callback?code=abcdefghijklmnopqrstuvwxyz`)).status).toBe(302);
+    // The admin login screen has no waitlist and no way into the lab.
+    const login = await (await w(`${ADMIN}/login?return=%2Fusers`)).text();
+    expect(login).toContain("Formelab admin");
+    expect(login).toContain('href="/auth/login?provider=google&amp;return=%2Fusers"');
+    expect(login).not.toContain("waitlist");
   });
 
-  it("admin sessions are shorter than web app sessions", async () => {
-    const { cookie } = await signIn(OWNER);
-    const expiry = async (origin: string) => {
-      const c = await hostCookie(cookie, origin);
-      const token = decodeURIComponent(c.split("=")[1]!);
-      const rows = await env.DB.prepare("SELECT expires_at, created_at FROM sessions WHERE host = ? ORDER BY created_at DESC LIMIT 1").bind(new URL(origin).hostname).first<{ expires_at: number; created_at: number }>();
-      expect(token).toBeTruthy();
-      return rows!.expires_at - rows!.created_at;
-    };
-    expect(await expiry(ADMIN)).toBeLessThanOrEqual(8 * 3600_000);
-    expect(await expiry(APP)).toBeGreaterThan(24 * 3600_000);
+  it("signs admins in on the admin host for 8 hours, apart from their lab", async () => {
+    const admin = await signIn(OWNER, "/users", ADMIN);
+    expect(admin.location).toBe("/users");
+    expect(await sessionLength("admin.example.com")).toBeLessThanOrEqual(8 * 3600_000);
+    const page = await w(`${ADMIN}/users`, { headers: { cookie: admin.cookie } });
+    expect(page.status).toBe(200);
+    const html = await page.text();
+    expect(html).not.toContain("My lab");
+    expect(html).not.toContain("example.app");
+    // The admin session doesn't sign anyone in to the lab, and logging out of one leaves the other.
+    expect((await w(`${APP}/`, { headers: { cookie: admin.cookie } })).status).toBe(302);
+    const lab = await signIn(OWNER);
+    const out = await w(`${ADMIN}/auth/logout`, { method: "POST", headers: { cookie: admin.cookie, origin: ADMIN } });
+    expect(out.headers.get("location")).toBe(`${ADMIN}/login`);
+    expect((await w(`${ADMIN}/`, { headers: { cookie: admin.cookie } })).status).toBe(302);
+    expect((await onApp("/", lab.cookie)).status).toBe(200);
   });
+
+  it("turns away people who aren't admins, without adding them anywhere", async () => {
+    const email = `notadmin-${uniq()}@example.com`;
+    const res = await signInRaw(email, "/", ADMIN);
+    expect(res.status).toBe(403);
+    expect(cookieFrom(res, "__Host-fl_session")).toBeNull();
+    expect(await env.DB.prepare("SELECT email FROM users WHERE email = ?").bind(email).first()).toBeNull();
+    expect(await env.DB.prepare("SELECT email FROM waitlist WHERE email = ?").bind(email).first()).toBeNull();
+  });
+});
+
+describe("accounts and the waitlist, continued", () => {
 
   it("logging out ends the session", async () => {
     const { cookie } = await signIn(`out-${uniq()}@example.com`);

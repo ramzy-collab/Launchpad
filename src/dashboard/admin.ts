@@ -2,7 +2,7 @@
 import type { Context } from "hono";
 import { isOwnerEmail } from "../auth";
 import type { AppEnv } from "../env";
-import { aiOrigin, appOrigin } from "../hosts";
+import { aiOrigin } from "../hosts";
 import { plainPage } from "../serve";
 import { adminStats, listUsers } from "../users";
 import { escapeHtml as e } from "../util";
@@ -25,7 +25,6 @@ ${head("Formelab admin", ["dashboard.js"])}
 ${nav(
   "/",
   `<span class="who">Signed in as <strong>${e(user.email)}</strong> <span class="tag admin">admin</span></span>
-    <a class="link" href="${e(appOrigin(c.env, c.req.url))}/">My lab</a>
     ${logoutControl(c)}`,
 )}
 <main>

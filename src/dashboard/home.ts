@@ -9,14 +9,14 @@ const homeHead = (title: string, scripts: string[] = []) => head(title, scripts,
 const CHECK = (stroke: string, width = 3.5) =>
   `<svg viewBox="0 0 24 24" fill="none" stroke="${stroke}" stroke-width="${width}"><path d="M20 6 9 17l-5-5"/></svg>`;
 
-function topNav(): string {
+function topNav(admin = false): string {
   return `<div class="container">
   <nav>
-    <a class="logo" href="/" aria-label="Formelab home"><span class="mark" aria-hidden="true">F</span>Formelab</a>
-    <div class="nav-r">
+    <a class="logo" href="/" aria-label="Formelab home"><span class="mark" aria-hidden="true">F</span>Formelab${admin ? " admin" : ""}</a>
+    ${admin ? "" : `<div class="nav-r">
       <a class="nbtn" href="/login">Log in</a>
       <a class="cta" href="/#signup" data-join><span class="long">Join the waitlist</span><span class="short">Join</span></a>
-    </div>
+    </div>`}
   </nav>
 </div>`;
 }
@@ -208,29 +208,32 @@ const GOOGLE_G = `<svg width="20" height="20" viewBox="0 0 48 48" aria-hidden="t
  * The login screen. With WorkOS configured it offers Google and email (AuthKit's hosted page also
  * shows any other sign-in methods enabled there); otherwise its button leads to Cloudflare Access.
  */
-export function loginPage(opts: { workos: boolean; returnTo: string }): Response {
-  const ret = opts.returnTo === "/app" ? "" : `&return=${encodeURIComponent(opts.returnTo)}`;
+/** The login screen. `admin` is the admin panel's own, separate sign-in on admin.DOMAIN. */
+export function loginPage(opts: { workos: boolean; returnTo: string; admin?: boolean }): Response {
+  const ret = opts.returnTo === (opts.admin ? "/" : "/app") ? "" : `&return=${encodeURIComponent(opts.returnTo)}`;
   const options = opts.workos
     ? `<a class="ghost provider" href="/auth/login?provider=google${e(ret)}">${GOOGLE_G}Continue with Google</a>
       <a class="btn w100" href="/auth/login?provider=email${e(ret)}">Continue with email</a>
-      <p class="hint">New to Formelab? Log in the same way. We'll save your spot on the waitlist and let you know when you can start building.</p>`
+      ${opts.admin
+        ? `<p class="hint">For Formelab admins only. This sign-in is separate from your lab and lasts 8 hours.</p>`
+        : `<p class="hint">New to Formelab? Log in the same way. We'll save your spot on the waitlist and let you know when you can start building.</p>`}`
     : `<a class="btn w100" href="/app">Log in</a>
       <p class="hint">You'll confirm it's you with a one-time code sent to your email, or with your work account.</p>`;
   return htmlResponse(`<!doctype html>
 <html lang="en">
 <head>
-${homeHead("Log in to Formelab")}
+${homeHead(opts.admin ? "Formelab admin" : "Log in to Formelab")}
 </head>
 <body>
-${topNav()}
+${topNav(opts.admin)}
 
 <main>
   <div class="container center">
     <div class="card">
-      <h2>Welcome back</h2>
-      <p>Log in to your Formelab workspace.</p>
+      <h2>${opts.admin ? "Formelab admin" : "Welcome back"}</h2>
+      <p>${opts.admin ? "Log in to manage Formelab." : "Log in to your Formelab workspace."}</p>
       ${options}
-      <div class="foot-row"><span>Not on the list yet?</span><a class="tlink" href="/#signup">Join the waitlist</a></div>
+      ${opts.admin ? "" : `<div class="foot-row"><span>Not on the list yet?</span><a class="tlink" href="/#signup">Join the waitlist</a></div>`}
     </div>
   </div>
 </main>

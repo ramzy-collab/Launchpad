@@ -2,14 +2,16 @@
 //
 // Flow: /login → /auth/login (sets a state cookie, redirects to WorkOS) → WorkOS → /auth/callback
 // (exchanges the code server side, creates or updates the user, starts a session) → the page the
-// person wanted. Namespace hosts get their session from the apex through /auth/app.
+// person wanted. The web app and namespace hosts get their session from the apex through
+// /auth/app. The admin panel (admin.DOMAIN) runs the same flow on its own host instead, so it
+// has a separate, shorter sign-in that only admins can complete.
 import type { Context } from "hono";
 import { isOwnerEmail, upsertUser } from "./auth";
 import type { AppEnv, Env } from "./env";
 import { now } from "./env";
 import { acceptedEmail, notifyAdminOfSignup, publicOrigin, sendEmail, waitlistJoinedEmail } from "./email";
 import { plainPage } from "./serve";
-import { aiOrigin, hostKind } from "./hosts";
+import { adminOrigin, aiOrigin, hostKind } from "./hosts";
 import {
   cookieHeader,
   createSession,
@@ -29,20 +31,23 @@ const STATE_COOKIE = "__Host-fl_login";
 
 export const workosEnabled = (env: Env) => !!(env.WORKOS_CLIENT_ID && env.WORKOS_API_KEY);
 
-/** A path on this host to return to after signing in; anything else falls back to /app. */
-export function safeReturn(raw: string | null | undefined): string {
+/** A path on this host to return to after signing in; anything else falls back to `fallback`. */
+export function safeReturn(raw: string | null | undefined, fallback = "/app"): string {
   const v = String(raw ?? "");
-  return v.startsWith("/") && !v.startsWith("//") && !v.startsWith("/\\") ? v : "/app";
+  return v.startsWith("/") && !v.startsWith("//") && !v.startsWith("/\\") ? v : fallback;
 }
+
+const onAdminHost = (c: Context<AppEnv>) => hostKind(new URL(c.req.url).hostname, c.env) === "admin";
+const homePath = (c: Context<AppEnv>) => (onAdminHost(c) ? "/" : "/app");
 
 const PROVIDERS: Record<string, string> = { google: "GoogleOAuth", email: "authkit" };
 
 /** GET /auth/login?provider=google|email&return=/path */
 export function loginStart(c: Context<AppEnv>): Response {
   const env = c.env;
-  if (!workosEnabled(env)) return c.redirect("/app", 302);
+  if (!workosEnabled(env)) return c.redirect(homePath(c), 302);
   const state = base32(randomBytes(20));
-  const returnTo = safeReturn(c.req.query("return"));
+  const returnTo = safeReturn(c.req.query("return"), homePath(c));
   const url = new URL(`${WORKOS_API}/user_management/authorize`);
   url.searchParams.set("client_id", env.WORKOS_CLIENT_ID!);
   url.searchParams.set("redirect_uri", new URL("/auth/callback", c.req.url).toString());
@@ -65,7 +70,7 @@ interface WorkosUser {
 /** GET /auth/callback?code=...&state=... */
 export async function loginCallback(c: Context<AppEnv>): Promise<Response> {
   const env = c.env;
-  if (!workosEnabled(env)) return c.redirect("/app", 302);
+  if (!workosEnabled(env)) return c.redirect(homePath(c), 302);
   const saved = readCookie(c.req.raw, STATE_COOKIE) ?? "";
   const dot = saved.indexOf(".");
   const state = dot > 0 ? saved.slice(0, dot) : "";
@@ -73,7 +78,7 @@ export async function loginCallback(c: Context<AppEnv>): Promise<Response> {
   if (!state || state !== c.req.query("state") || !code) {
     return plainPage(400, "Sign-in expired", "This sign-in link was already used or took too long. Go back to Formelab and log in again.");
   }
-  const returnTo = safeReturn(decodeURIComponent(saved.slice(dot + 1)));
+  const returnTo = safeReturn(decodeURIComponent(saved.slice(dot + 1)), homePath(c));
 
   const res = await fetch(`${WORKOS_API}/user_management/authenticate`, {
     method: "POST",
@@ -96,6 +101,22 @@ export async function loginCallback(c: Context<AppEnv>): Promise<Response> {
 
   const email = normEmail(wu.email);
   const name = [wu.first_name, wu.last_name].filter(Boolean).join(" ") || null;
+
+  // The admin panel's own sign-in: admins only, nobody is added to the waitlist from here.
+  if (onAdminHost(c)) {
+    const row = await env.DB.prepare("SELECT is_admin FROM users WHERE email = ?").bind(email).first<{ is_admin: number }>();
+    if (!isOwnerEmail(env, email) && row?.is_admin !== 1) {
+      const page = plainPage(403, "Not an admin", `${email} can't manage Formelab. Use your lab at ${aiOrigin(env, c.req.url)} instead.`);
+      page.headers.append("set-cookie", cookieHeader(STATE_COOKIE, "", 0));
+      return page;
+    }
+    await upsertUser(env, email, name, { workosId: wu.id });
+    const headers = new Headers({ location: returnTo, "cache-control": "no-store" });
+    headers.append("set-cookie", await createSession(env, email, new URL(c.req.url).hostname, { expiresAt: now() + ADMIN_SESSION_TTL_MS }));
+    headers.append("set-cookie", cookieHeader(STATE_COOKIE, "", 0));
+    return new Response(null, { status: 302, headers });
+  }
+
   const status = isOwnerEmail(env, email) || (await isApproved(env, email)) ? "active" : "waitlisted";
   const user = await upsertUser(env, email, name, { status, workosId: wu.id });
   // Someone who signs in before being let in lands on the waitlist, so an admin can approve them.
@@ -125,14 +146,15 @@ export async function logout(c: Context<AppEnv>): Promise<Response> {
   if (origin && origin !== new URL(c.req.url).origin) return plainPage(403, "Not allowed", "Log out from Formelab itself.");
   const id = c.get("sessionId");
   if (id) await destroySession(c.env, id);
-  const headers = new Headers({ location: `${aiOrigin(c.env, c.req.url)}/`, "cache-control": "no-store" });
+  const to = onAdminHost(c) ? `${adminOrigin(c.env, c.req.url)}/login` : `${aiOrigin(c.env, c.req.url)}/`;
+  const headers = new Headers({ location: to, "cache-control": "no-store" });
   headers.append("set-cookie", cookieHeader(SESSION_COOKIE, "", 0));
   return new Response(null, { status: 302, headers });
 }
 
 /**
  * GET /auth/app?return=https://<host>/path (on DOMAIN, signed in): hands the sign-in to the web
- * app, the admin panel or a published app's host with a single-use code.
+ * app or a published app's host with a single-use code. The admin panel has its own sign-in.
  */
 export async function appHandoff(c: Context<AppEnv>): Promise<Response> {
   let target: URL;
@@ -143,7 +165,7 @@ export async function appHandoff(c: Context<AppEnv>): Promise<Response> {
   }
   const here = new URL(c.req.url);
   const kind = hostKind(target.hostname, c.env);
-  if (target.protocol !== here.protocol || (kind !== "app" && kind !== "admin" && kind !== "ns")) {
+  if (target.protocol !== here.protocol || (kind !== "app" && kind !== "ns")) {
     return plainPage(400, "Bad request", "Formelab only signs you in to its own apps.");
   }
   const sessionId = c.get("sessionId");
@@ -161,7 +183,8 @@ export async function appHandoff(c: Context<AppEnv>): Promise<Response> {
 export async function appCallback(c: Context<AppEnv>): Promise<Response> {
   const host = new URL(c.req.url).hostname;
   const kind = hostKind(host, c.env);
-  const ttl = kind === "admin" ? ADMIN_SESSION_TTL_MS : kind === "app" ? APEX_SESSION_TTL_MS : APP_SESSION_TTL_MS;
+  if (kind !== "app" && kind !== "ns") return plainPage(404, "Not found", "There is nothing here.");
+  const ttl = kind === "app" ? APEX_SESSION_TTL_MS : APP_SESSION_TTL_MS;
   const cookie = await redeemAppCode(c.env, c.req.query("code") ?? "", host, ttl);
   if (!cookie) return plainPage(400, "Sign-in expired", "This link was already used or took too long. Open the app again.");
   const returnTo = c.req.query("return") ?? "/";
