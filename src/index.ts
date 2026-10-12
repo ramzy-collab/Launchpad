@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { managementApi } from "./api";
 import { identifyBearer, identifyBrowser } from "./auth";
+import { connectPage } from "./dashboard/connect";
 import { dashboardPage, sharedPage } from "./dashboard/page";
 import { homePage, loginPage } from "./dashboard/home";
 import type { AppEnv, Env } from "./env";
@@ -77,7 +78,8 @@ apex.use("*", async (c, next) => {
   if (!who) {
     if (c.req.path.startsWith("/_api/")) return jsonError(unauthorized());
     const url = new URL(c.req.url);
-    const toLogin = c.req.method === "GET" && (workosEnabled(c.env) || c.req.path === "/app");
+    const isAppPage = c.req.path === "/app" || c.req.path.startsWith("/app/");
+    const toLogin = c.req.method === "GET" && (workosEnabled(c.env) || isAppPage);
     return toLogin ? c.redirect(`/login?return=${encodeURIComponent(url.pathname + url.search)}`, 302) : unauthorizedPage();
   }
   c.set("user", who.user);
@@ -106,6 +108,7 @@ apex.post(AUTHORIZE_PATH, authorizePost);
 apex.get("/_platform/guide.md", guide);
 apex.get("/app", async (c) => dashboardPage(c));
 apex.get("/app/shared", async (c) => sharedPage(c));
+apex.get("/app/connect", (c) => connectPage(c));
 apex.notFound(() => plainPage(404, "Not found", "There is nothing here."));
 
 // ---------------------------------------------------------------------------

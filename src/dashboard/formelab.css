@@ -107,6 +107,12 @@ pre { margin: 0; white-space: pre-wrap; word-break: break-all; }
 .tabs a:hover { color: var(--fl-ink); border-color: var(--fl-ink-soft); }
 .tabs a[aria-current="page"] { color: var(--fl-accent-ink); background: var(--fl-accent); border-color: var(--fl-accent); }
 .notice { border-color: var(--fl-accent) !important; }
+.howto ol, .howto ul { margin: 8px 0 12px; padding-left: 1.4rem; color: var(--fl-ink-soft); }
+.howto li { margin: 6px 0; }
+.howto li strong, .howto li em { color: var(--fl-ink); }
+.howto li ul { margin: 6px 0; }
+.howto .example { background: var(--fl-canvas); border: 1.5px dashed var(--fl-line); border-radius: var(--fl-radius-md); padding: 12px 16px; color: var(--fl-ink) !important; font-style: italic; }
+.howto .note { background: var(--fl-err-bg); color: var(--fl-err-ink) !important; border-radius: var(--fl-radius-md); padding: 10px 14px; }
 .logout { margin: 0; display: inline-flex; }
 button.link { border: 0; background: none; cursor: pointer; font: inherit; }
 .dash section { background: var(--fl-surface); border: 1px solid var(--fl-line); border-radius: var(--fl-radius-lg); box-shadow: var(--fl-shadow); padding: clamp(20px, 3vw, 28px); margin: 20px 0; }

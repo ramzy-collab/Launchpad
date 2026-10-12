@@ -14,7 +14,7 @@ describe("dashboard", () => {
     expect(html).toContain('<script src="/_assets/dashboard.js" defer></script>');
     expect(html).not.toMatch(/<script>(?!<\/script>)/);
     expect(html).not.toMatch(/\son[a-z]+=/i); // no inline event handlers
-    expect(html).toContain("claude mcp add --transport http formelab https://example.com/mcp");
+    expect(html).toContain('href="/app/connect"');
     expect((await call("/_assets/dashboard.js")).headers.get("content-type")).toContain("javascript");
     expect((await call("/_assets/formelab.css")).headers.get("content-type")).toContain("text/css");
   });
@@ -51,6 +51,18 @@ describe("dashboard", () => {
     const html = await (await call("/app", { as: "someone-else@example.com" })).text();
     expect(html).not.toContain("Owner only title");
     expect(html).not.toContain(ns);
+  });
+
+  it("has a Connect your AI page with the connector URL and steps for each app", async () => {
+    const res = await call("/app/connect", { as: OWNER });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain('<a href="/app/connect" aria-current="page">Connect your AI</a>');
+    expect(html).toContain('<pre id="mcp-url">https://example.com/mcp</pre>');
+    for (const id of ['id="claude"', 'id="chatgpt"', 'id="claude-code"']) expect(html).toContain(id);
+    expect(html).toContain("claude mcp add --transport http formelab https://example.com/mcp");
+    expect(html).not.toMatch(/\son[a-z]+=/i);
+    expect((await call("/app/connect")).status).toBe(302); // signed out: to the login screen
   });
 
   it("serves the guide on the apex and namespace hosts", async () => {

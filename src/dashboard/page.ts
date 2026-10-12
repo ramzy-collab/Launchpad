@@ -21,7 +21,7 @@ const visibilityOptions = (current: "all" | "restricted") =>
     .join("");
 
 /** The page frame: nav with the account, the My apps / Shared with me tabs, then `body`. */
-function shell(c: Context<AppEnv>, user: User, tab: "mine" | "shared", body: string): Response {
+export function shell(c: Context<AppEnv>, user: User, tab: "mine" | "shared" | "connect", body: string): Response {
   const logout = c.get("sessionId")
     ? `<form method="post" action="/auth/logout" class="logout"><button class="link">Log out</button></form>`
     : `<a class="link" href="/cdn-cgi/access/logout">Log out</a>`;
@@ -43,7 +43,7 @@ ${nav(
   <h1>Your studio</h1>
   <p>${user.active ? "Publish apps, choose who can open them, and connect your AI tools." : "Apps people share with you show up here."}</p>
 </div>
-<nav class="tabs" aria-label="Apps"><a href="/app"${current("mine")}>My apps</a><a href="/app/shared"${current("shared")}>Shared with me</a></nav>
+<nav class="tabs" aria-label="Sections"><a href="/app"${current("mine")}>My apps</a><a href="/app/shared"${current("shared")}>Shared with me</a><a href="/app/connect"${current("connect")}>Connect your AI</a></nav>
 <div id="flash" role="status" hidden></div>
 ${body}
 </main>
@@ -97,7 +97,6 @@ export async function dashboardPage(c: Context<AppEnv>): Promise<Response> {
     user.isAdmin ? listWaitlist(c.env) : null,
   ]);
   const origin = isDev(c.env) ? new URL(c.req.url).origin : `https://${c.env.DOMAIN}`;
-  const mcpCommand = `claude mcp add --transport http formelab ${origin}/mcp \\\n  --header "Authorization: Bearer fl_..."`;
   const t = Date.now();
 
   const nsRows = namespaces
@@ -256,16 +255,8 @@ export async function dashboardPage(c: Context<AppEnv>): Promise<Response> {
 
 <section>
   <h2>Connect an AI app</h2>
-  <p>Claude chat and ChatGPT both connect with this URL. You sign in and choose <strong>Allow</strong>; no token needed.</p>
-  <div class="copyrow"><pre id="mcp-url">${e(origin)}/mcp</pre><button type="button" data-copy="#mcp-url">Copy</button></div>
-  <h3>Claude chat (claude.ai, desktop and mobile)</h3>
-  <p>Open <strong>Settings → Connectors → Add custom connector</strong>, name it <strong>Formelab</strong>, paste the URL, then click <strong>Connect</strong>.</p>
-  <h3>ChatGPT</h3>
-  <p>In <strong>Settings → Apps &amp; Connectors → Advanced settings</strong>, turn on <strong>Developer mode</strong>. Then <strong>Create</strong> a connector named <strong>Formelab</strong> with the URL above and <strong>OAuth</strong> authentication, and connect it. Without Developer mode, ChatGPT can still use Formelab's read-only <code>search</code> and <code>fetch</code> tools.</p>
-  <h3>Claude Code</h3>
-  <p>Create a deploy token (30 days is fine for personal use), then run:</p>
-  <div class="copyrow"><pre id="mcp-cmd">${e(mcpCommand)}</pre><button type="button" data-copy="#mcp-cmd">Copy</button></div>
-  <p class="muted">Agents can read the build guide at <a href="/_platform/guide.md">/_platform/guide.md</a> or with the <code>get_guide</code> tool.</p>
+  <p>Build and publish apps by asking Claude or ChatGPT. Your connector URL is <code>${e(origin)}/mcp</code>.</p>
+  <p><a href="/app/connect">Step-by-step instructions for Claude, ChatGPT and Claude Code →</a></p>
 </section>
 
 <section>
