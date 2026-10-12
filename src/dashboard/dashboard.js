@@ -135,6 +135,15 @@
       if (typedNs === null) return;
       if (typedNs.trim() !== btn.dataset.label) { show("The name did not match; nothing was deleted.", true); return; }
       p = api("DELETE", "/namespaces/" + encodeURIComponent(btn.dataset.label)).then(function () { show("Namespace deleted."); reloadSoon(); });
+    } else if (action === "user-delete") {
+      var who = btn.dataset.email;
+      var typedUser = prompt("This permanently deletes " + who + " and everything they own: " + btn.dataset.apps + " app(s), their namespaces, data and secrets. It can't be undone.\nType their email to confirm:");
+      if (typedUser === null) return;
+      if (typedUser.trim().toLowerCase() !== who) { show("The email did not match; nothing was deleted.", true); return; }
+      p = api("DELETE", "/users/" + encodeURIComponent(who)).then(function (r) {
+        show("Deleted " + who + (r.deletedSites ? " and " + r.deletedSites + " app(s)." : "."));
+        reloadSoon();
+      });
     } else if (action === "waitlist-approve") {
       p = api("POST", "/waitlist/approve", { email: btn.dataset.email }).then(function () { show("Let in. They can create apps now."); reloadSoon(); });
     } else if (action === "connection-revoke") {

@@ -575,7 +575,7 @@ export async function updateSite(ctx: Ctx, id: string, patch: SitePatch) {
 }
 
 /** Removes a site's files, KV rows, secret rows and the site row itself. */
-async function removeSite(env: Env, site: SiteRow) {
+export async function removeSite(env: Env, site: SiteRow) {
   await env.DB.batch([
     env.DB.prepare("DELETE FROM kv WHERE site_id = ?").bind(site.id),
     env.DB.prepare("DELETE FROM secrets WHERE site_id = ?").bind(site.id),

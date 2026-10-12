@@ -8,6 +8,8 @@ import { escapeHtml as e } from "../util";
 import { ctxOf } from "../api";
 import { listConnections } from "../oauth";
 import { listWaitlist } from "../waitlist";
+import { isOwnerEmail } from "../auth";
+import { listUsers } from "../users";
 import { head, htmlResponse, nav } from "./layout";
 
 const fmtTime = (ms: number | null) => (ms ? new Date(ms).toISOString().replace("T", " ").slice(0, 16) + " UTC" : "never");
@@ -88,13 +90,14 @@ export async function dashboardPage(c: Context<AppEnv>): Promise<Response> {
   const ctx = ctxOf(c);
   const user = ctx.user;
   if (!user.active) return shell(c, user, "mine", waitlistedNotice);
-  const [namespaces, sites, tokens, activity, connections, waitlist] = await Promise.all([
+  const [namespaces, sites, tokens, activity, connections, waitlist, users] = await Promise.all([
     listNamespaces(ctx),
     listOwnSites(ctx),
     listTokens(c.env, user),
     recentActivity(c.env, user.email, 50),
     listConnections(c.env, user.email).catch(() => []),
     user.isAdmin ? listWaitlist(c.env) : null,
+    user.isAdmin ? listUsers(c.env) : null,
   ]);
   const origin = isDev(c.env) ? new URL(c.req.url).origin : `https://${c.env.DOMAIN}`;
   const t = Date.now();
@@ -193,6 +196,22 @@ export async function dashboardPage(c: Context<AppEnv>): Promise<Response> {
 </section>`
     : "";
 
+  const userRows = (users ?? [])
+    .map((u) => {
+      const status = u.isAdmin ? '<span class="tag admin">admin</span>' : u.status === "active" ? "Active" : '<span class="tag">waitlist</span>';
+      const protectedUser = u.email === user.email || isOwnerEmail(c.env, u.email);
+      return `<tr><td>${e(u.email)}${u.name ? `<div class="muted">${e(u.name)}</div>` : ""}</td><td>${status}</td><td>${e(u.apps)}</td><td class="nowrap">${e(fmtTime(u.createdAt))}</td>
+  <td>${protectedUser ? "" : `<button class="danger" data-action="user-delete" data-email="${e(u.email)}" data-apps="${e(u.apps)}">Delete</button>`}</td></tr>`;
+    })
+    .join("");
+  const usersSection = users
+    ? `<section>
+  <h2>Users<span class="count">${e(users.length)}</span></h2>
+  <p class="muted">Everyone who has signed in. <strong>Delete</strong> removes the account and everything it owns: its namespaces and apps (with their data and secrets), its place on other people's share lists, tokens and connected AI apps. Only admins see this.</p>
+  <div class="scroll"><table><thead><tr><th>Email</th><th>Status</th><th>Apps</th><th>Joined</th><th></th></tr></thead><tbody>${userRows}</tbody></table></div>
+</section>`
+    : "";
+
   const nsOptions = namespaces.map((n) => `<option value="${e(n.label)}">`).join("");
 
   const body = `
@@ -276,6 +295,7 @@ export async function dashboardPage(c: Context<AppEnv>): Promise<Response> {
       : `<p class="muted">Nothing yet.</p>`
   }
 </section>
+${usersSection}
 ${waitlistSection}`;
 
   return shell(c, user, "mine", body);

@@ -266,3 +266,13 @@ Choices made while building v1, including where the build differs from the spec 
   namespace's editors. The person making the change is never emailed.
 - User-supplied text (app titles, names) is HTML-escaped in the email body.
 
+
+## Deleting users
+
+- Admins delete a user from the dashboard's **Users** section (typing the email to confirm), or
+  with `DELETE /_api/admin/users/:email`. It removes the account and everything it owns: owned
+  namespaces with all their apps, the user's other apps (R2 files, KV, secrets), their entries
+  on other apps' and namespaces' share and editor lists, tokens, sessions, OAuth grants, the
+  waitlist row, and the WorkOS user (best effort). Audit rows are kept as history.
+- Admins can't delete themselves or the `OWNER_EMAIL` account. Someone who is deleted can sign in
+  again later; they start over on the waitlist.
