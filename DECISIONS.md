@@ -248,3 +248,7 @@ Choices made while building v1, including where the build differs from the spec 
 - **User apps still share the `formelab.ai` domain.** Moving them to their own domain is on the
   launch checklist (README 2.5).
 
+- **Publishing a new version keeps an app's sharing.** `visibility`, `allowed_emails` and
+  `editors` on `publish` only apply to a new app; republishing ignores them and, when they differ
+  from what the app has, returns a `note` pointing to `update_site`. A blank title or an unticked
+  SPA box (as the dashboard form sends) also leaves those settings as they are.

@@ -404,9 +404,11 @@ export async function publishSite(ctx: Ctx, input: PublishInput) {
   } else if (!canPublishTo(user, ns)) {
     throw err(409, "namespace_taken", `The namespace "${label}" belongs to someone else.`, `Publish to your own namespace instead, or ask ${ns.owner_email} to add you as an editor.`);
   }
-  if (editors !== undefined && existing && existing.owner_email !== user.email && !isNamespaceOwner(user, ns)) {
-    throw ownerOnly();
-  }
+  // Publishing a new version never changes who can open or edit the app; that only happens
+  // through update_site / the app's settings. Say so when the caller asked for something else.
+  const sharingNote = existing && sharingDiffers(existing, visibility, allowed, editors)
+    ? "Kept this app's sharing settings (who can open and edit it). Publishing a new version doesn't change them; use update_site or the app's Settings to change who it's shared with."
+    : undefined;
 
   const version = sortableId();
   const id = existing?.id ?? randomId("s_");
@@ -425,10 +427,11 @@ export async function publishSite(ctx: Ctx, input: PublishInput) {
   let row: SiteRow;
   try {
     if (existing) {
+      // A new version keeps the app's settings unless a new title or spa value is given; an empty
+      // title (as a blank form field sends) keeps the current one.
       const res = await env.DB.prepare(
         `UPDATE sites SET current_version = ?, file_count = ?, total_bytes = ?, updated_at = ?,
-           title = COALESCE(?, title), spa = COALESCE(?, spa), visibility = COALESCE(?, visibility),
-           allowed_emails = COALESCE(?, allowed_emails), editors = COALESCE(?, editors)
+           title = COALESCE(?, title), spa = COALESCE(?, spa)
          WHERE id = ? AND current_version = ?`,
       )
         .bind(
@@ -436,18 +439,13 @@ export async function publishSite(ctx: Ctx, input: PublishInput) {
           input.files.size,
           totalBytes,
           t,
-          title === undefined ? null : title,
+          title ?? null,
           spa === undefined ? null : spa ? 1 : 0,
-          visibility ?? null,
-          allowed ? JSON.stringify(allowed) : null,
-          editors ? JSON.stringify(editors) : null,
           id,
           existing.current_version,
         )
         .run();
       if (!res.meta.changes) throw err(409, "conflict", "Someone else replaced this site at the same moment.", "Publish again.");
-      // A title explicitly cleared to "" should clear it.
-      if (title === null && input.title !== undefined) await env.DB.prepare("UPDATE sites SET title = NULL WHERE id = ?").bind(id).run();
     } else {
       await env.DB.prepare(
         `INSERT INTO sites (id, namespace, mount_path, title, owner_email, editors, visibility, allowed_emails,
@@ -489,7 +487,14 @@ export async function publishSite(ctx: Ctx, input: PublishInput) {
     bytes: totalBytes,
   });
   const site = siteView(env, row, ctx.requestUrl);
-  return { url: site.url, site, replaced: !!existing };
+  return { url: site.url, site, replaced: !!existing, ...(sharingNote ? { note: sharingNote } : {}) };
+}
+
+/** Whether publish input asked for sharing different from what the app has. */
+function sharingDiffers(s: SiteRow, visibility?: string, allowed?: string[], editors?: string[]): boolean {
+  const sameList = (list: string[] | undefined, stored: string) =>
+    list === undefined || [...list].sort().join(",") === parseJsonArray(stored).map(normEmail).sort().join(",");
+  return (visibility !== undefined && visibility !== s.visibility) || !sameList(allowed, s.allowed_emails) || !sameList(editors, s.editors);
 }
 
 export interface SitePatch {

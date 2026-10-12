@@ -153,6 +153,48 @@ describe("publish and serve", () => {
     }
   });
 
+  it("keeps sharing settings, title and spa when a new version is published", async () => {
+    const ns = uniq();
+    const first = await publishHtml(OWNER, ns, "kept", PAGE("v1"), {
+      title: "Kept app",
+      spa: "true",
+      allowed_emails: "friend@example.com, other@example.com",
+      editors: "ed@example.com",
+    });
+    expect(first.status).toBe(201);
+
+    // Like the dashboard's Publish form: blank title and share-with, visibility select, no spa.
+    const second = await publishHtml(OWNER, ns, "kept", PAGE("v2"), { title: "", allowed_emails: "", visibility: "restricted" });
+    expect(second.status).toBe(200);
+    const body = await second.json<Published & { note?: string }>();
+    expect(body.replaced).toBe(true);
+    expect(body.site).toMatchObject({
+      title: "Kept app",
+      spa: true,
+      visibility: "restricted",
+      allowedEmails: ["friend@example.com", "other@example.com"],
+      editors: ["ed@example.com"],
+    });
+    expect(body.note).toContain("Kept this app's sharing settings");
+
+    // An editor publishing a new version can't change sharing either.
+    const third = await publishHtml("ed@example.com", ns, "kept", PAGE("v3"), { allowed_emails: "stranger@example.com", visibility: "all" });
+    expect(third.status).toBe(200);
+    expect((await third.json<Published>()).site).toMatchObject({ visibility: "restricted", allowedEmails: ["friend@example.com", "other@example.com"] });
+
+    // The same list in another order isn't a change, so no note; a new title still applies.
+    const fourth = await publishHtml(OWNER, ns, "kept", PAGE("v4"), { allowed_emails: "other@example.com, friend@example.com", title: "Renamed" });
+    const b4 = await fourth.json<Published & { note?: string }>();
+    expect(b4.note).toBeUndefined();
+    expect(b4.site).toMatchObject({ title: "Renamed" });
+
+    // The friend can still open the new version; update_site (PATCH) is how sharing changes.
+    const page = await call(`https://${ns}.example.com/kept/`, { as: "friend@example.com" });
+    expect(await page.text()).toContain("v4");
+    const patched = await call(`/_api/admin/sites/${body.site.id}`, { as: OWNER, method: "PATCH", json: { allowed_emails: "new@example.com" } });
+    expect((await patched.json<{ allowedEmails: string[] }>()).allowedEmails).toEqual(["new@example.com"]);
+  });
+
   it("supports the JSON publish body and PATCH settings", async () => {
     const ns = uniq();
     const res = await call("/_api/admin/sites", { as: OWNER, method: "POST", json: { html: PAGE("json"), namespace: ns, mount_path: "j", title: "J" } });

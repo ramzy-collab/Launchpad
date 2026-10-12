@@ -29,7 +29,8 @@ server.
    - Wrap SDK calls in `try/catch` and show `e.message` and `e.hint`.
 4. **Publish** with the `publish` tool: `html`, `namespace`, `mount_path`, `title`, and
    `allowed_emails` for anyone besides the owner who should open it (apps are private by
-   default). Use `spa: true` only for client-side routing.
+   default). Publishing a new version keeps the app's sharing; to change who it's shared with,
+   use `update_site`. Use `spa: true` only for client-side routing.
 5. **Report** the returned URL to the user, plus anything they must do next (for example, "open the
    app and paste your API key in Settings").
 

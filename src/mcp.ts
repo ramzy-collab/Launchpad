@@ -78,7 +78,8 @@ export function buildServer(ctx: Ctx): McpServer {
     {
       description:
         "Publish (create or replace) an app and return its URL. Provide exactly one of `html` (a complete single-file HTML document) " +
-        "or `zip_base64` (a base64 zip with index.html at its root). Replacing keeps the app's KV data and secrets. " +
+        "or `zip_base64` (a base64 zip with index.html at its root). Replacing an existing app keeps its KV data, secrets and " +
+        "sharing settings: visibility and allowed_emails only apply to a new app; change sharing with update_site. " +
         "Creates the namespace if it does not exist yet.",
       inputSchema: {
         html: z.string().optional().describe("Complete HTML document for a single-file app"),
@@ -103,7 +104,7 @@ export function buildServer(ctx: Ctx): McpServer {
           visibility: args.visibility,
           allowedEmails: args.allowed_emails,
         });
-        return { url: r.url, replaced: r.replaced, site: r.site };
+        return { url: r.url, replaced: r.replaced, site: r.site, ...(r.note ? { note: r.note } : {}) };
       }),
   );
 

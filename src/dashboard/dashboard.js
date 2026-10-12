@@ -40,9 +40,11 @@
   var handlers = {
     upload: function (form) {
       var fd = new FormData(form);
-      fd.set("spa", form.elements.spa.checked ? "true" : "false");
+      // Unchecked means "leave as is" when publishing a new version of an existing app.
+      if (form.elements.spa.checked) fd.set("spa", "true");
+      else fd.delete("spa");
       return api("POST", "/sites", fd).then(function (r) {
-        show("Published: " + r.url);
+        show((r.replaced ? "Published a new version: " : "Published: ") + r.url + (r.replaced ? " (sharing settings kept)" : ""));
         reloadSoon();
       });
     },

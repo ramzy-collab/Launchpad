@@ -247,7 +247,9 @@ edited version to the same `namespace` and `mount_path`:
    `mount_path`. Optional: `title`, `spa`, `visibility`, `allowed_emails`.
 3. Give the user the returned `url`.
 
-Publishing to an existing path replaces the app atomically; its KV data and secrets are kept.
+Publishing to an existing path replaces the app atomically; its KV data, secrets and sharing
+settings (who can open and edit it) are kept. `visibility` and `allowed_emails` only apply when
+an app is first published; change them later with `update_site`.
 `update_site` changes settings without re-uploading; `delete_site` is permanent.
 
 ### With `scripts/publish.sh` and a deploy token
