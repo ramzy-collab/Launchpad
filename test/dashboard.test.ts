@@ -39,6 +39,7 @@ describe("dashboard", () => {
     await call("/_api/admin/tokens", { as: OWNER, method: "POST", json: { name: "laptop-token" } });
     const html = await (await call("/app", { as: OWNER })).text();
     expect(html).toContain(`https://${ns}.example.com/listed/`);
+    expect(html).toContain(`<a href="https://${ns}.example.com/listed/" target="_blank" rel="noopener">`); // apps open in a new tab
     expect(html).toContain("Listed app");
     expect(html).toContain(`>${ns}</a>`);
     expect(html).toContain("laptop-token");

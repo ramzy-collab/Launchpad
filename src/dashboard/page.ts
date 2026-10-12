@@ -77,7 +77,7 @@ export async function sharedPage(c: Context<AppEnv>): Promise<Response> {
 
 function sharedRow(s: SiteView & { canManage: boolean }): string {
   return `<tr>
-  <td><a href="${e(s.url)}">${e(s.title || s.url)}</a>${s.title ? `<div class="muted">${e(s.url)}</div>` : ""}</td>
+  <td><a href="${e(s.url)}" target="_blank" rel="noopener">${e(s.title || s.url)}</a>${s.title ? `<div class="muted">${e(s.url)}</div>` : ""}</td>
   <td>${e(s.ownerEmail)}</td>
   <td>${s.canManage ? "Can edit" : "Can open"}</td>
   <td class="nowrap">${e(fmtTime(s.updatedAt))}</td>
@@ -102,7 +102,7 @@ export async function dashboardPage(c: Context<AppEnv>): Promise<Response> {
   const nsRows = namespaces
     .map(
       (n) => `<tr>
-  <td><a href="${e(n.url)}">${e(n.label)}</a></td>
+  <td><a href="${e(n.url)}" target="_blank" rel="noopener">${e(n.label)}</a></td>
   <td>${e(n.ownerEmail)}</td>
   <td>${
     n.isOwner
@@ -119,7 +119,7 @@ export async function dashboardPage(c: Context<AppEnv>): Promise<Response> {
   const siteRows = sites
     .map(
       (s) => `<tr>
-  <td><a href="${e(s.url)}">${e(s.url)}</a>${s.hidden ? ' <span class="tag">hidden</span>' : ""}${s.spa ? ' <span class="tag">spa</span>' : ""}</td>
+  <td><a href="${e(s.url)}" target="_blank" rel="noopener">${e(s.url)}</a>${s.hidden ? ' <span class="tag">hidden</span>' : ""}${s.spa ? ' <span class="tag">spa</span>' : ""}</td>
   <td>${e(s.title ?? "")}</td>
   <td>${e(VISIBILITY_LABEL[s.visibility])}${s.allowedEmails.length ? `<div class="muted">${e(s.allowedEmails.join(", "))}</div>` : ""}</td>
   <td class="nowrap">${e(fmtTime(s.updatedAt))}</td>
