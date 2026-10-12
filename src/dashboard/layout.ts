@@ -1,5 +1,6 @@
 // Shared page chrome: <head>, nav and security headers for the home page, login, dashboard and
 // consent page. Styles and scripts are served files so every page keeps a strict CSP.
+import { ASSET_VERSION } from "../generated/assets";
 import { escapeHtml as e } from "../util";
 
 const FONTS = "https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Inter:wght@400;500;600&family=Permanent+Marker&display=swap";
@@ -17,6 +18,9 @@ export const PAGE_CSP = `default-src 'self'; script-src 'self'; ${FONT_CSP}; img
 /** The public home and login pages use their own stylesheet and an extra font (Inter Tight). */
 export const HOME_FONTS = "https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,800&family=Inter+Tight:wght@500;600;700&family=Inter:wght@400;500;600;700&family=Permanent+Marker&display=swap";
 
+/** A served file's URL, versioned by content so a deploy is picked up immediately. */
+export const asset = (name: string) => `/_assets/${name}?v=${ASSET_VERSION}`;
+
 export function head(title: string, scripts: string[] = [], opts: { css?: string; fonts?: string } = {}): string {
   const { css = "formelab.css", fonts = FONTS } = opts;
   return `<meta charset="utf-8">
@@ -26,9 +30,9 @@ export function head(title: string, scripts: string[] = [], opts: { css?: string
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="${fonts}">
-<link rel="stylesheet" href="/_assets/${css}">
-<script src="/_assets/theme.js"></script>
-${scripts.map((s) => `<script src="/_assets/${s}" defer></script>`).join("\n")}`;
+<link rel="stylesheet" href="${asset(css)}">
+<script src="${asset("theme.js")}"></script>
+${scripts.map((s) => `<script src="${asset(s)}" defer></script>`).join("\n")}`;
 }
 
 const SUN = `<svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>`;

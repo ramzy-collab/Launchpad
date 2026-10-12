@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { ASSET_VERSION } from "../src/generated/assets";
 import { call, OWNER, PAGE, publishHtml, uniq } from "./helpers";
 
 describe("dashboard", () => {
@@ -11,7 +12,10 @@ describe("dashboard", () => {
     expect(csp).not.toContain("unsafe-inline");
     const html = await res.text();
     expect(html).toContain(`Signed in as <strong>${OWNER}</strong>`);
-    expect(html).toContain('<script src="/_assets/dashboard.js" defer></script>');
+    expect(html).toContain(`<script src="/_assets/dashboard.js?v=${ASSET_VERSION}" defer></script>`);
+    // Versioned URLs still serve the file, so a deploy reaches browsers right away.
+    expect((await call(`/_assets/dashboard.js?v=${ASSET_VERSION}`)).status).toBe(200);
+    expect(ASSET_VERSION).toMatch(/^[0-9a-f]{10}$/);
     expect(html).not.toMatch(/<script>(?!<\/script>)/);
     expect(html).not.toMatch(/\son[a-z]+=/i); // no inline event handlers
     expect(html).toContain('href="/app/connect"');

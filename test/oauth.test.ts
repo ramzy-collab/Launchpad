@@ -201,7 +201,7 @@ describe("OAuth for MCP (Claude chat connector)", () => {
     const { verifier, challenge } = await pkce();
     const page = await call(authorizeUrl(clientId, challenge).url, { as: OWNER });
     const html = await page.text();
-    expect(html).toContain('<script src="/_assets/consent.js" defer></script>');
+    expect(html).toMatch(/<script src="\/_assets\/consent\.js\?v=[0-9a-f]{10}" defer><\/script>/);
     const handle = /name="handle" value="([^"]+)"/.exec(html)![1]!;
     const submit = () =>
       call(`${ORIGIN}/authorize`, {

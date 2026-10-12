@@ -17,7 +17,7 @@ describe("home page and login", () => {
     expect(html).toContain('id="wait-form"');
     expect(html).toContain('href="/login"');
     expect(html).toContain("Built with Formelab");
-    expect(html).toContain('href="/_assets/home.css"');
+    expect(html).toMatch(/href="\/_assets\/home\.css\?v=[0-9a-f]{10}"/);
     expect(html).not.toMatch(/<script>(?!<\/script>)/);
     expect(html).not.toMatch(/\son[a-z]+=/i);
     expect(html).not.toMatch(/\sstyle=/i);
