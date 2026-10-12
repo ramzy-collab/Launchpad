@@ -16,7 +16,7 @@ import {
 import { filesFromHtml, filesFromUpload, filesFromZip, MAX_UPLOAD_BYTES, type FileMap } from "./upload";
 import { listConnections, revokeConnection } from "./oauth";
 import { approveWaitlist } from "./login";
-import { deleteUser, listUsers } from "./users";
+import { deleteUser, listUsers, setAdmin } from "./users";
 import { b64decode, isEmail } from "./util";
 
 export const ctxOf = (c: Context<AppEnv>): Ctx => ({
@@ -128,6 +128,7 @@ export function managementApi(kind: "admin" | "deploy") {
       if (!c.get("user").isAdmin) throw err(403, "admin_only", "Only an admin can list users.", "Ask the Formelab owner.");
       return c.json(await listUsers(c.env));
     });
+    api.post("/users/:email/admin", async (c) => c.json(await setAdmin(c.env, c.get("user"), c.req.param("email"), (await jsonBody(c)).admin)));
     api.delete("/users/:email", async (c) => c.json(await deleteUser(c.env, c.get("user"), c.req.param("email"))));
     api.get("/connections", async (c) => c.json(await listConnections(c.env, c.get("user").email)));
     api.delete("/connections/:id", async (c) => {

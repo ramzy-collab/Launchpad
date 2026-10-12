@@ -142,7 +142,7 @@ export function namespaceSharedEmail(origin: string, to: string, opts: { by: str
 
 export function adminSignupEmail(origin: string, to: string, opts: { email: string; via: "form" | "login"; total: number }): Email {
   const how = opts.via === "form" ? "signed up on the home page" : "logged in before being let in";
-  const url = `${origin}/app#waitlist`;
+  const url = `${origin}/admin/waitlist`;
   return {
     to,
     subject: `New waitlist sign-up: ${opts.email}`,

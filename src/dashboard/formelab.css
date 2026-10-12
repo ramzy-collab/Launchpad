@@ -102,6 +102,15 @@ pre { margin: 0; white-space: pre-wrap; word-break: break-all; }
 .dash-hero { padding: 8px 0 8px; }
 .dash-hero h1 { font-size: clamp(2.25rem, 6vw, 3.25rem); line-height: 1.05; letter-spacing: -.03em; margin: 0 0 6px; font-weight: 800; }
 .dash-hero p { color: var(--fl-ink-soft); margin: 0; }
+.eyebrow { font-family: var(--fl-body); font-size: .8125rem; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--fl-accent) !important; margin: 0 0 4px !important; }
+.admin .dash-hero h1 { color: var(--fl-ink); }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: 12px; }
+.stat { background: var(--fl-canvas); border: 1.5px solid var(--fl-line); border-radius: var(--fl-radius-md); }
+.stat a, .stat > .stat-value { text-decoration: none; color: inherit; }
+.stat a, .stat:not(:has(a)) { display: flex; flex-direction: column; gap: 2px; padding: 14px 16px; }
+.stat a:hover { background: var(--fl-surface); border-radius: var(--fl-radius-md); }
+.stat-value { font-family: var(--fl-display); font-size: 2rem; font-weight: 800; letter-spacing: -.02em; color: var(--fl-ink); line-height: 1.1; }
+.stat-label { font-size: .875rem; color: var(--fl-ink-soft); }
 .tabs { display: flex; gap: 6px; margin: 20px 0 0; flex-wrap: wrap; }
 .tabs a { color: var(--fl-ink-soft); text-decoration: none; font-weight: 600; padding: 8px 16px; border-radius: 999px; border: 1.5px solid var(--fl-line); background: var(--fl-surface); word-break: normal; }
 .tabs a:hover { color: var(--fl-ink); border-color: var(--fl-ink-soft); }
@@ -146,7 +155,9 @@ th { color: var(--fl-ink-soft); font-weight: 600; font-size: .8125rem; }
 .dash main button:hover { transform: translateY(-1px); filter: brightness(1.06); }
 .dash main button:active { transform: scale(.97); }
 .dash main button:disabled { opacity: .5; cursor: wait; transform: none; }
-.dash main button.danger, .dash main button[data-copy] { background: transparent; }
+.dash main button.danger, .dash main button[data-copy], .dash main button.secondary { background: transparent; }
+.dash main button.secondary { color: var(--fl-ink); border-color: var(--fl-line); }
+.dash main button.secondary:hover { border-color: var(--fl-ink-soft); filter: none; }
 .dash main button.danger { color: var(--fl-danger); border-color: var(--fl-line); }
 .dash main button.danger:hover { border-color: var(--fl-danger); filter: none; }
 .dash main button[data-copy] { color: var(--fl-ink); border-color: var(--fl-line); }

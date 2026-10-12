@@ -144,6 +144,13 @@
         show("Deleted " + who + (r.deletedSites ? " and " + r.deletedSites + " app(s)." : "."));
         reloadSoon();
       });
+    } else if (action === "user-admin") {
+      var grant = btn.dataset.admin === "true";
+      if (!confirm(grant ? "Make " + btn.dataset.email + " an admin? They'll be able to manage everyone on Formelab." : "Remove admin access from " + btn.dataset.email + "?")) return;
+      p = api("POST", "/users/" + encodeURIComponent(btn.dataset.email) + "/admin", { admin: grant }).then(function () {
+        show(grant ? btn.dataset.email + " is now an admin." : btn.dataset.email + " is no longer an admin.");
+        reloadSoon();
+      });
     } else if (action === "waitlist-approve") {
       p = api("POST", "/waitlist/approve", { email: btn.dataset.email }).then(function () { show("Let in. They can create apps now."); reloadSoon(); });
     } else if (action === "connection-revoke") {

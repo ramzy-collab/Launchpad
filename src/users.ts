@@ -109,3 +109,55 @@ export async function deleteUser(env: Env, admin: User, rawEmail: string) {
   await audit(env, admin.email, "user_delete", email, result);
   return result;
 }
+
+/** Gives or removes admin access. The owner (OWNER_EMAIL) is always an admin. */
+export async function setAdmin(env: Env, admin: User, rawEmail: string, makeAdmin: unknown) {
+  if (!admin.isAdmin) throw err(403, "admin_only", "Only an admin can change who is an admin.", "Ask the Formelab owner.");
+  if (typeof makeAdmin !== "boolean") throw badRequest("Send { \"admin\": true } or { \"admin\": false }.", "admin must be true or false.");
+  const email = normEmail(rawEmail);
+  if (!makeAdmin && isOwnerEmail(env, email)) throw badRequest("The owner account is always an admin.", "Change OWNER_EMAIL to hand over ownership.");
+  if (!makeAdmin && email === admin.email) throw badRequest("You can't remove your own admin access.", "Ask another admin to do it.");
+  // Admins can create apps, so giving admin access also lets someone in from the waitlist.
+  const res = await env.DB.prepare(
+    `UPDATE users SET is_admin = ?1, status = CASE WHEN ?1 = 1 THEN 'active' ELSE status END WHERE email = ?2`,
+  )
+    .bind(makeAdmin ? 1 : 0, email)
+    .run();
+  if (!res.meta.changes) throw notFound(`The user ${email}`);
+  await audit(env, admin.email, makeAdmin ? "admin_grant" : "admin_revoke", email);
+  return { ok: true, email, isAdmin: makeAdmin };
+}
+
+export interface AdminStats {
+  users: number;
+  active: number;
+  waiting: number;
+  admins: number;
+  apps: number;
+  namespaces: number;
+  signupsThisWeek: number;
+}
+
+export async function adminStats(env: Env): Promise<AdminStats> {
+  const weekAgo = Date.now() - 7 * 24 * 3600_000;
+  const row = await env.DB.prepare(
+    `SELECT (SELECT COUNT(*) FROM users) AS users,
+            (SELECT COUNT(*) FROM users WHERE status = 'active') AS active,
+            (SELECT COUNT(*) FROM waitlist WHERE approved_at IS NULL) AS waiting,
+            (SELECT COUNT(*) FROM users WHERE is_admin = 1) AS admins,
+            (SELECT COUNT(*) FROM sites) AS apps,
+            (SELECT COUNT(*) FROM namespaces) AS namespaces,
+            (SELECT COUNT(*) FROM waitlist WHERE created_at >= ?) AS signups`,
+  )
+    .bind(weekAgo)
+    .first<{ users: number; active: number; waiting: number; admins: number; apps: number; namespaces: number; signups: number }>();
+  return {
+    users: row?.users ?? 0,
+    active: row?.active ?? 0,
+    waiting: row?.waiting ?? 0,
+    admins: row?.admins ?? 0,
+    apps: row?.apps ?? 0,
+    namespaces: row?.namespaces ?? 0,
+    signupsThisWeek: row?.signups ?? 0,
+  };
+}

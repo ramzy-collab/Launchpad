@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { managementApi } from "./api";
 import { identifyBearer, identifyBrowser } from "./auth";
+import { adminPage } from "./dashboard/admin";
 import { connectPage } from "./dashboard/connect";
 import { dashboardPage, sharedPage } from "./dashboard/page";
 import { homePage, loginPage } from "./dashboard/home";
@@ -78,7 +79,7 @@ apex.use("*", async (c, next) => {
   if (!who) {
     if (c.req.path.startsWith("/_api/")) return jsonError(unauthorized());
     const url = new URL(c.req.url);
-    const isAppPage = c.req.path === "/app" || c.req.path.startsWith("/app/");
+    const isAppPage = /^\/(app|admin)(\/|$)/.test(c.req.path);
     const toLogin = c.req.method === "GET" && (workosEnabled(c.env) || isAppPage);
     return toLogin ? c.redirect(`/login?return=${encodeURIComponent(url.pathname + url.search)}`, 302) : unauthorizedPage();
   }
@@ -109,6 +110,9 @@ apex.get("/_platform/guide.md", guide);
 apex.get("/app", async (c) => dashboardPage(c));
 apex.get("/app/shared", async (c) => sharedPage(c));
 apex.get("/app/connect", (c) => connectPage(c));
+apex.get("/admin", (c) => adminPage(c, "overview"));
+apex.get("/admin/users", (c) => adminPage(c, "users"));
+apex.get("/admin/waitlist", (c) => adminPage(c, "waitlist"));
 apex.notFound(() => plainPage(404, "Not found", "There is nothing here."));
 
 // ---------------------------------------------------------------------------

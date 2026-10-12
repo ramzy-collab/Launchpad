@@ -87,10 +87,12 @@ describe("waitlist", () => {
   it("shows sign-ups to admins only", async () => {
     const email = `seen-${Date.now()}@example.com`;
     await join(email);
-    const admin = await (await call("/app", { as: OWNER })).text();
+    const admin = await (await call("/admin/waitlist", { as: OWNER })).text();
     expect(admin).toContain("Waitlist");
     expect(admin).toContain(email);
-    const other = await (await call("/app", { as: "someone-else@example.com" })).text();
-    expect(other).not.toContain(email);
+    const other = await call("/admin/waitlist", { as: "someone-else@example.com" });
+    expect(other.status).toBe(404);
+    expect(await other.text()).not.toContain(email);
+    expect(await (await call("/app", { as: OWNER })).text()).not.toContain(email); // not in the personal lab
   });
 });

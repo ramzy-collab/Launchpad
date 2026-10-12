@@ -64,7 +64,7 @@ describe("notification emails", () => {
     expect(forAdmin[0]!.subject).toBe(`New waitlist sign-up: ${email}`);
     expect(forAdmin[0]!.text).toContain("signed up on the home page");
     expect(forAdmin[0]!.text).toMatch(/Waitlist total: \d+\./);
-    expect(forAdmin[0]!.text).toContain("https://example.com/app#waitlist");
+    expect(forAdmin[0]!.text).toContain("https://example.com/admin/waitlist");
   });
 
   it("tells people when they're let in, only the first time", async () => {

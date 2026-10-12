@@ -13,7 +13,7 @@ describe("admin: users", () => {
     const list = await (await call("/_api/admin/users", { as: OWNER })).json<{ email: string }[]>();
     expect(list.map((u) => u.email)).toContain(email);
     expect((await call("/_api/admin/users", { as: email })).status).toBe(403);
-    const html = await (await call("/app", { as: OWNER })).text();
+    const html = await (await call("/admin/users", { as: OWNER })).text();
     expect(html).toContain(`data-action="user-delete" data-email="${email}"`);
     expect(html).not.toContain(`data-action="user-delete" data-email="${OWNER}"`);
   });
@@ -51,6 +51,45 @@ describe("admin: users", () => {
     expect(JSON.parse(nsRow!.editors)).toEqual(["keep@example.com"]);
 
     expect(await count("SELECT COUNT(*) AS n FROM audit WHERE action = 'user_delete' AND target = ?", gone)).toBe(1);
+  });
+
+  it("the admin area is for admins only, and shows the numbers", async () => {
+    const res = await call("/admin", { as: OWNER });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("Run Formelab");
+    expect(html).toContain('<a href="/admin" aria-current="page">Overview</a>');
+    expect(html).toContain('class="stat-label">People<');
+    expect(html).not.toMatch(/\son[a-z]+=/i);
+    for (const path of ["/admin", "/admin/users", "/admin/waitlist"]) {
+      expect((await call(path, { as: `nope-${uniq()}@example.com` })).status, path).toBe(404);
+      const out = await call(path);
+      expect(out.status, path).toBe(302);
+      expect(out.headers.get("location"), path).toBe(`/login?return=${encodeURIComponent(path)}`);
+    }
+    // Non-admins don't get an Admin link in their own lab.
+    expect(await (await call("/app", { as: `plain-${uniq()}@example.com` })).text()).not.toContain('href="/admin"');
+  });
+
+  it("admins can make and remove other admins, but not the owner or themselves", async () => {
+    const helper = `helper-${uniq()}@example.com`;
+    await call("/_api/admin/whoami", { as: helper });
+    await env.DB.prepare("UPDATE users SET status = 'waitlisted' WHERE email = ?").bind(helper).run();
+    const grant = await call(`/_api/admin/users/${encodeURIComponent(helper)}/admin`, { as: OWNER, method: "POST", json: { admin: true } });
+    expect(grant.status).toBe(200);
+    const row = await env.DB.prepare("SELECT is_admin, status FROM users WHERE email = ?").bind(helper).first<{ is_admin: number; status: string }>();
+    expect(row).toEqual({ is_admin: 1, status: "active" }); // admins are let in too
+    expect((await call("/admin/users", { as: helper })).status).toBe(200);
+
+    // The new admin can't demote the owner or themselves; a non-admin can't change anything.
+    expect((await call(`/_api/admin/users/${encodeURIComponent(OWNER)}/admin`, { as: helper, method: "POST", json: { admin: false } })).status).toBe(400);
+    expect((await call(`/_api/admin/users/${encodeURIComponent(helper)}/admin`, { as: helper, method: "POST", json: { admin: false } })).status).toBe(400);
+    expect((await call(`/_api/admin/users/${encodeURIComponent(helper)}/admin`, { as: `x-${uniq()}@example.com`, method: "POST", json: { admin: false } })).status).toBe(403);
+    expect((await call(`/_api/admin/users/${encodeURIComponent(helper)}/admin`, { as: OWNER, method: "POST", json: { admin: "yes" } })).status).toBe(400);
+
+    const revoke = await call(`/_api/admin/users/${encodeURIComponent(helper)}/admin`, { as: OWNER, method: "POST", json: { admin: false } });
+    expect(revoke.status).toBe(200);
+    expect((await call("/admin", { as: helper })).status).toBe(404);
   });
 
   it("only admins can delete, and not themselves or the owner", async () => {

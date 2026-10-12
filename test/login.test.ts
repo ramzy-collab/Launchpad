@@ -147,7 +147,8 @@ describe("accounts and the waitlist", () => {
 
   it("the owner is active on first sign-in", async () => {
     const { cookie } = await signIn(OWNER);
-    expect(await (await w("/app", { headers: { cookie } })).text()).toContain('<span class="tag admin">admin</span>');
+    expect(await (await w("/app", { headers: { cookie } })).text()).toContain('<a class="link" href="/admin">Admin</a>');
+    expect((await w("/admin", { headers: { cookie } })).status).toBe(200);
   });
 
   it("logging out ends the session", async () => {

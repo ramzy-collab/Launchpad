@@ -7,12 +7,9 @@ import { listNamespaces, listOwnSites, listSharedSites, type SiteView } from "..
 import { escapeHtml as e } from "../util";
 import { ctxOf } from "../api";
 import { listConnections } from "../oauth";
-import { listWaitlist } from "../waitlist";
-import { isOwnerEmail } from "../auth";
-import { listUsers } from "../users";
 import { head, htmlResponse, nav } from "./layout";
 
-const fmtTime = (ms: number | null) => (ms ? new Date(ms).toISOString().replace("T", " ").slice(0, 16) + " UTC" : "never");
+export const fmtTime = (ms: number | null) => (ms ? new Date(ms).toISOString().replace("T", " ").slice(0, 16) + " UTC" : "never");
 const fmtBytes = (n: number) => (n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`);
 
 const VISIBILITY_LABEL = { restricted: "Only people you share with", all: "Anyone signed in to Formelab" } as const;
@@ -23,10 +20,14 @@ const visibilityOptions = (current: "all" | "restricted") =>
     .join("");
 
 /** The page frame: nav with the account, the My apps / Shared with me tabs, then `body`. */
-export function shell(c: Context<AppEnv>, user: User, tab: "mine" | "shared" | "connect", body: string): Response {
-  const logout = c.get("sessionId")
+export function logoutControl(c: Context<AppEnv>): string {
+  return c.get("sessionId")
     ? `<form method="post" action="/auth/logout" class="logout"><button class="link">Log out</button></form>`
     : `<a class="link" href="/cdn-cgi/access/logout">Log out</a>`;
+}
+
+export function shell(c: Context<AppEnv>, user: User, tab: "mine" | "shared" | "connect", body: string): Response {
+  const logout = logoutControl(c);
   const current = (t: string) => (t === tab ? ' aria-current="page"' : "");
   return htmlResponse(`<!doctype html>
 <html lang="en">
@@ -37,7 +38,8 @@ ${head("Formelab", ["dashboard.js"])}
 <div class="wrap">
 ${nav(
   "/app",
-  `<span class="who">Signed in as <strong>${e(user.email)}</strong>${user.isAdmin ? ' <span class="tag admin">admin</span>' : ""}</span>
+  `<span class="who">Signed in as <strong>${e(user.email)}</strong></span>
+    ${user.isAdmin ? '<a class="link" href="/admin">Admin</a>' : ""}
     ${logout}`,
 )}
 <main>
@@ -90,14 +92,12 @@ export async function dashboardPage(c: Context<AppEnv>): Promise<Response> {
   const ctx = ctxOf(c);
   const user = ctx.user;
   if (!user.active) return shell(c, user, "mine", waitlistedNotice);
-  const [namespaces, sites, tokens, activity, connections, waitlist, users] = await Promise.all([
+  const [namespaces, sites, tokens, activity, connections] = await Promise.all([
     listNamespaces(ctx),
     listOwnSites(ctx),
     listTokens(c.env, user),
     recentActivity(c.env, user.email, 50),
     listConnections(c.env, user.email).catch(() => []),
-    user.isAdmin ? listWaitlist(c.env) : null,
-    user.isAdmin ? listUsers(c.env) : null,
   ]);
   const origin = isDev(c.env) ? new URL(c.req.url).origin : `https://${c.env.DOMAIN}`;
   const t = Date.now();
@@ -173,44 +173,6 @@ export async function dashboardPage(c: Context<AppEnv>): Promise<Response> {
       (a) => `<tr><td class="nowrap">${e(fmtTime(a.at))}</td><td>${e(a.actor)}</td><td>${e(a.action)}</td><td>${e(a.target ?? "")}</td><td class="muted">${e(a.detail ?? "")}</td></tr>`,
     )
     .join("");
-
-  const waitlistRows = (waitlist?.entries ?? [])
-    .map(
-      (w) => `<tr><td>${e(w.email)}</td><td class="nowrap">${e(fmtTime(w.createdAt))}</td>
-  <td>${w.approvedAt ? `<span class="tag">let in ${e(fmtTime(w.approvedAt).slice(0, 10))}</span>` : `<button data-action="waitlist-approve" data-email="${e(w.email)}">Let in</button>`}</td></tr>`,
-    )
-    .join("");
-  const waitlistSection = waitlist
-    ? `<section id="waitlist">
-  <h2>Waitlist<span class="count">${e(waitlist.total)}</span></h2>
-  ${
-    waitlist.entries.length
-      ? `<p class="muted">People who signed up on the home page or tried to log in, newest first${waitlist.total > waitlist.entries.length ? ` (latest ${waitlist.entries.length} shown)` : ""}. <strong>Let in</strong> lets them create apps. Only admins see this.</p>
-  <div class="scroll"><table><thead><tr><th>Email</th><th>Joined</th><th></th></tr></thead><tbody>${waitlistRows}</tbody></table></div>`
-      : `<p class="muted">No sign-ups yet. Share the home page at <a href="/">${e(origin)}/</a>.</p>`
-  }
-  <form class="inline" data-action="waitlist-invite">
-    <input name="email" type="email" required placeholder="someone@example.com" aria-label="Email to invite">
-    <button>Invite</button>
-  </form>
-</section>`
-    : "";
-
-  const userRows = (users ?? [])
-    .map((u) => {
-      const status = u.isAdmin ? '<span class="tag admin">admin</span>' : u.status === "active" ? "Active" : '<span class="tag">waitlist</span>';
-      const protectedUser = u.email === user.email || isOwnerEmail(c.env, u.email);
-      return `<tr><td>${e(u.email)}${u.name ? `<div class="muted">${e(u.name)}</div>` : ""}</td><td>${status}</td><td>${e(u.apps)}</td><td class="nowrap">${e(fmtTime(u.createdAt))}</td>
-  <td>${protectedUser ? "" : `<button class="danger" data-action="user-delete" data-email="${e(u.email)}" data-apps="${e(u.apps)}">Delete</button>`}</td></tr>`;
-    })
-    .join("");
-  const usersSection = users
-    ? `<section>
-  <h2>Users<span class="count">${e(users.length)}</span></h2>
-  <p class="muted">Everyone who has signed in. <strong>Delete</strong> removes the account and everything it owns: its namespaces and apps (with their data and secrets), its place on other people's share lists, tokens and connected AI apps. Only admins see this.</p>
-  <div class="scroll"><table><thead><tr><th>Email</th><th>Status</th><th>Apps</th><th>Joined</th><th></th></tr></thead><tbody>${userRows}</tbody></table></div>
-</section>`
-    : "";
 
   const nsOptions = namespaces.map((n) => `<option value="${e(n.label)}">`).join("");
 
@@ -295,8 +257,7 @@ export async function dashboardPage(c: Context<AppEnv>): Promise<Response> {
       : `<p class="muted">Nothing yet.</p>`
   }
 </section>
-${usersSection}
-${waitlistSection}`;
+`;
 
   return shell(c, user, "mine", body);
 }

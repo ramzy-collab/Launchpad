@@ -276,3 +276,11 @@ Choices made while building v1, including where the build differs from the spec 
   waitlist row, and the WorkOS user (best effort). Audit rows are kept as history.
 - Admins can't delete themselves or the `OWNER_EMAIL` account. Someone who is deleted can sign in
   again later; they start over on the waitlist.
+
+## Formelab admin area
+
+- Running Formelab lives at `/admin` (Overview, Users, Waitlist), apart from anyone's own lab at
+  `/app`. Admins get an **Admin** link in their lab's nav; for everyone else `/admin` is a 404.
+- Admins can make other people admins (which also lets them in from the waitlist) and remove
+  admin access. The `OWNER_EMAIL` account is always an admin, and nobody can remove their own
+  access, so Formelab can't be left without an admin.
