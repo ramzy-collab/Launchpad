@@ -40,7 +40,7 @@ ${nav(
 )}
 <main>
 <div class="dash-hero">
-  <h1>Your studio</h1>
+  <h1>My lab</h1>
   <p>${user.active ? "Publish apps, choose who can open them, and connect your AI tools." : "Apps people share with you show up here."}</p>
 </div>
 <nav class="tabs" aria-label="Sections"><a href="/app"${current("mine")}>My apps</a><a href="/app/shared"${current("shared")}>Shared with me</a><a href="/app/connect"${current("connect")}>Connect your AI</a></nav>
