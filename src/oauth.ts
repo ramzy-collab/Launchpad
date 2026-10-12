@@ -9,7 +9,6 @@ import type { Context } from "hono";
 import { getUser, userForDeployToken } from "./auth";
 import { audit } from "./audit";
 import type { AppEnv, Env } from "./env";
-import { isDev } from "./env";
 import { notFound } from "./errors";
 import { handleMcp } from "./mcp";
 import { plainPage } from "./serve";

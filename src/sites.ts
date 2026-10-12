@@ -1,7 +1,7 @@
 import { audit } from "./audit";
 import { canManageSite, canPublishTo, canViewSite, isNamespaceEditor, isNamespaceOwner, ownerOnly } from "./auth";
 import type { Env, User } from "./env";
-import { isDev, now } from "./env";
+import { now } from "./env";
 import { badRequest, err, forbidden, notFound } from "./errors";
 import { contentTypeFor } from "./mime";
 import type { FileMap } from "./upload";
