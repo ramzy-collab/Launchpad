@@ -166,7 +166,7 @@ describe("publish and serve", () => {
     // Like the dashboard's Publish form: blank title and share-with, visibility select, no spa.
     const second = await publishHtml(OWNER, ns, "kept", PAGE("v2"), { title: "", allowed_emails: "", visibility: "restricted" });
     expect(second.status).toBe(200);
-    const body = await second.json<Published & { note?: string }>();
+    const body = await second.json<Published & { replaced: boolean; note?: string }>();
     expect(body.replaced).toBe(true);
     expect(body.site).toMatchObject({
       title: "Kept app",
