@@ -83,9 +83,11 @@ describe("MCP server", () => {
   it("returns permission errors as tool errors with hints", async () => {
     const ns = uniq();
     await tool(await token(), "publish", { html: PAGE("x"), namespace: ns, mount_path: "" });
+    // Private by default: to someone else the app doesn't exist.
     const r = await tool(await token("mallory@example.com"), "delete_site", { namespace: ns, mount_path: "" });
     expect(r.isError).toBe(true);
-    expect(r.data.error.code).toBe("forbidden");
+    expect(r.data.error.code).toBe("not_found");
+    expect(r.data.error.hint).toBeTruthy();
   });
 
   it("serves the guide", async () => {

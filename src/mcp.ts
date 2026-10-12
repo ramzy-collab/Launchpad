@@ -87,7 +87,7 @@ export function buildServer(ctx: Ctx): McpServer {
         mount_path: z.string().describe("Path under the namespace, e.g. \"budget\" or \"tools/budget\"; \"\" for the root"),
         title: z.string().optional(),
         spa: z.boolean().optional().describe("Serve index.html for unknown extensionless paths (client-side routing)"),
-        visibility: z.enum(["all", "restricted"]).optional().describe("\"restricted\" limits viewers to allowed_emails plus editors"),
+        visibility: z.enum(["all", "restricted"]).optional().describe("Default \"restricted\": only the owner, editors and allowed_emails can open it. \"all\": anyone signed in to Formelab"),
         allowed_emails: emails,
       },
     },

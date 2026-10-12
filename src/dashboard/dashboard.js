@@ -80,6 +80,12 @@
         show("Editors saved.");
       });
     },
+    "waitlist-invite": function (form) {
+      return api("POST", "/waitlist/approve", { email: form.elements.email.value }).then(function () {
+        show("Invited. They can create apps as soon as they log in.");
+        reloadSoon();
+      });
+    },
     "token-create": function (form) {
       return api("POST", "/tokens", { name: form.elements.name.value, ttlHours: Number(form.elements.ttlHours.value) }).then(function (r) {
         document.getElementById("new-token-value").textContent = r.token;
@@ -127,6 +133,8 @@
       if (typedNs === null) return;
       if (typedNs.trim() !== btn.dataset.label) { show("The name did not match; nothing was deleted.", true); return; }
       p = api("DELETE", "/namespaces/" + encodeURIComponent(btn.dataset.label)).then(function () { show("Namespace deleted."); reloadSoon(); });
+    } else if (action === "waitlist-approve") {
+      p = api("POST", "/waitlist/approve", { email: btn.dataset.email }).then(function () { show("Let in. They can create apps now."); reloadSoon(); });
     } else if (action === "connection-revoke") {
       if (!confirm("Disconnect this app? It will need to sign in again to use Formelab.")) return;
       p = api("DELETE", "/connections/" + encodeURIComponent(btn.dataset.id)).then(function () { show("Disconnected."); reloadSoon(); });

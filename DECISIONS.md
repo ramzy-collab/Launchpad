@@ -221,3 +221,30 @@ Choices made while building v1, including where the build differs from the spec 
   `{id, title, text, url, metadata}`). `search` covers the sites you can manage plus the guide;
   `fetch` applies the same rule as opening the app in a browser (`canViewSite`) and includes up to
   200 KB of `index.html`, so an assistant can read an app before republishing it.
+
+## Accounts and login (WorkOS AuthKit)
+
+- **WorkOS AuthKit, used server side only.** `/auth/login` redirects to AuthKit's hosted page;
+  `/auth/callback` exchanges the code with the API key and starts Formelab's own session. No
+  WorkOS JavaScript runs on Formelab pages, so the strict CSP stays as it is. WorkOS was chosen over
+  Clerk because the free tier covers 1M monthly users, it sends the sign-in emails, and its
+  organizations and SSO fit the later work/company accounts.
+- **Sessions live in D1** (`sessions`), keyed by the SHA-256 of a random cookie token. Cookies are
+  `__Host-` prefixed (host-only, Secure, HttpOnly, SameSite=Lax). The dashboard session lasts 30
+  days. Each namespace host gets a separate 12-hour session through a single-use, 60-second code
+  (`auth_codes`) minted by the apex; it ends when the dashboard session does.
+- **Cloudflare Access still works** alongside: a request is signed in by a session cookie first,
+  then by an Access JWT. That makes the switch-over safe; Access can be removed afterwards.
+- **Waitlist gate.** `users.status` is `active` or `waitlisted`. New sign-ins are waitlisted unless
+  their email was approved (`waitlist.approved_at`) or is `OWNER_EMAIL`. Waitlisted accounts can't
+  create namespaces (and so can't publish), but can open apps shared with them.
+- **Private by default.** New apps default to `visibility: "restricted"`, and migration 0004 moved
+  existing apps to it. "Shared with me" lists apps someone else owns where the person is named:
+  in `allowed_emails`, the app's `editors`, or the namespace's editors. `visibility: "all"` (anyone
+  signed in) still exists for apps the owner deliberately opens up, but those don't show up in
+  everyone's "Shared with me".
+- **Strangers get 404, not 403,** for private apps in the management API and MCP tools, so an app's
+  existence isn't revealed.
+- **User apps still share the `formelab.ai` domain.** Moving them to their own domain is on the
+  launch checklist (README 2.5).
+

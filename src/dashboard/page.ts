@@ -1,9 +1,9 @@
 import type { Context } from "hono";
 import { recentActivity } from "../audit";
 import { listTokens } from "../auth";
-import type { AppEnv } from "../env";
+import type { AppEnv, User } from "../env";
 import { isDev } from "../env";
-import { listNamespaces, listSites } from "../sites";
+import { listNamespaces, listOwnSites, listSharedSites, type SiteView } from "../sites";
 import { escapeHtml as e } from "../util";
 import { ctxOf } from "../api";
 import { listConnections } from "../oauth";
@@ -13,12 +13,84 @@ import { head, htmlResponse, nav } from "./layout";
 const fmtTime = (ms: number | null) => (ms ? new Date(ms).toISOString().replace("T", " ").slice(0, 16) + " UTC" : "never");
 const fmtBytes = (n: number) => (n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`);
 
+const VISIBILITY_LABEL = { restricted: "Only people you share with", all: "Anyone signed in to Formelab" } as const;
+
+const visibilityOptions = (current: "all" | "restricted") =>
+  (["restricted", "all"] as const)
+    .map((v) => `<option value="${v}"${v === current ? " selected" : ""}>${VISIBILITY_LABEL[v]}</option>`)
+    .join("");
+
+/** The page frame: nav with the account, the My apps / Shared with me tabs, then `body`. */
+function shell(c: Context<AppEnv>, user: User, tab: "mine" | "shared", body: string): Response {
+  const logout = c.get("sessionId")
+    ? `<form method="post" action="/auth/logout" class="logout"><button class="link">Log out</button></form>`
+    : `<a class="link" href="/cdn-cgi/access/logout">Log out</a>`;
+  const current = (t: string) => (t === tab ? ' aria-current="page"' : "");
+  return htmlResponse(`<!doctype html>
+<html lang="en">
+<head>
+${head("Formelab", ["dashboard.js"])}
+</head>
+<body class="dash">
+<div class="wrap">
+${nav(
+  "/app",
+  `<span class="who">Signed in as <strong>${e(user.email)}</strong>${user.isAdmin ? ' <span class="tag admin">admin</span>' : ""}</span>
+    ${logout}`,
+)}
+<main>
+<div class="dash-hero">
+  <h1>Your studio</h1>
+  <p>${user.active ? "Publish apps, choose who can open them, and connect your AI tools." : "Apps people share with you show up here."}</p>
+</div>
+<nav class="tabs" aria-label="Apps"><a href="/app"${current("mine")}>My apps</a><a href="/app/shared"${current("shared")}>Shared with me</a></nav>
+<div id="flash" role="status" hidden></div>
+${body}
+</main>
+</div>
+</body>
+</html>`);
+}
+
+const waitlistedNotice = `<section class="notice">
+  <h2>You're on the waitlist</h2>
+  <p>Thanks for signing up. We're letting people in a few at a time, and we'll email you when you can create your own apps.</p>
+  <p>Until then, anything someone shares with you appears under <a href="/app/shared">Shared with me</a>.</p>
+</section>`;
+
+/** "Shared with me": apps other people own that they shared with this person by name. */
+export async function sharedPage(c: Context<AppEnv>): Promise<Response> {
+  const ctx = ctxOf(c);
+  const sites = await listSharedSites(ctx);
+  const rows = sites.map((s) => sharedRow(s)).join("");
+  const body = `${ctx.user.active ? "" : waitlistedNotice}
+<section>
+  <h2>Shared with me<span class="count">${e(sites.length)}</span></h2>
+  ${
+    sites.length
+      ? `<div class="scroll"><table><thead><tr><th>App</th><th>Owner</th><th>Your access</th><th>Updated</th></tr></thead><tbody>${rows}</tbody></table></div>`
+      : `<p class="muted">Nothing yet. When someone adds your email to one of their apps, it shows up here.</p>`
+  }
+</section>`;
+  return shell(c, ctx.user, "shared", body);
+}
+
+function sharedRow(s: SiteView & { canManage: boolean }): string {
+  return `<tr>
+  <td><a href="${e(s.url)}">${e(s.title || s.url)}</a>${s.title ? `<div class="muted">${e(s.url)}</div>` : ""}</td>
+  <td>${e(s.ownerEmail)}</td>
+  <td>${s.canManage ? "Can edit" : "Can open"}</td>
+  <td class="nowrap">${e(fmtTime(s.updatedAt))}</td>
+</tr>`;
+}
+
 export async function dashboardPage(c: Context<AppEnv>): Promise<Response> {
   const ctx = ctxOf(c);
   const user = ctx.user;
+  if (!user.active) return shell(c, user, "mine", waitlistedNotice);
   const [namespaces, sites, tokens, activity, connections, waitlist] = await Promise.all([
     listNamespaces(ctx),
-    listSites(ctx),
+    listOwnSites(ctx),
     listTokens(c.env, user),
     recentActivity(c.env, user.email, 50),
     listConnections(c.env, user.email).catch(() => []),
@@ -50,7 +122,7 @@ export async function dashboardPage(c: Context<AppEnv>): Promise<Response> {
       (s) => `<tr>
   <td><a href="${e(s.url)}">${e(s.url)}</a>${s.hidden ? ' <span class="tag">hidden</span>' : ""}${s.spa ? ' <span class="tag">spa</span>' : ""}</td>
   <td>${e(s.title ?? "")}</td>
-  <td>${e(s.visibility)}${s.visibility === "restricted" ? `<div class="muted">${e(s.allowedEmails.join(", "))}</div>` : ""}</td>
+  <td>${e(VISIBILITY_LABEL[s.visibility])}${s.allowedEmails.length ? `<div class="muted">${e(s.allowedEmails.join(", "))}</div>` : ""}</td>
   <td class="nowrap">${e(fmtTime(s.updatedAt))}</td>
   <td>${e(fmtBytes(s.totalBytes))} · ${e(s.fileCount)} files</td>
   <td class="actions">
@@ -61,12 +133,9 @@ export async function dashboardPage(c: Context<AppEnv>): Promise<Response> {
     <details><summary>Settings</summary>
       <form class="stack" data-action="site-update" data-id="${e(s.id)}">
         <label>Title <input name="title" value="${e(s.title ?? "")}"></label>
-        <label>Visibility <select name="visibility">
-          <option value="all"${s.visibility === "all" ? " selected" : ""}>all signed-in users</option>
-          <option value="restricted"${s.visibility === "restricted" ? " selected" : ""}>restricted</option>
-        </select></label>
-        <label>Allowed emails <input name="allowed_emails" value="${e(s.allowedEmails.join(", "))}"></label>
-        <label>Editors <input name="editors" value="${e(s.editors.join(", "))}"></label>
+        <label>Who can open it <select name="visibility">${visibilityOptions(s.visibility)}</select></label>
+        <label>Share with (can open) <input name="allowed_emails" value="${e(s.allowedEmails.join(", "))}" placeholder="friend@example.com, ..."></label>
+        <label>Editors (can update) <input name="editors" value="${e(s.editors.join(", "))}"></label>
         <label class="check"><input type="checkbox" name="spa"${s.spa ? " checked" : ""}> SPA fallback</label>
         <label class="check"><input type="checkbox" name="hidden"${s.hidden ? " checked" : ""}> Hidden from listings</label>
         <button>Save settings</button>
@@ -104,41 +173,30 @@ export async function dashboardPage(c: Context<AppEnv>): Promise<Response> {
     .join("");
 
   const waitlistRows = (waitlist?.entries ?? [])
-    .map((w) => `<tr><td>${e(w.email)}</td><td class="nowrap">${e(fmtTime(w.createdAt))}</td></tr>`)
+    .map(
+      (w) => `<tr><td>${e(w.email)}</td><td class="nowrap">${e(fmtTime(w.createdAt))}</td>
+  <td>${w.approvedAt ? `<span class="tag">let in ${e(fmtTime(w.approvedAt).slice(0, 10))}</span>` : `<button data-action="waitlist-approve" data-email="${e(w.email)}">Let in</button>`}</td></tr>`,
+    )
     .join("");
   const waitlistSection = waitlist
     ? `<section>
   <h2>Waitlist<span class="count">${e(waitlist.total)}</span></h2>
   ${
     waitlist.entries.length
-      ? `<p class="muted">People who signed up on the home page, newest first${waitlist.total > waitlist.entries.length ? ` (latest ${waitlist.entries.length} shown)` : ""}. Only admins see this.</p>
-  <div class="scroll"><table><thead><tr><th>Email</th><th>Joined</th></tr></thead><tbody>${waitlistRows}</tbody></table></div>`
+      ? `<p class="muted">People who signed up on the home page or tried to log in, newest first${waitlist.total > waitlist.entries.length ? ` (latest ${waitlist.entries.length} shown)` : ""}. <strong>Let in</strong> lets them create apps. Only admins see this.</p>
+  <div class="scroll"><table><thead><tr><th>Email</th><th>Joined</th><th></th></tr></thead><tbody>${waitlistRows}</tbody></table></div>`
       : `<p class="muted">No sign-ups yet. Share the home page at <a href="/">${e(origin)}/</a>.</p>`
   }
+  <form class="inline" data-action="waitlist-invite">
+    <input name="email" type="email" required placeholder="someone@example.com" aria-label="Email to invite">
+    <button>Invite</button>
+  </form>
 </section>`
     : "";
 
   const nsOptions = namespaces.map((n) => `<option value="${e(n.label)}">`).join("");
 
-  const html = `<!doctype html>
-<html lang="en">
-<head>
-${head("Formelab", ["dashboard.js"])}
-</head>
-<body class="dash">
-<div class="wrap">
-${nav(
-  "/app",
-  `<span class="who">Signed in as <strong>${e(user.email)}</strong>${user.isAdmin ? ' <span class="tag admin">admin</span>' : ""}</span>
-    <a class="link" href="/cdn-cgi/access/logout">Log out</a>`,
-)}
-<main>
-<div class="dash-hero">
-  <h1>Your studio</h1>
-  <p>Publish apps, manage who can see them, and connect your AI tools.</p>
-</div>
-<div id="flash" role="status" hidden></div>
-
+  const body = `
 <section>
   <h2>Publish an app</h2>
   <form class="grid" data-action="upload">
@@ -147,19 +205,19 @@ ${nav(
     <label>Mount path <input name="mount_path" placeholder="my-app (empty for root)"></label>
     <label>File (.html or .zip) <input type="file" name="file" accept=".html,.htm,.zip" required></label>
     <label>Title <input name="title"></label>
-    <label>Visibility <select name="visibility"><option value="all">all signed-in users</option><option value="restricted">restricted</option></select></label>
-    <label>Allowed emails <input name="allowed_emails" placeholder="a@example.com, b@example.com"></label>
+    <label>Who can open it <select name="visibility">${visibilityOptions("restricted")}</select></label>
+    <label>Share with (can open) <input name="allowed_emails" placeholder="a@example.com, b@example.com"></label>
     <label class="check"><input type="checkbox" name="spa"> SPA fallback</label>
     <div><button>Publish</button></div>
   </form>
 </section>
 
 <section>
-  <h2>Sites<span class="count">${e(sites.length)}</span></h2>
+  <h2>My apps<span class="count">${e(sites.length)}</span></h2>
   ${
     sites.length
       ? `<div class="scroll"><table><thead><tr><th>URL</th><th>Title</th><th>Visibility</th><th>Updated</th><th>Size</th><th>Actions</th></tr></thead><tbody>${siteRows}</tbody></table></div>`
-      : `<p class="muted">No sites yet. Publish one above, or connect Claude Code below.</p>`
+      : `<p class="muted">No apps yet. Publish one above, or connect your AI app below.</p>`
   }
 </section>
 
@@ -227,11 +285,7 @@ ${nav(
       : `<p class="muted">Nothing yet.</p>`
   }
 </section>
-${waitlistSection}
-</main>
-</div>
-</body>
-</html>`;
+${waitlistSection}`;
 
-  return htmlResponse(html);
+  return shell(c, user, "mine", body);
 }

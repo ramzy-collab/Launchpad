@@ -102,6 +102,13 @@ pre { margin: 0; white-space: pre-wrap; word-break: break-all; }
 .dash-hero { padding: 8px 0 8px; }
 .dash-hero h1 { font-size: clamp(2.25rem, 6vw, 3.25rem); line-height: 1.05; letter-spacing: -.03em; margin: 0 0 6px; font-weight: 800; }
 .dash-hero p { color: var(--fl-ink-soft); margin: 0; }
+.tabs { display: flex; gap: 6px; margin: 20px 0 0; flex-wrap: wrap; }
+.tabs a { color: var(--fl-ink-soft); text-decoration: none; font-weight: 600; padding: 8px 16px; border-radius: 999px; border: 1.5px solid var(--fl-line); background: var(--fl-surface); word-break: normal; }
+.tabs a:hover { color: var(--fl-ink); border-color: var(--fl-ink-soft); }
+.tabs a[aria-current="page"] { color: var(--fl-accent-ink); background: var(--fl-accent); border-color: var(--fl-accent); }
+.notice { border-color: var(--fl-accent) !important; }
+.logout { margin: 0; display: inline-flex; }
+button.link { border: 0; background: none; cursor: pointer; font: inherit; }
 .dash section { background: var(--fl-surface); border: 1px solid var(--fl-line); border-radius: var(--fl-radius-lg); box-shadow: var(--fl-shadow); padding: clamp(20px, 3vw, 28px); margin: 20px 0; }
 .dash h2 { font-size: 1.5rem; letter-spacing: -.02em; margin: 0 0 14px; }
 .dash h3 { font-size: 1.0625rem; margin: 20px 0 6px; }

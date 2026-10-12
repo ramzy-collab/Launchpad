@@ -1,14 +1,16 @@
 import { Hono } from "hono";
 import { managementApi } from "./api";
-import { identifyBearer, identifyHuman } from "./auth";
-import { dashboardPage } from "./dashboard/page";
+import { identifyBearer, identifyBrowser } from "./auth";
+import { dashboardPage, sharedPage } from "./dashboard/page";
 import { homePage, loginPage } from "./dashboard/home";
 import type { AppEnv, Env } from "./env";
 import { forbidden, jsonError, onError, unauthorized } from "./errors";
 import { CONSENT_JS, DASHBOARD_JS, FORMELAB_CSS, GUIDE_MD, HOME_CSS, SDK_JS, SITE_JS, THEME_JS } from "./generated/assets";
 import { apexOrigin, AUTHORIZE_PATH, authorizeGet, authorizePost, oauthProvider } from "./oauth";
 import { runtimeApi } from "./runtime";
+import { appCallback, appHandoff, loginCallback, loginStart, logout, safeReturn, workosEnabled } from "./login";
 import { plainPage, serveAppFile } from "./serve";
+import { readCookie, SESSION_COOKIE } from "./session";
 import { joinWaitlist } from "./waitlist";
 
 const text = (body: string, type: string, cache = "no-cache") =>
@@ -17,8 +19,10 @@ const text = (body: string, type: string, cache = "no-cache") =>
   });
 
 const guide = () => text(GUIDE_MD, "text/markdown; charset=utf-8");
-const unauthorizedPage = () =>
-  plainPage(401, "Sign-in required", "This page is protected by Cloudflare Access. Reload to sign in.");
+const unauthorizedPage = () => plainPage(401, "Sign-in required", "Log in to Formelab, then reload this page.");
+
+/** Whether the request carries any sign-in at all (a session cookie or an Access JWT). */
+const hasSignIn = (req: Request) => !!(readCookie(req, SESSION_COOKIE) || req.headers.get("cf-access-jwt-assertion"));
 
 // ---------------------------------------------------------------------------
 // Apex: DOMAIN
@@ -41,14 +45,19 @@ apex.route("/_api/deploy", managementApi("deploy"));
 // /mcp, /oauth/* and /.well-known/oauth-* are answered by the OAuth provider before this app
 // (see the default export); it validates OAuth access tokens and fl_ deploy tokens for /mcp.
 
-// Public pages: the home page with the waitlist, the login screen, and the files they load.
-// Someone already signed in (Access attached a JWT, e.g. when Access still covers the whole
-// apex) goes straight to their dashboard.
+// Public pages: the home page with the waitlist, the login screen, the sign-in flow, and the
+// files they load. Someone already signed in goes straight to their dashboard.
 apex.get("/", async (c) => {
-  if (c.req.header("cf-access-jwt-assertion") && (await identifyHuman(c.req.raw, c.env))) return c.redirect("/app", 302);
+  if (hasSignIn(c.req.raw) && (await identifyBrowser(c.req.raw, c.env))) return c.redirect("/app", 302);
   return homePage();
 });
-apex.get("/login", () => loginPage());
+apex.get("/login", async (c) => {
+  const returnTo = safeReturn(c.req.query("return"));
+  if (hasSignIn(c.req.raw) && (await identifyBrowser(c.req.raw, c.env))) return c.redirect(returnTo, 302);
+  return loginPage({ workos: workosEnabled(c.env), returnTo });
+});
+apex.get("/auth/login", loginStart);
+apex.get("/auth/callback", loginCallback);
 apex.post("/_api/waitlist", async (c) => {
   await joinWaitlist(c.req.raw, c.env);
   return c.json({ ok: true });
@@ -61,19 +70,25 @@ apex.get("/_assets/site.js", asset(SITE_JS, "text/javascript; charset=utf-8"));
 apex.get("/_assets/dashboard.js", asset(DASHBOARD_JS, "text/javascript; charset=utf-8"));
 apex.get("/_assets/consent.js", asset(CONSENT_JS, "text/javascript; charset=utf-8"));
 
-// Everything else on the apex requires a Cloudflare Access identity. A visitor reaching the
-// dashboard without one is sent to the login screen.
+// Everything else on the apex requires a sign-in: a Formelab session, or a Cloudflare Access
+// identity. Pages send visitors without one to the login screen, then back.
 apex.use("*", async (c, next) => {
-  const user = await identifyHuman(c.req.raw, c.env);
-  if (!user) {
+  const who = await identifyBrowser(c.req.raw, c.env);
+  if (!who) {
     if (c.req.path.startsWith("/_api/")) return jsonError(unauthorized());
-    return c.req.path === "/app" ? c.redirect("/login", 302) : unauthorizedPage();
+    const url = new URL(c.req.url);
+    const toLogin = c.req.method === "GET" && (workosEnabled(c.env) || c.req.path === "/app");
+    return toLogin ? c.redirect(`/login?return=${encodeURIComponent(url.pathname + url.search)}`, 302) : unauthorizedPage();
   }
-  c.set("user", user);
+  c.set("user", who.user);
+  c.set("sessionId", who.sessionId);
   await next();
 });
 
-// The admin API is cookie-authenticated (via Access), so block cross-site writes.
+apex.post("/auth/logout", logout);
+apex.get("/auth/app", (c) => appHandoff(c, (host) => namespaceOf(host, c.env)));
+
+// The admin API is cookie-authenticated, so block cross-site writes.
 apex.use("/_api/admin/*", async (c, next) => {
   const origin = c.req.header("origin");
   if (origin && origin !== new URL(c.req.url).origin) return jsonError(forbidden("Cross-origin requests are not allowed."));
@@ -90,6 +105,7 @@ apex.post(AUTHORIZE_PATH, authorizePost);
 
 apex.get("/_platform/guide.md", guide);
 apex.get("/app", async (c) => dashboardPage(c));
+apex.get("/app/shared", async (c) => sharedPage(c));
 apex.notFound(() => plainPage(404, "Not found", "There is nothing here."));
 
 // ---------------------------------------------------------------------------
@@ -101,11 +117,20 @@ nsApp.onError(onError);
 
 nsApp.get("/healthz", () => text("ok", "text/plain; charset=utf-8", "no-store"));
 
+// Namespace hosts get their own session from the apex (see login.ts).
+nsApp.get("/_auth/callback", appCallback);
+
 nsApp.use("*", async (c, next) => {
   c.set("namespace", namespaceOf(new URL(c.req.url).hostname, c.env)!);
-  const user = await identifyHuman(c.req.raw, c.env);
-  if (!user) return c.req.path.startsWith("/_api/") ? jsonError(unauthorized()) : unauthorizedPage();
-  c.set("user", user);
+  const who = await identifyBrowser(c.req.raw, c.env);
+  if (!who) {
+    if (c.req.path.startsWith("/_api/")) return jsonError(unauthorized());
+    if (c.req.method === "GET" && workosEnabled(c.env)) {
+      return c.redirect(`${apexOrigin(c.env, c.req.url)}/auth/app?return=${encodeURIComponent(c.req.url)}`, 302);
+    }
+    return unauthorizedPage();
+  }
+  c.set("user", who.user);
   await next();
 });
 

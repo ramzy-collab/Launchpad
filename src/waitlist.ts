@@ -9,6 +9,7 @@ export const WAITLIST_RATE_PER_MINUTE = 10;
 export interface WaitlistEntry {
   email: string;
   createdAt: number;
+  approvedAt: number | null;
 }
 
 /**
@@ -41,13 +42,13 @@ export async function joinWaitlist(req: Request, env: Env): Promise<void> {
 export async function listWaitlist(env: Env, limit = 200): Promise<{ total: number; entries: WaitlistEntry[] }> {
   const [count, rows] = await Promise.all([
     env.DB.prepare("SELECT COUNT(*) AS n FROM waitlist").first<{ n: number }>(),
-    env.DB.prepare("SELECT email, created_at FROM waitlist ORDER BY created_at DESC LIMIT ?")
+    env.DB.prepare("SELECT email, created_at, approved_at FROM waitlist ORDER BY created_at DESC LIMIT ?")
       .bind(limit)
-      .all<{ email: string; created_at: number }>(),
+      .all<{ email: string; created_at: number; approved_at: number | null }>(),
   ]);
   return {
     total: count?.n ?? 0,
-    entries: rows.results.map((r) => ({ email: r.email, createdAt: r.created_at })),
+    entries: rows.results.map((r) => ({ email: r.email, createdAt: r.created_at, approvedAt: r.approved_at })),
   };
 }
 

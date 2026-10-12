@@ -273,5 +273,5 @@ The script calls `POST https://<DOMAIN>/_api/deploy/sites` (multipart: `file`, `
 - [ ] Every SDK call is wrapped in `try/catch`, and errors show `e.message` and `e.hint` to the user.
 - [ ] KV keys are namespaced (`"vote:" + email`), values stay well under 64 KB.
 - [ ] Works on a phone (responsive layout, `<meta name="viewport">`).
-- [ ] `visibility: "restricted"` with `allowed_emails` if the data is private.
+- [ ] Apps are private by default (only the owner and editors). Add `allowed_emails` for the people who should open it; they see it under "Shared with me".
 - [ ] Published with the right `namespace` and `mount_path`; the URL was shared with the user.

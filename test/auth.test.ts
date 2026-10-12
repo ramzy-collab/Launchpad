@@ -29,7 +29,7 @@ describe("security 1: Access JWT required", () => {
     // The dashboard sends visitors without a JWT to the public login screen.
     const dash = await call("/app");
     expect(dash.status).toBe(302);
-    expect(dash.headers.get("location")).toBe("/login");
+    expect(dash.headers.get("location")).toBe("/login?return=%2Fapp");
   });
 
   it("never trusts Cf-Access-Authenticated-User-Email on its own", async () => {

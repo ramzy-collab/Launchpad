@@ -15,7 +15,8 @@ import {
 } from "./sites";
 import { filesFromHtml, filesFromUpload, filesFromZip, MAX_UPLOAD_BYTES, type FileMap } from "./upload";
 import { listConnections, revokeConnection } from "./oauth";
-import { b64decode } from "./util";
+import { approveWaitlist } from "./login";
+import { b64decode, isEmail } from "./util";
 
 export const ctxOf = (c: Context<AppEnv>): Ctx => ({
   env: c.env,
@@ -113,6 +114,13 @@ export function managementApi(kind: "admin" | "deploy") {
     api.get("/tokens", async (c) => c.json(await listTokens(c.env, c.get("user"))));
     api.delete("/tokens/:id", async (c) => {
       await revokeToken(c.env, c.get("user"), c.req.param("id"));
+      return c.json({ ok: true });
+    });
+    api.post("/waitlist/approve", async (c) => {
+      if (!c.get("user").isAdmin) throw err(403, "admin_only", "Only an admin can let people in.", "Ask the Formelab owner.");
+      const email = String((await jsonBody(c)).email ?? "").trim();
+      if (!isEmail(email)) throw badRequest("That email address is not valid.", "Check the address and try again.");
+      await approveWaitlist(c.env, email);
       return c.json({ ok: true });
     });
     api.get("/connections", async (c) => c.json(await listConnections(c.env, c.get("user").email)));

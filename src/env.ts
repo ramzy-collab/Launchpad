@@ -15,12 +15,17 @@ export interface Env {
   ACCESS_TEAM_DOMAIN: string;
   ACCESS_AUD: string;
   OWNER_EMAIL: string;
+  /** WorkOS AuthKit (Formelab's own login). When both are set, sign-in goes through WorkOS. */
+  WORKOS_CLIENT_ID?: string;
+  WORKOS_API_KEY?: string;
 }
 
 export interface User {
   email: string;
   name: string | null;
   isAdmin: boolean;
+  /** False for accounts still on the waitlist: they can open apps shared with them, not create. */
+  active: boolean;
 }
 
 export type AppEnv = {
@@ -29,6 +34,8 @@ export type AppEnv = {
     user: User;
     namespace: string;
     site: import("./sites").SiteRow;
+    /** The browser session behind the request, when it came from Formelab's own login. */
+    sessionId: string | undefined;
   };
 };
 

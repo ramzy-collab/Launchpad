@@ -104,7 +104,7 @@ const safeJson = (s: string): unknown => {
 export function parseVisibility(raw: unknown): "all" | "restricted" | undefined {
   if (raw === undefined || raw === null || raw === "") return undefined;
   if (raw === "all" || raw === "restricted") return raw;
-  throw badRequest(`visibility must be "all" or "restricted".`, "\"all\" lets anyone signed in see the app; \"restricted\" limits it to the allow-list.");
+  throw badRequest(`visibility must be "all" or "restricted".`, "\"restricted\" (the default) limits the app to its owner, editors and allowed_emails; \"all\" lets anyone signed in to Formelab open it.");
 }
 
 export function parseBool(raw: unknown): boolean | undefined {
@@ -235,6 +235,7 @@ export async function listNamespaces(ctx: Ctx) {
 }
 
 export async function createNamespace(ctx: Ctx, rawLabel: unknown) {
+  if (!ctx.user.active) throw waitlisted();
   const label = validateLabel(rawLabel);
   const existing = await getNamespace(ctx.env, label);
   if (existing) {
@@ -274,6 +275,50 @@ export async function deleteNamespace(ctx: Ctx, rawLabel: string) {
 // ---------------------------------------------------------------------------
 // Sites
 // ---------------------------------------------------------------------------
+
+export const waitlisted = () =>
+  err(403, "waitlisted", "Your account is still on the waitlist.", "You can open apps people share with you. We'll email you when you can create your own.");
+
+const listed = (list: string, email: string) => parseJsonArray(list).map(normEmail).includes(email);
+
+/** Is this the person's own app: they own it, or own its namespace. */
+const ownsSite = (u: User, s: SiteRow, ns: NamespaceRow) => s.owner_email === u.email || isNamespaceOwner(u, ns);
+
+/**
+ * Apps someone else owns that were shared with this person by name: as a viewer (allowed_emails),
+ * an editor of the app, or an editor of its namespace. Apps open to everyone signed in don't count.
+ */
+export async function listSharedSites(ctx: Ctx) {
+  const { env, user } = ctx;
+  const [namespaces, sites] = await Promise.all([
+    env.DB.prepare("SELECT * FROM namespaces").all<NamespaceRow>(),
+    env.DB.prepare("SELECT * FROM sites ORDER BY updated_at DESC").all<SiteRow>(),
+  ]);
+  const nsByLabel = new Map(namespaces.results.map((n) => [n.label, n]));
+  return sites.results
+    .filter((s) => {
+      const ns = nsByLabel.get(s.namespace);
+      if (!ns || ownsSite(user, s, ns)) return false;
+      return listed(s.allowed_emails, user.email) || listed(s.editors, user.email) || listed(ns.editors, user.email);
+    })
+    .map((s) => ({ ...siteView(env, s, ctx.requestUrl), canManage: canManageSite(user, s, nsByLabel.get(s.namespace)!) }));
+}
+
+/** The person's own apps (see ownsSite), for the dashboard's "My apps". */
+export async function listOwnSites(ctx: Ctx) {
+  const { env, user } = ctx;
+  const [namespaces, sites] = await Promise.all([
+    env.DB.prepare("SELECT * FROM namespaces").all<NamespaceRow>(),
+    env.DB.prepare("SELECT * FROM sites ORDER BY namespace, mount_path").all<SiteRow>(),
+  ]);
+  const nsByLabel = new Map(namespaces.results.map((n) => [n.label, n]));
+  return sites.results
+    .filter((s) => {
+      const ns = nsByLabel.get(s.namespace);
+      return !!ns && ownsSite(user, s, ns);
+    })
+    .map((s) => ({ ...siteView(env, s, ctx.requestUrl), canManage: true }));
+}
 
 export async function listSites(ctx: Ctx, rawNamespace?: string | null) {
   const { env, user } = ctx;
@@ -416,7 +461,7 @@ export async function publishSite(ctx: Ctx, input: PublishInput) {
           title ?? null,
           user.email,
           JSON.stringify(editors ?? []),
-          visibility ?? "all",
+          visibility ?? "restricted",
           JSON.stringify(allowed ?? []),
           spa ? 1 : 0,
           version,

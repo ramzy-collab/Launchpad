@@ -28,8 +28,8 @@ server.
    - No background jobs: fetch on load or on click; cache in `localStorage` for fast first paint.
    - Wrap SDK calls in `try/catch` and show `e.message` and `e.hint`.
 4. **Publish** with the `publish` tool: `html`, `namespace`, `mount_path`, `title`, and
-   `visibility: "restricted"` plus `allowed_emails` if the data is private. Use `spa: true` only
-   for client-side routing.
+   `allowed_emails` for anyone besides the owner who should open it (apps are private by
+   default). Use `spa: true` only for client-side routing.
 5. **Report** the returned URL to the user, plus anything they must do next (for example, "open the
    app and paste your API key in Settings").
 

@@ -160,7 +160,7 @@ describe("publish and serve", () => {
     const { site } = await res.json<Published>();
     const patched = await call(`/_api/admin/sites/${site.id}`, { as: OWNER, method: "PATCH", json: { title: "New", hidden: true, spa: true } });
     expect(patched.status).toBe(200);
-    expect(await patched.json()).toMatchObject({ title: "New", hidden: true, spa: true, visibility: "all" });
+    expect(await patched.json()).toMatchObject({ title: "New", hidden: true, spa: true, visibility: "restricted" });
     // Hidden sites are still listed for people who manage them.
     const list = await (await call(`/_api/admin/sites?namespace=${ns}`, { as: OWNER })).json<{ id: string }[]>();
     expect(list.map((s) => s.id)).toContain(site.id);
@@ -222,7 +222,7 @@ describe("security 12: deleting a site", () => {
     expect((await env.DB.prepare("SELECT COUNT(*) AS n FROM kv WHERE site_id = ?").bind(site.id).first<{ n: number }>())!.n).toBe(1);
     expect((await env.DB.prepare("SELECT COUNT(*) AS n FROM secrets WHERE site_id = ?").bind(site.id).first<{ n: number }>())!.n).toBe(1);
 
-    expect((await call(`/_api/admin/sites/${site.id}`, { as: "stranger@example.com", method: "DELETE" })).status).toBe(403);
+    expect((await call(`/_api/admin/sites/${site.id}`, { as: "stranger@example.com", method: "DELETE" })).status).toBe(404);
     const del = await call(`/_api/admin/sites/${site.id}`, { as: OWNER, method: "DELETE" });
     expect(del.status).toBe(200);
 

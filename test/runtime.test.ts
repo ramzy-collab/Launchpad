@@ -21,7 +21,7 @@ afterEach(() => onOutbound(undefined));
 
 describe("runtime API: me and kv", () => {
   it("me returns the viewer", async () => {
-    const { api } = await newSite();
+    const { api } = await newSite({ allowed_emails: "viewer@example.com" });
     expect(await (await api("me", { as: "Viewer@Example.com" })).json()).toEqual({ email: "viewer@example.com", name: null });
   });
 
@@ -105,7 +105,7 @@ describe("security 10: cross-origin requests", () => {
 
 describe("secrets", () => {
   it("only owners and editors can set or delete; anyone allowed can list names", async () => {
-    const { api } = await newSite({ editors: "ed@example.com" });
+    const { api } = await newSite({ editors: "ed@example.com", allowed_emails: "viewer@example.com" });
     expect((await api("secrets/key", { method: "PUT", json: { value: SECRET }, as: "viewer@example.com" })).status).toBe(403);
     expect((await api("secrets/key", { method: "PUT", json: { value: SECRET }, as: "ed@example.com" })).status).toBe(200);
     expect(await (await api("secrets", { as: "viewer@example.com" })).json()).toEqual(["key"]);
@@ -218,7 +218,7 @@ describe("security 6: ciphertext is bound to site and name", () => {
 describe("secret proxy", () => {
   let site: Awaited<ReturnType<typeof newSite>>;
   beforeAll(async () => {
-    site = await newSite();
+    site = await newSite({ allowed_emails: "viewer@example.com" });
     await site.api("secrets/str", { method: "PUT", json: { value: "plainkey" } });
     await site.api("secrets/obj", { method: "PUT", json: { value: { public: "pk_123", secret: "sk_456", region: "eu" } } });
   });

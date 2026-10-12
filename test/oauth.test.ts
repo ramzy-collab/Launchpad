@@ -158,7 +158,7 @@ describe("OAuth for MCP (Claude chat connector)", () => {
     const del = await mcpCall(other.tokens.access_token, "delete_site", { namespace: ns, mount_path: "" });
     const result = ((await del.json()) as { result: { isError?: boolean; content: { text: string }[] } }).result;
     expect(result.isError).toBe(true);
-    expect(result.content[0]!.text).toContain("forbidden");
+    expect(result.content[0]!.text).toContain("not_found"); // private apps don't exist for others
   });
 
   it("requires an Access sign-in on /authorize", async () => {

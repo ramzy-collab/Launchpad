@@ -104,6 +104,40 @@ longer be decrypted (apps would have to set them again).
 
 ---
 
+### 1.7 Formelab login (WorkOS AuthKit)
+
+People sign in with an email code, Google, or any other method you turn on in WorkOS. AuthKit is
+free up to 1 million monthly active users and sends the sign-in emails itself. Until these
+secrets are set, Formelab keeps using Cloudflare Access (1.5), so you can deploy first and switch
+when ready.
+
+1. Create a WorkOS account at <https://workos.com>, then open **Authentication**:
+   - Turn on **Email + Magic Auth** (one-time email codes) and **Google OAuth**. In production,
+     Google needs your own OAuth client: create one in Google Cloud Console and paste its client
+     ID and secret into WorkOS (WorkOS's setup page links the steps).
+2. **Redirects**: add `https://example.com/auth/callback` and make it the default. For local
+   development, also add `http://localhost:8787/auth/callback` in the staging environment.
+3. Copy the **Client ID** and **API key** from **API Keys**, then:
+   ```bash
+   npx wrangler secret put WORKOS_CLIENT_ID
+   npx wrangler secret put WORKOS_API_KEY
+   ```
+4. Apply migrations and deploy (section 2), then log in at `https://example.com/login`.
+5. **Retire Cloudflare Access**: in Zero Trust, delete the Formelab Access applications (or remove
+   all their domains). While Access still covers `/app` or `*.example.com`, its login page shows up
+   before Formelab's. The Worker checks every request itself, so nothing becomes public.
+
+How accounts work:
+- Anyone can sign in. New people land on the **waitlist**: they can open apps shared with them but
+  can't create namespaces or publish. You let them in from the dashboard's **Waitlist** section
+  (**Let in**), or invite an address ahead of time with **Invite**. The `OWNER_EMAIL` account, and
+  everyone who used Formelab through Access before, are active.
+- Apps are **private by default**: only the owner, the app's editors, and namespace editors can
+  open them. Add emails under **Share with** to let others open an app; it then appears on their
+  **Shared with me** page.
+- Each namespace host (`<ns>.example.com`) gets its own session cookie, handed over from the
+  dashboard's through a single-use code, so an app's JavaScript can't touch the dashboard login.
+
 ## 2. Production deploy runbook
 
 First deploy, and every deploy after:
@@ -154,6 +188,18 @@ write a new forward migration if you need to undo a schema change.
   app secret; app owners must set them again.
 
 ---
+
+### 2.5 Before a wider launch
+
+- [ ] **Move user apps to their own domain** (for example `formelab.app`, the way GitHub serves
+  pages from `github.io`). Today apps live on `*.example.com`, next to the dashboard. Session
+  cookies are host-only and `__Host-` prefixed, so an app can't read or overwrite the dashboard
+  login, but a separate registrable domain also keeps apps out of the dashboard's "same site" for
+  browsers. Plan for: buying the domain, adding it to Cloudflare with a wildcard DNS record and a
+  Worker route, a `APPS_DOMAIN` setting, and redirects from the old app URLs.
+- [ ] Use your own Google OAuth client in WorkOS (1.7) so the consent screen shows Formelab.
+- [ ] Decide how people hear they were let in from the waitlist (an email through Cloudflare
+  Email Service or Resend; WorkOS only sends sign-in emails).
 
 ## 3. Local development
 
