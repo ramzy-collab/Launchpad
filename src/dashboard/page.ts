@@ -39,7 +39,7 @@ ${head("Formelab", ["dashboard.js"])}
 ${nav(
   "/",
   `<span class="who">Signed in as <strong>${e(user.email)}</strong></span>
-    ${user.isAdmin ? `<a class="link" href="${e(adminOrigin(c.env, c.req.url))}/">Admin</a>` : ""}
+    ${user.isAdmin ? `<a class="link" href="${e(adminOrigin(c.env, c.req.url))}/" target="_blank" rel="noopener">Admin</a>` : ""}
     ${logout}`,
 )}
 <main>

@@ -177,7 +177,7 @@ describe("accounts and the waitlist", () => {
 
   it("the owner is active on first sign-in", async () => {
     const { cookie } = await signIn(OWNER);
-    expect(await (await onApp("/", cookie)).text()).toContain(`<a class="link" href="${ADMIN}/">Admin</a>`);
+    expect(await (await onApp("/", cookie)).text()).toContain(`<a class="link" href="${ADMIN}/" target="_blank" rel="noopener">Admin</a>`);
     expect((await w(`${ADMIN}/`, { headers: { cookie: await hostCookie(cookie, ADMIN) } })).status).toBe(200);
   });
 
