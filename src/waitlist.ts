@@ -2,7 +2,7 @@ import type { Env } from "./env";
 import { now } from "./env";
 import { badRequest, err, forbidden } from "./errors";
 import { normEmail } from "./util";
-import { publicOrigin, sendEmail, waitlistJoinedEmail } from "./email";
+import { notifyAdminOfSignup, publicOrigin, sendEmail, waitlistJoinedEmail } from "./email";
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 export const WAITLIST_RATE_PER_MINUTE = 10;
@@ -39,7 +39,11 @@ export async function joinWaitlist(req: Request, env: Env, waitUntil: (p: Promis
     .bind(email, now())
     .run();
   // Only the first sign-up sends the confirmation, so the form can't be used to repeat-email someone.
-  if (res.meta.changes) waitUntil(sendEmail(env, waitlistJoinedEmail(publicOrigin(env, req.url), email)));
+  if (res.meta.changes) {
+    const origin = publicOrigin(env, req.url);
+    waitUntil(sendEmail(env, waitlistJoinedEmail(origin, email)));
+    waitUntil(notifyAdminOfSignup(env, origin, email, "form"));
+  }
 }
 
 export async function listWaitlist(env: Env, limit = 200): Promise<{ total: number; entries: WaitlistEntry[] }> {

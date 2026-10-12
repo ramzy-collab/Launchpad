@@ -141,7 +141,8 @@ How accounts work:
 ### 1.8 Notification emails (Cloudflare Email Service)
 
 Formelab emails people when they join the waitlist, when they're let in, when an app is shared
-with them, and when they're made a namespace editor. Sign-in emails come from WorkOS (1.7).
+with them, and when they're made a namespace editor. It also emails you (`OWNER_EMAIL`, or `ADMIN_EMAIL` if
+you set that var) about each new waitlist sign-up. Sign-in emails come from WorkOS (1.7).
 Emails go through Cloudflare Email Service via the `EMAIL` binding in `wrangler.toml`: it's part
 of the Workers Paid plan (3,000 emails a month included, then $0.35 per 1,000) and, at the time
 of writing, in beta.

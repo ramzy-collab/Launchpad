@@ -181,7 +181,7 @@ export async function dashboardPage(c: Context<AppEnv>): Promise<Response> {
     )
     .join("");
   const waitlistSection = waitlist
-    ? `<section>
+    ? `<section id="waitlist">
   <h2>Waitlist<span class="count">${e(waitlist.total)}</span></h2>
   ${
     waitlist.entries.length

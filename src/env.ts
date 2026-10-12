@@ -21,6 +21,8 @@ export interface Env {
   /** Notification emails: Cloudflare Email Service's send_email binding, and the sender, e.g. "Formelab <hello@formelab.ai>". */
   EMAIL?: SendEmail;
   EMAIL_FROM?: string;
+  /** Where admin notifications (new waitlist sign-ups) go. Defaults to OWNER_EMAIL. */
+  ADMIN_EMAIL?: string;
 }
 
 export interface User {

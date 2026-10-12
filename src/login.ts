@@ -7,7 +7,7 @@ import type { Context } from "hono";
 import { isOwnerEmail, upsertUser } from "./auth";
 import type { AppEnv, Env } from "./env";
 import { now } from "./env";
-import { acceptedEmail, publicOrigin, sendEmail, waitlistJoinedEmail } from "./email";
+import { acceptedEmail, notifyAdminOfSignup, publicOrigin, sendEmail, waitlistJoinedEmail } from "./email";
 import { plainPage } from "./serve";
 import {
   cookieHeader,
@@ -97,7 +97,11 @@ export async function loginCallback(c: Context<AppEnv>): Promise<Response> {
   // Someone who signs in before being let in lands on the waitlist, so an admin can approve them.
   if (!user.active) {
     const added = await env.DB.prepare("INSERT INTO waitlist (email, created_at) VALUES (?, ?) ON CONFLICT(email) DO NOTHING").bind(email, now()).run();
-    if (added.meta.changes) c.executionCtx.waitUntil(sendEmail(env, waitlistJoinedEmail(publicOrigin(env, c.req.url), email)));
+    if (added.meta.changes) {
+      const origin = publicOrigin(env, c.req.url);
+      c.executionCtx.waitUntil(sendEmail(env, waitlistJoinedEmail(origin, email)));
+      c.executionCtx.waitUntil(notifyAdminOfSignup(env, origin, email, "login"));
+    }
   }
 
   const headers = new Headers({ location: returnTo, "cache-control": "no-store" });

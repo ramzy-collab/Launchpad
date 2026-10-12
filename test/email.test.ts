@@ -55,6 +55,18 @@ describe("notification emails", () => {
     expect(to(email)[0]!.from).toEqual({ name: "Formelab", email: "hello@example.com" });
   });
 
+  it("tells the admin about each new sign-up, once, with the total waiting", async () => {
+    const email = `adm-${uniq()}@example.com`;
+    await w("/_api/waitlist", { method: "POST", json: { email }, headers: { "cf-connecting-ip": "203.0.113.52" } });
+    await w("/_api/waitlist", { method: "POST", json: { email }, headers: { "cf-connecting-ip": "203.0.113.52" } });
+    const forAdmin = to(OWNER).filter((m) => m.subject.includes(email));
+    expect(forAdmin).toHaveLength(1);
+    expect(forAdmin[0]!.subject).toBe(`New waitlist sign-up: ${email}`);
+    expect(forAdmin[0]!.text).toContain("signed up on the home page");
+    expect(forAdmin[0]!.text).toMatch(/Waitlist total: \d+\./);
+    expect(forAdmin[0]!.text).toContain("https://example.com/app#waitlist");
+  });
+
   it("tells people when they're let in, only the first time", async () => {
     const email = `in-${uniq()}@example.com`;
     await w("/_api/admin/waitlist/approve", { as: OWNER, method: "POST", json: { email } });

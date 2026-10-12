@@ -139,3 +139,29 @@ export function namespaceSharedEmail(origin: string, to: string, opts: { by: str
     ]),
   };
 }
+
+export function adminSignupEmail(origin: string, to: string, opts: { email: string; via: "form" | "login"; total: number }): Email {
+  const how = opts.via === "form" ? "signed up on the home page" : "logged in before being let in";
+  const url = `${origin}/app#waitlist`;
+  return {
+    to,
+    subject: `New waitlist sign-up: ${opts.email}`,
+    html: layout(
+      "Someone joined the waitlist",
+      [
+        `<strong>${e(opts.email)}</strong> ${how}.`,
+        `That makes <strong>${e(opts.total)}</strong> ${opts.total === 1 ? "person" : "people"} on the waitlist. You can let them in from your dashboard.`,
+      ],
+      { label: "Open the waitlist", url },
+    ),
+    text: plain([`${opts.email} ${how}.`, `Waitlist total: ${opts.total}.`, `Let them in: ${url}`]),
+  };
+}
+
+/** Tells the admin about a new waitlist sign-up (ADMIN_EMAIL, else OWNER_EMAIL). */
+export async function notifyAdminOfSignup(env: Env, origin: string, email: string, via: "form" | "login"): Promise<void> {
+  const to = env.ADMIN_EMAIL || env.OWNER_EMAIL;
+  if (!to || normEmail(to) === normEmail(email)) return;
+  const row = await env.DB.prepare("SELECT COUNT(*) AS n FROM waitlist WHERE approved_at IS NULL").first<{ n: number }>();
+  await sendEmail(env, adminSignupEmail(origin, to, { email, via, total: row?.n ?? 0 }));
+}
