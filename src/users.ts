@@ -3,7 +3,7 @@ import { audit } from "./audit";
 import { isOwnerEmail } from "./auth";
 import type { Env, User } from "./env";
 import { badRequest, err, notFound } from "./errors";
-import { listConnections } from "./oauth";
+import { listConnections, oauthHelpers } from "./oauth";
 import { removeSite, type NamespaceRow, type SiteRow } from "./sites";
 import { normEmail, parseJsonArray } from "./util";
 
@@ -92,10 +92,8 @@ export async function deleteUser(env: Env, admin: User, rawEmail: string) {
 
   // 5. Connected AI apps (OAuth grants) and the WorkOS user, best effort.
   let disconnected = 0;
-  if (env.OAUTH_PROVIDER) {
-    for (const g of await listConnections(env, email).catch(() => [])) {
-      await env.OAUTH_PROVIDER.revokeGrant(g.id, email).then(() => disconnected++, () => {});
-    }
+  for (const g of await listConnections(env, email).catch(() => [])) {
+    await oauthHelpers(env).revokeGrant(g.id, email).then(() => disconnected++, () => {});
   }
   if (user.workos_id && env.WORKOS_API_KEY) {
     const res = await fetch(`https://api.workos.com/user_management/users/${encodeURIComponent(user.workos_id)}`, {

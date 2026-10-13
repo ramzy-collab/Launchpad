@@ -1,3 +1,7 @@
+import { createExecutionContext } from "cloudflare:test";
+import { env } from "cloudflare:workers";
+import worker from "../src/index";
+import type { Env } from "../src/env";
 import { describe, expect, it } from "vitest";
 import { afterEach } from "vitest";
 import { accessJwt, call, onOutbound, OWNER, uniq } from "./helpers";
@@ -278,6 +282,14 @@ describe("OAuth for MCP (Claude chat connector)", () => {
     expect(chatgptTile).not.toContain("Connected</span>");
     const dialog = html.slice(html.indexOf('<dialog id="dlg-claude"'), html.indexOf("</dialog>", html.indexOf('<dialog id="dlg-claude"')));
     expect(dialog).toContain(`data-action="connection-revoke" data-id="${list[0]!.id}"`);
+
+    // The web app host isn't wrapped by the OAuth provider, so it must not depend on the helpers
+    // the provider puts on env for DOMAIN requests (in production env starts without them).
+    const bare = { ...(env as unknown as Env), OAUTH_PROVIDER: undefined } as Env;
+    const req = new Request("https://example.app/connect", { headers: { "cf-access-jwt-assertion": await accessJwt(email) } });
+    const fresh = await (await worker.fetch(req, bare, createExecutionContext())).text();
+    const freshTile = fresh.slice(fresh.indexOf('data-dialog="dlg-claude"'), fresh.indexOf("</button>", fresh.indexOf('data-dialog="dlg-claude"')));
+    expect(freshTile).toContain("Connected</span>");
 
     // Someone else can't disconnect it.
     expect((await call(`/_api/admin/connections/${list[0]!.id}`, { as: "mallory@example.com", method: "DELETE" })).status).toBe(404);

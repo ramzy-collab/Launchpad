@@ -1,7 +1,9 @@
 import {
   AuthorizationError,
   CimdFetchError,
+  getOAuthApi,
   OAuthProvider,
+  type OAuthProviderOptions,
   type ConsentDescription,
   type OAuthHelpers,
 } from "@cloudflare/workers-oauth-provider";
@@ -64,39 +66,51 @@ type ApexHandler = { fetch: (req: Request, env: Env, ctx: ExecutionContext) => R
 const providers = new Map<string, OAuthProvider<Env>>();
 
 /** One provider per apex origin (the resource URL is fixed at construction). */
+function providerOptions(origin: string, defaultHandler: ApexHandler): OAuthProviderOptions<Env> {
+  const resource = `${origin}/mcp`;
+  return {
+    apiRoute: "/mcp",
+    apiHandler: mcpApiHandler as never,
+    defaultHandler: defaultHandler as never,
+    authorizeEndpoint: AUTHORIZE_PATH,
+    tokenEndpoint: TOKEN_PATH,
+    clientRegistrationEndpoint: REGISTER_PATH,
+    clientIdMetadataDocumentEnabled: true,
+    scopesSupported: [MCP_SCOPE, "offline_access"],
+    requiredScopes: [MCP_SCOPE],
+    resourceMetadata: { resource, authorization_servers: [origin], resource_name: "Formelab" },
+    resolveExternalToken: async ({ token, env }) => {
+      if (!token.startsWith("fl_")) return null;
+      const user = await userForDeployToken(env, token);
+      return user ? { props: { email: user.email, via: "token" } satisfies McpProps, audience: resource } : null;
+    },
+    onError: ({ code, internal }) => {
+      console.warn("oauth error", code, internal?.category, internal?.reason);
+    },
+  };
+}
+
 export function oauthProvider(origin: string, defaultHandler: ApexHandler): OAuthProvider<Env> {
   let provider = providers.get(origin);
   if (!provider) {
-    const resource = `${origin}/mcp`;
-    provider = new OAuthProvider<Env>({
-      apiRoute: "/mcp",
-      apiHandler: mcpApiHandler as never,
-      defaultHandler: defaultHandler as never,
-      authorizeEndpoint: AUTHORIZE_PATH,
-      tokenEndpoint: TOKEN_PATH,
-      clientRegistrationEndpoint: REGISTER_PATH,
-      clientIdMetadataDocumentEnabled: true,
-      scopesSupported: [MCP_SCOPE, "offline_access"],
-      requiredScopes: [MCP_SCOPE],
-      resourceMetadata: { resource, authorization_servers: [origin], resource_name: "Formelab" },
-      resolveExternalToken: async ({ token, env }) => {
-        if (!token.startsWith("fl_")) return null;
-        const user = await userForDeployToken(env, token);
-        return user ? { props: { email: user.email, via: "token" } satisfies McpProps, audience: resource } : null;
-      },
-      onError: ({ code, internal }) => {
-        console.warn("oauth error", code, internal?.category, internal?.reason);
-      },
-    });
+    provider = new OAuthProvider<Env>(providerOptions(origin, defaultHandler));
     providers.set(origin, provider);
   }
   return provider;
 }
 
-function helpers(env: Env): OAuthHelpers {
-  if (!env.OAUTH_PROVIDER) throw new Error("OAuth helpers are only available on the apex host");
-  return env.OAUTH_PROVIDER;
+const notServed = { fetch: () => new Response(null, { status: 404 }) } as unknown as ApexHandler;
+
+/**
+ * The provider's helpers (grants, clients). Requests on DOMAIN get them from the provider
+ * wrapping the request; the web app and admin hosts aren't wrapped, so build them here. They
+ * read and write the same OAUTH_KV, so connections are the same on every host.
+ */
+export function oauthHelpers(env: Env): OAuthHelpers {
+  return env.OAUTH_PROVIDER ?? getOAuthApi(providerOptions(aiOrigin(env), notServed), env);
 }
+
+const helpers = oauthHelpers;
 
 // ---------------------------------------------------------------------------
 // /authorize: consent page (behind Cloudflare Access)
@@ -228,8 +242,7 @@ export interface ConnectionView {
 }
 
 export async function listConnections(env: Env, email: string): Promise<ConnectionView[]> {
-  if (!env.OAUTH_PROVIDER) return [];
-  const { items } = await env.OAUTH_PROVIDER.listUserGrants(email, { limit: 100 });
+  const { items } = await oauthHelpers(env).listUserGrants(email, { limit: 100 });
   return items
     .map((g) => ({
       id: g.id,
