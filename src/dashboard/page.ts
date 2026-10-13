@@ -339,7 +339,13 @@ const IDEAS = [
 export async function newAppPage(c: Context<AppEnv>): Promise<Response> {
   const ctx = ctxOf(c);
   if (!ctx.user.active) return sharedPage(c);
-  const [namespaces, connected, keys] = await Promise.all([listNamespaces(ctx), connectedAiApps(c.env, ctx.user), builderKeys(c.env, ctx.user.email)]);
+  // Building here with an API key is behind the app_builder flag (admin panel → Features).
+  const builderOn = !!c.get("features")?.has("app_builder");
+  const [namespaces, connected, keys] = await Promise.all([
+    listNamespaces(ctx),
+    connectedAiApps(c.env, ctx.user),
+    builderOn ? builderKeys(c.env, ctx.user.email) : Promise.resolve({} as Awaited<ReturnType<typeof builderKeys>>),
+  ]);
   const own = namespaces.filter((n) => n.isOwner || n.editors.includes(ctx.user.email));
   const nsOptions = own.map((n) => `<option value="${e(n.label)}">`).join("");
   const domain = c.env.APP_DOMAIN;
@@ -356,6 +362,9 @@ export async function newAppPage(c: Context<AppEnv>): Promise<Response> {
   ];
   const makers = MAKERS.map(({ b, app, label }) => {
     const key = keys[b];
+    if (!builderOn) {
+      return `<div class="make"><button type="button" class="make-btn" data-make="${app}"><span class="ai-mini">${AI_LOGOS[app]}</span>${label}</button>${state(app, `Connect ${app === "claude" ? "Claude" : "ChatGPT"} first`)}</div>`;
+    }
     const btn = key
       ? `<button type="button" class="make-btn" data-build="${b}"><span class="ai-mini">${AI_LOGOS[app]}</span>${label}</button>`
       : connected.has(app)
@@ -368,7 +377,7 @@ export async function newAppPage(c: Context<AppEnv>): Promise<Response> {
         : `<button type="button" class="linkish muted" data-dialog="dlg-key-${b}" aria-haspopup="dialog">Add your API key</button>`;
     return `<div class="make">${btn}${note}</div>`;
   }).join("\n    ");
-  const keyDialogs = MAKERS.map(({ b, app }) => {
+  const keyDialogs = (builderOn ? MAKERS : []).map(({ b, app }) => {
     const who = BUILDERS[b];
     const org = b === "claude" ? "Anthropic" : "OpenAI";
     const console = b === "claude" ? "console.anthropic.com" : "platform.openai.com";
@@ -395,7 +404,7 @@ export async function newAppPage(c: Context<AppEnv>): Promise<Response> {
   const body = `<section class="maker">
   <p class="eyebrow">The easy way</p>
   <h2>What do you want to make?</h2>
-  <p>Describe it in your own words, then press Make it. With your API key saved, the app is built and published right here.</p>
+  <p>${builderOn ? "Describe it in your own words, then press Make it. With your API key saved, the app is built and published right here." : "Describe it in your own words. We'll open your AI with it typed in; press send and it builds the app and publishes it here."}</p>
   <textarea id="idea" rows="4" maxlength="4000" placeholder="${e(IDEAS[0]!)}" aria-label="Describe your app"></textarea>
   <div class="ideas" aria-label="Ideas to start from">${IDEAS.map((i) => `<button type="button" class="idea" data-idea="${e(i)}">${e(i)}</button>`).join("")}</div>
   <div class="make-row">
@@ -405,7 +414,7 @@ export async function newAppPage(c: Context<AppEnv>): Promise<Response> {
       ${state("claude-code", "Set up Claude Code")}
     </div>
   </div>
-  <p class="muted">Building takes a minute or two. New apps are private to you until you share them.</p>
+  <p class="muted">${builderOn ? "Building takes a minute or two." : "Claude: make sure Formelab is on under the <strong>+</strong> menu → Connectors. ChatGPT: pick <strong>Developer mode</strong> in the <strong>+</strong> menu and turn on Formelab."} New apps are private to you until you share them.</p>
 </section>
 ${keyDialogs}
 

@@ -454,8 +454,11 @@ Choices made while building v1, including where the build differs from the spec 
   The key pop-up says so.
 - Keys live in `service_keys` next to Gemini's (services `anthropic` and `openai`), encrypted with
   `SECRETS_KEK`, AAD `user:<email>:<service>`, last four characters in the clear. They're only
-  used for that person's own builds, never by apps. Not behind the `connected_apps` flag: this is
-  the main way to make an app, not a service apps use.
+  used for that person's own builds, never by apps.
+- **Behind its own feature flag**, `app_builder` (admin panel → Features), separate from
+  `connected_apps` since this isn't a service apps use. Off (the default), New app looks and works
+  as before, and `/_api/admin/builders/*` and `/_api/admin/build` answer 404. Keys already saved
+  stay saved while it's off.
 - Claude: Claude Opus 5.5 through the Anthropic SDK, streaming, adaptive thinking at medium
   effort, the build guide as a cached system prompt, and Anthropic's server-side refusal
   fallback. OpenAI: the Responses API, streaming, with the newest plain `gpt-N.N` model the key

@@ -140,6 +140,13 @@ export function managementApi(kind: "admin" | "deploy") {
     api.post("/users/:email/admin", async (c) => c.json(await setAdmin(c.env, c.get("user"), c.req.param("email"), (await jsonBody(c)).admin)));
     api.delete("/users/:email", async (c) => c.json(await deleteUser(c.env, c.get("user"), c.req.param("email"))));
     // The easy way, built in: the person's own Claude or OpenAI key builds and publishes the app.
+    // Behind the app_builder flag (admin panel → Features).
+    const builderFlag = async (c: Context<AppEnv>, next: () => Promise<void>) => {
+      if (!(await flagOn(c.env, "app_builder", c.get("user")))) throw err(404, "not_found", "Building apps with your own API key isn't available yet.", "Check back soon.");
+      await next();
+    };
+    api.use("/builders/*", builderFlag);
+    api.use("/build", builderFlag);
     api.put("/builders/:provider", async (c) => c.json(await connectBuilder(c.env, c.get("user"), parseBuilder(c.req.param("provider")), (await jsonBody(c)).apiKey)));
     api.delete("/builders/:provider", async (c) => c.json(await disconnectBuilder(c.env, c.get("user"), parseBuilder(c.req.param("provider")))));
     api.post("/build", async (c) => {

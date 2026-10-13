@@ -1,7 +1,7 @@
 import { env } from "cloudflare:workers";
 import { afterEach, describe, expect, it } from "vitest";
 import { extractHtml, slugify, titleOf } from "../src/builder";
-import { call, onOutbound, uniq } from "./helpers";
+import { call, onOutbound, OWNER, uniq } from "./helpers";
 
 const CLAUDE_KEY = "sk-ant-api03-TESTKEY0123456789abcdefWXYZ";
 const OPENAI_KEY = "sk-proj-TESTKEY0123456789abcdefOPEN";
@@ -61,6 +61,15 @@ function mockAi(opts: { claudeText?: string; claudeStop?: string; openaiText?: s
 }
 afterEach(() => onOutbound(undefined));
 
+/** A signed-in, let-in person with the app_builder feature turned on for them by name. */
+async function person(prefix: string) {
+  const me = `${prefix}-${uniq()}@example.com`;
+  await call("/_api/admin/whoami", { as: me });
+  await env.DB.prepare("UPDATE users SET status = 'active' WHERE email = ?").bind(me).run();
+  expect((await call("/_api/admin/features/app_builder/users", { as: OWNER, method: "POST", json: { email: me } })).status).toBe(200);
+  return me;
+}
+
 const connect = (as: string, provider: string, apiKey: string) => call(`/_api/admin/builders/${provider}`, { as, method: "PUT", json: { apiKey } });
 async function build(as: string, provider: string, idea: string) {
   const res = await call("/_api/admin/build", { as, method: "POST", json: { provider, idea } });
@@ -72,9 +81,7 @@ async function build(as: string, provider: string, idea: string) {
 describe("building apps with the person's own API key", () => {
   it("checks a Claude key, stores it encrypted, builds the app with it and publishes it", async () => {
     mockAi();
-    const me = `b-${uniq()}@example.com`;
-    await call("/_api/admin/whoami", { as: me });
-    await env.DB.prepare("UPDATE users SET status = 'active' WHERE email = ?").bind(me).run();
+    const me = await person("b");
 
     expect((await connect(me, "claude", "sk-ant-api03-WRONGKEY0123456789abcdefXXXX")).status).toBe(400);
     expect((await connect(me, "claude", "nope")).status).toBe(400);
@@ -109,9 +116,7 @@ describe("building apps with the person's own API key", () => {
 
   it("builds with an OpenAI key, picking the newest GPT model", async () => {
     mockAi();
-    const me = `o-${uniq()}@example.com`;
-    await call("/_api/admin/whoami", { as: me });
-    await env.DB.prepare("UPDATE users SET status = 'active' WHERE email = ?").bind(me).run();
+    const me = await person("o");
     expect((await connect(me, "openai", "sk-proj-WRONGKEY0123456789abcdefXXXX")).status).toBe(400);
     expect((await connect(me, "openai", OPENAI_KEY)).status).toBe(200);
     const last = await build(me, "openai", "A habit tracker");
@@ -121,9 +126,7 @@ describe("building apps with the person's own API key", () => {
   });
 
   it("explains what's wrong instead of publishing", async () => {
-    const me = `n-${uniq()}@example.com`;
-    await call("/_api/admin/whoami", { as: me });
-    await env.DB.prepare("UPDATE users SET status = 'active' WHERE email = ?").bind(me).run();
+    const me = await person("n");
     mockAi({ claudeText: "Sorry, I can't help with that." });
     expect((await build(me, "claude", "x")).error.code).toBe("builder_not_connected");
     expect((await connect(me, "claude", CLAUDE_KEY)).status).toBe(200);
@@ -138,6 +141,19 @@ describe("building apps with the person's own API key", () => {
     const page = await (await call("/app/new", { as: me })).text();
     expect(page).toContain('data-dialog="dlg-key-claude"');
     expect(page).not.toContain('data-build="claude"');
+  });
+
+  it("stays hidden, and its API answers 404, without the app_builder feature", async () => {
+    mockAi();
+    const me = `f-${uniq()}@example.com`;
+    await call("/_api/admin/whoami", { as: me });
+    await env.DB.prepare("UPDATE users SET status = 'active' WHERE email = ?").bind(me).run();
+    expect((await connect(me, "claude", CLAUDE_KEY)).status).toBe(404);
+    expect((await call("/_api/admin/build", { as: me, method: "POST", json: { provider: "claude", idea: "x" } })).status).toBe(404);
+    const page = await (await call("/app/new", { as: me })).text();
+    expect(page).toContain('data-make="claude"');
+    expect(page).not.toContain("dlg-key-");
+    expect(page).not.toContain("data-build=");
   });
 
   it("pulls the HTML out of a chatty answer and names the app from its title", () => {
