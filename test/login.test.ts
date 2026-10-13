@@ -92,15 +92,18 @@ afterEach(() => {
 });
 
 describe("login page and WorkOS redirect", () => {
-  it("goes straight to WorkOS's sign-in page, keeping where to return", async () => {
+  it("is a Formelab page with Google, email and password, keeping where to return", async () => {
     const res = await w("/login?return=%2Fapp%2Fshared");
-    expect(res.status).toBe(302);
-    expect(res.headers.get("location")).toBe("/auth/login?return=%2Fapp%2Fshared");
-    expect((await w("/login")).headers.get("location")).toBe("/auth/login");
-    expect((await w("/login?return=https%3A%2F%2Fevil.test%2F")).headers.get("location")).toBe("/auth/login");
-    // WorkOS's page offers every sign-in method turned on there.
-    const start = new URL((await w("/auth/login")).headers.get("location")!);
-    expect(start.searchParams.get("provider")).toBe("authkit");
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain('href="/auth/login?provider=google&amp;return=%2Fapp%2Fshared"');
+    expect(html).toContain('<form method="post" action="/login"');
+    expect(html).toContain('name="return" value="/app/shared"');
+    expect(html).toContain('type="password"');
+    expect(html).toContain("Email me a code instead");
+    expect(html).toContain('href="/login/forgot?return=%2Fapp%2Fshared"');
+    expect(html).not.toMatch(/\son[a-z]+=/i);
+    expect((await (await w("/login?return=https%3A%2F%2Fevil.test%2F")).text())).toContain('name="return" value="/app"');
   });
 
   it("without WorkOS keys, keeps the Cloudflare Access button", async () => {
@@ -255,10 +258,11 @@ describe("the admin panel's own sign-in", () => {
     expect(first.headers.get("location")).toBe("/login?return=%2Fusers");
     expect((await w(`/auth/app?return=${encodeURIComponent(ADMIN + "/")}`, { headers: { cookie } })).status).toBe(400);
     expect((await w(`${ADMIN}/_auth/callback?code=abcdefghijklmnopqrstuvwxyz`)).status).toBe(302);
-    // The admin login goes to WorkOS from the admin host, so it comes back there.
-    const login = await w(`${ADMIN}/login?return=%2Fusers`);
-    expect(login.headers.get("location")).toBe("/auth/login?return=%2Fusers");
-    expect((await w(`${ADMIN}/login`)).headers.get("location")).toBe("/auth/login");
+    // The admin login screen has no waitlist and no way into the lab.
+    const login = await (await w(`${ADMIN}/login?return=%2Fusers`)).text();
+    expect(login).toContain("Formelab admin");
+    expect(login).toContain('href="/auth/login?provider=google&amp;return=%2Fusers"');
+    expect(login).not.toContain("waitlist");
   });
 
   it("signs admins in on the admin host for 8 hours, apart from their lab", async () => {
@@ -490,7 +494,7 @@ describe("passwords", () => {
     expect(page).not.toContain('data-action="password-set"');
     const relogin = /href="([^"]+)">Log in again/.exec(page)![1]!.replace(/&amp;/g, "&");
     const url = new URL(relogin);
-    expect(url.origin + url.pathname).toBe("https://example.com/auth/login");
+    expect(url.origin + url.pathname).toBe("https://example.com/login");
     expect(url.searchParams.get("return")).toBe(`/auth/app?return=${encodeURIComponent(`${APP}/account`)}`);
 
     const res = await put(appCookie, "correct horse battery");
@@ -522,5 +526,141 @@ describe("passwords", () => {
     });
     expect(res.status).toBe(403);
     expect(passwordsSet).toHaveLength(0);
+  });
+});
+
+describe("Formelab's own sign-in page", () => {
+  let calls: { url: string; body: Record<string, unknown> }[] = [];
+  /** WorkOS's API: `answer` decides each call's response; unknown calls fail loudly. */
+  function mockApi(answer: (path: string, body: Record<string, unknown>) => Response | undefined) {
+    calls = [];
+    onOutbound(async (req) => {
+      const body = (await req.json()) as Record<string, unknown>;
+      calls.push({ url: req.url, body });
+      return answer(new URL(req.url).pathname, body) ?? new Response("unexpected", { status: 599 });
+    });
+  }
+  const signedIn = (email: string) =>
+    Response.json({ user: { id: "user_" + email, email, email_verified: true, first_name: "Pat", last_name: null }, access_token: accessToken("session_" + email) });
+
+  const post = (path: string, fields: Record<string, string>, opts: { origin?: string; cookie?: string; host?: string } = {}) => {
+    const host = opts.host ?? "https://example.com";
+    const headers: Record<string, string> = { origin: opts.origin ?? host, "content-type": "application/x-www-form-urlencoded", "cf-connecting-ip": "203.0.113.9", "user-agent": "test-browser" };
+    if (opts.cookie) headers.cookie = opts.cookie;
+    return w(host + path, { method: "POST", headers, body: new URLSearchParams(fields).toString() });
+  };
+
+  it("logs in with email and password, then moves on to where the person was going", async () => {
+    const email = `pass-${uniq()}@example.com`;
+    mockApi((path, body) => (path === "/user_management/authenticate" && body.password === "right password!" ? signedIn(email) : undefined));
+    const res = await post("/login", { email: email.toUpperCase(), password: "right password!", action: "password", return: "/app/shared" });
+    expect(res.status).toBe(200);
+    expect(refreshTarget(await res.text())).toBe("/app/shared");
+    const cookie = cookieFrom(res, "__Host-fl_session")!;
+    expect(cookie).not.toBeNull();
+    expect(calls[0]!.body).toMatchObject({ grant_type: "password", email, client_id: "client_test", client_secret: "sk_test", ip_address: "203.0.113.9", user_agent: "test-browser" });
+    // A real session, recording the WorkOS session for logout.
+    const row = await env.DB.prepare("SELECT workos_sid FROM sessions WHERE email = ?").bind(email).first<{ workos_sid: string }>();
+    expect(row!.workos_sid).toBe(`session_${email}`);
+  });
+
+  it("says so when the password is wrong, keeping the email", async () => {
+    mockApi(() => Response.json({ error: "invalid_grant", error_description: "Invalid credentials." }, { status: 400 }));
+    const res = await post("/login", { email: "who@example.com", password: "nope", action: "password" });
+    expect(res.status).toBe(400);
+    const html = await res.text();
+    expect(html).toContain("That email and password don&#39;t match");
+    expect(html).toContain('value="who@example.com"');
+    expect(cookieFrom(res, "__Host-fl_session")).toBeNull();
+  });
+
+  it("emails a code and logs in with it; new people land on the waitlist", async () => {
+    const email = `code-${uniq()}@example.com`;
+    mockApi((path, body) => {
+      if (path === "/user_management/magic_auth") return Response.json({ id: "ma_1", email: body.email });
+      if (path === "/user_management/authenticate" && body.code === "123456") return signedIn(email);
+      if (path === "/user_management/authenticate") return Response.json({ error: "invalid_grant" }, { status: 400 });
+      return undefined;
+    });
+    const sent = await post("/login", { email, action: "code", return: "/app" });
+    expect(sent.status).toBe(200);
+    expect(await sent.text()).toContain("We sent a code to <b>" + email);
+    expect(calls[0]).toMatchObject({ url: "https://api.workos.com/user_management/magic_auth", body: { email } });
+    const pending = cookieFrom(sent, "__Host-fl_signin")!;
+
+    const wrong = await post("/login/code", { code: "000000", return: "/app" }, { cookie: pending });
+    expect(wrong.status).toBe(400);
+    expect(await wrong.text()).toContain("That code didn");
+
+    const ok = await post("/login/code", { code: "123 456", return: "/app" }, { cookie: pending });
+    expect(ok.status).toBe(200);
+    expect(cookieFrom(ok, "__Host-fl_session")).not.toBeNull();
+    expect(calls.at(-1)!.body).toMatchObject({ grant_type: "urn:workos:oauth:grant-type:magic-auth:code", email, code: "123456" });
+    expect(await env.DB.prepare("SELECT email FROM waitlist WHERE email = ?").bind(email).first()).not.toBeNull();
+  });
+
+  it("asks for the emailed code when WorkOS wants the address confirmed first", async () => {
+    const email = `verify-${uniq()}@example.com`;
+    mockApi((path, body) => {
+      if (body.grant_type === "password") return Response.json({ code: "email_verification_required", message: "Verify", pending_authentication_token: "pat_123" }, { status: 403 });
+      if (body.grant_type === "urn:workos:oauth:grant-type:email-verification:code" && body.pending_authentication_token === "pat_123") return signedIn(email);
+      return undefined;
+    });
+    const step = await post("/login", { email, password: "a password here", action: "password" });
+    expect(await step.text()).toContain("To confirm it");
+    const done = await post("/login/code", { code: "654321" }, { cookie: cookieFrom(step, "__Host-fl_signin")! });
+    expect(cookieFrom(done, "__Host-fl_session")).not.toBeNull();
+  });
+
+  it("sends steps it doesn't handle (like two-factor) to WorkOS's own page", async () => {
+    mockApi(() => Response.json({ code: "mfa_challenge", message: "MFA" }, { status: 403 }));
+    const res = await post("/login", { email: "mfa@example.com", password: "a password here", action: "password" });
+    expect(await res.text()).toContain('href="/auth/login">Continue on the secure sign-in page');
+  });
+
+  it("refuses forms posted from another site, and expired code steps", async () => {
+    mockApi(() => undefined);
+    expect((await post("/login", { email: "x@example.com", password: "p" }, { origin: "https://evil.test" })).status).toBe(403);
+    expect(calls).toHaveLength(0);
+    const res = await post("/login/code", { code: "123456" });
+    expect(res.status).toBe(400);
+    expect(await res.text()).toContain("That took too long");
+  });
+
+  it("forgot password asks WorkOS to email a link, with the same answer either way", async () => {
+    mockApi((path) => (path === "/user_management/password_reset" ? Response.json({ id: "pr_1" }) : undefined));
+    expect(await (await w("/login/forgot")).text()).toContain('action="/login/forgot"');
+    const res = await post("/login/forgot", { email: "forgot@example.com" });
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain("If there's a Formelab account for <b>forgot@example.com</b>");
+    expect(calls).toEqual([{ url: "https://api.workos.com/user_management/password_reset", body: { email: "forgot@example.com" } }]);
+  });
+
+  it("the reset link lets someone choose a new password", async () => {
+    mockApi((path, body) =>
+      path === "/user_management/password_reset/confirm" && body.token === "tok_1" ? Response.json({ user: { email: "reset@example.com" } }) : undefined,
+    );
+    const page = await (await w("/reset-password?token=tok_1")).text();
+    expect(page).toContain('name="token" value="tok_1"');
+    expect((await post("/reset-password", { token: "tok_1", password: "long enough pw", confirm: "different pw!!" })).status).toBe(400);
+    expect(calls).toHaveLength(0);
+    const res = await post("/reset-password", { token: "tok_1", password: "long enough pw", confirm: "long enough pw" });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("Password saved");
+    expect(html).toContain('value="reset@example.com"');
+    expect(calls[0]!.body).toEqual({ token: "tok_1", new_password: "long enough pw" });
+  });
+
+  it("on the admin host, only admins get in", async () => {
+    const email = `nonadmin-${uniq()}@example.com`;
+    mockApi(() => signedIn(email));
+    const res = await post("/login", { email, password: "a password here", action: "password", return: "/" }, { host: ADMIN });
+    expect(res.status).toBe(403);
+    expect(cookieFrom(res, "__Host-fl_session")).toBeNull();
+    mockApi(() => signedIn(OWNER));
+    const ok = await post("/login", { email: OWNER, password: "a password here", action: "password", return: "/users" }, { host: ADMIN });
+    expect(refreshTarget(await ok.text())).toBe("/users");
+    expect(cookieFrom(ok, "__Host-fl_session")).not.toBeNull();
   });
 });

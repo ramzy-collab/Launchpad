@@ -30,7 +30,7 @@ import {
 } from "./session";
 import { base32, escapeHtml, normEmail, randomBytes } from "./util";
 
-const WORKOS_API = "https://api.workos.com";
+export const WORKOS_API = "https://api.workos.com";
 const STATE_COOKIE = "__Host-fl_login";
 const RESTARTED = "-r";
 
@@ -42,15 +42,8 @@ export function safeReturn(raw: string | null | undefined, fallback = "/app"): s
   return v.startsWith("/") && !v.startsWith("//") && !v.startsWith("/\\") ? v : fallback;
 }
 
-const onAdminHost = (c: Context<AppEnv>) => hostKind(new URL(c.req.url).hostname, c.env) === "admin";
-const homePath = (c: Context<AppEnv>) => (onAdminHost(c) ? "/" : "/app");
-
-/**
- * /login with WorkOS on: straight to WorkOS's sign-in page, which offers every method turned on
- * there (Google, email code, password), rather than a Formelab page with buttons in front of it.
- */
-export const loginStartPath = (returnTo: string, home: string) =>
-  returnTo === home ? "/auth/login" : `/auth/login?return=${encodeURIComponent(returnTo)}`;
+export const onAdminHost = (c: Context<AppEnv>) => hostKind(new URL(c.req.url).hostname, c.env) === "admin";
+export const homePath = (c: Context<AppEnv>) => (onAdminHost(c) ? "/" : "/app");
 
 const PROVIDERS: Record<string, string> = { google: "GoogleOAuth", email: "authkit" };
 
@@ -119,7 +112,32 @@ export async function loginCallback(c: Context<AppEnv>): Promise<Response> {
     console.error("workos authenticate failed", res.status);
     return plainPage(502, "Couldn't sign you in", "The sign-in service didn't accept this attempt. Go back to Formelab and try again.");
   }
-  const { user: wu, access_token } = await res.json<{ user: WorkosUser; access_token?: string }>();
+  const signedIn = await res.json<WorkosAuthentication>();
+  const done = await completeSignIn(c, signedIn, (headers) => {
+    headers.set("location", returnTo);
+    return new Response(null, { status: 302, headers });
+  });
+  done.headers.append("set-cookie", cookieHeader(STATE_COOKIE, "", 0));
+  return done;
+}
+
+/** A successful answer from WorkOS's /user_management/authenticate. */
+export interface WorkosAuthentication {
+  user: WorkosUser;
+  access_token?: string;
+}
+
+/**
+ * Turns a WorkOS sign-in into a Formelab one: checks the email, creates or updates the account
+ * (new people land on the waitlist), and starts a session. `respond` builds the response from the
+ * headers (cache-control and the session cookie) once everything checks out.
+ */
+export async function completeSignIn(
+  c: Context<AppEnv>,
+  { user: wu, access_token }: WorkosAuthentication,
+  respond: (headers: Headers) => Response,
+): Promise<Response> {
+  const env = c.env;
   if (!wu?.email || wu.email_verified === false) {
     return plainPage(403, "Email not verified", "Confirm your email address with the code we sent, then log in again.");
   }
@@ -127,20 +145,17 @@ export async function loginCallback(c: Context<AppEnv>): Promise<Response> {
   const email = normEmail(wu.email);
   const workosSid = sessionIdOf(access_token);
   const name = [wu.first_name, wu.last_name].filter(Boolean).join(" ") || null;
+  const headers = new Headers({ "cache-control": "no-store" });
 
   // The admin panel's own sign-in: admins only, nobody is added to the waitlist from here.
   if (onAdminHost(c)) {
     const row = await env.DB.prepare("SELECT is_admin FROM users WHERE email = ?").bind(email).first<{ is_admin: number }>();
     if (!isOwnerEmail(env, email) && row?.is_admin !== 1) {
-      const page = plainPage(403, "Not an admin", `${email} can't manage Formelab. Use your lab at ${aiOrigin(env, c.req.url)} instead.`);
-      page.headers.append("set-cookie", cookieHeader(STATE_COOKIE, "", 0));
-      return page;
+      return plainPage(403, "Not an admin", `${email} can't manage Formelab. Use your lab at ${aiOrigin(env, c.req.url)} instead.`);
     }
     await upsertUser(env, email, name, { workosId: wu.id });
-    const headers = new Headers({ location: returnTo, "cache-control": "no-store" });
     headers.append("set-cookie", await createSession(env, email, new URL(c.req.url).hostname, { expiresAt: now() + ADMIN_SESSION_TTL_MS, workosSid }));
-    headers.append("set-cookie", cookieHeader(STATE_COOKIE, "", 0));
-    return new Response(null, { status: 302, headers });
+    return respond(headers);
   }
 
   const status = isOwnerEmail(env, email) || (await isApproved(env, email)) ? "active" : "waitlisted";
@@ -155,10 +170,8 @@ export async function loginCallback(c: Context<AppEnv>): Promise<Response> {
     }
   }
 
-  const headers = new Headers({ location: returnTo, "cache-control": "no-store" });
   headers.append("set-cookie", await createSession(env, email, new URL(c.req.url).hostname, { workosSid }));
-  headers.append("set-cookie", cookieHeader(STATE_COOKIE, "", 0));
-  return new Response(null, { status: 302, headers });
+  return respond(headers);
 }
 
 async function isApproved(env: Env, email: string): Promise<boolean> {
@@ -203,7 +216,7 @@ export async function logout(c: Context<AppEnv>): Promise<Response> {
 }
 
 /** A page that sends the browser on to `to` straight away, with a link in case it doesn't. */
-function movingOnPage(title: string, message: string, to: string): Response {
+export function movingOnPage(title: string, message: string, to: string): Response {
   const href = escapeHtml(to);
   const body = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="0;url=${href}"><title>${escapeHtml(title)}</title></head><body style="font-family:system-ui,sans-serif;max-width:40rem;margin:4rem auto;padding:0 1rem;color:#222"><h1>${escapeHtml(title)}</h1><p>${escapeHtml(message)} <a href="${href}">Continue</a></p></body></html>`;
   return new Response(body, {

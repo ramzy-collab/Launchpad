@@ -84,7 +84,7 @@ export const VENDORS: Vendor[] = [
     group: "service",
     purpose: "Limits on waitlist sign-ups and on apps' calls to outside services (secrets proxy, Gemini).",
     plan: "Included with Workers.",
-    setup: "Bindings PROXY_LIMITER and WAITLIST_LIMITER in wrangler.toml.",
+    setup: "Bindings PROXY_LIMITER, WAITLIST_LIMITER and LOGIN_LIMITER in wrangler.toml.",
     since: "2026-10-02",
     url: "https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/",
   },

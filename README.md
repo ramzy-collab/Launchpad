@@ -122,7 +122,9 @@ longer be decrypted (apps would have to set them again).
 
 ### 1.7 Formelab login (WorkOS AuthKit)
 
-People sign in with an email code, Google, or any other method you turn on in WorkOS. AuthKit is
+People sign in on Formelab's own login page (`src/signin.ts`) with Google, an email and password,
+or an emailed code; Formelab checks them with WorkOS's API. Anything else WorkOS asks for (such as
+two-factor) continues on WorkOS's hosted page. AuthKit is
 free up to 1 million monthly active users and sends the sign-in emails itself. Until these
 secrets are set, Formelab keeps using Cloudflare Access (1.5), so you can deploy first and switch
 when ready.
@@ -137,6 +139,8 @@ when ready.
    `https://admin.example.com/auth/callback` for the admin panel's own sign-in. For local
    development, also add `http://localhost:8787/auth/callback` and
    `http://admin.localhost:8787/auth/callback` in the staging environment.
+   Set **Password reset URL** to `https://example.com/reset-password` (the reset email links
+   there) and **Initiate login URI** to `https://example.com/auth/login`.
    Under **Sign-out redirects** (sometimes labelled logout redirects), add `https://example.com/`
    and `https://admin.example.com/login`. Logging out of Formelab ends the WorkOS session too and
    then returns there; without them WorkOS shows an error after logout.

@@ -57,6 +57,12 @@ name = "WAITLIST_LIMITER"
 namespace_id = "1002"
 simple = { limit = 10, period = 60 }
 
+# 20 sign-in attempts (password, code, reset) per minute per client IP.
+[[ratelimits]]
+name = "LOGIN_LIMITER"
+namespace_id = "1003"
+simple = { limit = 20, period = 60 }
+
 # Notification emails through Cloudflare Email Service (Workers Paid). Only this sender may be used.
 [[send_email]]
 name = "EMAIL"
@@ -100,6 +106,11 @@ simple = { limit = 60, period = 60 }
 name = "WAITLIST_LIMITER"
 namespace_id = "1002"
 simple = { limit = 10, period = 60 }
+
+[[env.dev.ratelimits]]
+name = "LOGIN_LIMITER"
+namespace_id = "1003"
+simple = { limit = 20, period = 60 }
 
 # In local dev, emails are logged by wrangler instead of being sent.
 [[env.dev.send_email]]

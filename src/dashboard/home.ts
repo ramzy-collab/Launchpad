@@ -4,12 +4,12 @@
 import { escapeHtml as e } from "../util";
 import { HOME_FONTS, head, htmlResponse } from "./layout";
 
-const homeHead = (title: string, scripts: string[] = []) => head(title, scripts, { css: "home.css", fonts: HOME_FONTS });
+export const homeHead = (title: string, scripts: string[] = []) => head(title, scripts, { css: "home.css", fonts: HOME_FONTS });
 
 const CHECK = (stroke: string, width = 3.5) =>
   `<svg viewBox="0 0 24 24" fill="none" stroke="${stroke}" stroke-width="${width}"><path d="M20 6 9 17l-5-5"/></svg>`;
 
-function topNav(admin = false): string {
+export function topNav(admin = false): string {
   return `<div class="container">
   <nav>
     <a class="logo" href="/" aria-label="Formelab home"><span class="mark" aria-hidden="true">F</span>Formelab${admin ? " admin" : ""}</a>
