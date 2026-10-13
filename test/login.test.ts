@@ -346,6 +346,35 @@ describe("namespace hosts get their own session", () => {
     expect(await page.text()).not.toContain("secret stuff");
   });
 
+  it("waitlisted people can't open apps open to all members, only ones shared with them", async () => {
+    const ns = uniq();
+    const email = `wl-${uniq()}@example.com`;
+    await publishHtml(OWNER, ns, "open", PAGE("members only"), { visibility: "all" });
+    await publishHtml(OWNER, ns, "mine", PAGE("shared by name"), { allowed_emails: email });
+    const { cookie } = await signIn(email); // lands on the waitlist
+    const nsCookie = await hostCookie(cookie, `https://${ns}.example.app`);
+    const get = (path: string, headers: Record<string, string> = {}) =>
+      w(`https://${ns}.example.app${path}`, { headers: { cookie: nsCookie, ...headers } });
+
+    const open = await get("/open/");
+    expect(open.status).toBe(403);
+    const text = await open.text();
+    expect(text).toContain("still on the waitlist");
+    expect(text).not.toContain("members only");
+    // Nor its data, through the app API.
+    expect((await get("/_api/kv", { "x-formelab-mount": "/open/" })).status).toBe(403);
+    // An app shared with them by name still works.
+    expect(await (await get("/mine/")).text()).toContain("shared by name");
+    expect((await get("/_api/kv", { "x-formelab-mount": "/mine/" })).status).toBe(200);
+    // Listing the namespace doesn't show the members-only app either.
+    const listed = await w(`${APP}/_api/admin/sites?namespace=${ns}`, { headers: { cookie: await hostCookie(cookie, APP) } });
+    expect((await listed.json<{ mountPath: string }[]>()).map((s) => s.mountPath)).toEqual(["mine"]);
+
+    // Once they're let in, the members-only app opens.
+    expect((await call("/_api/admin/waitlist/approve", { as: OWNER, method: "POST", json: { email } })).status).toBe(200);
+    expect(await (await get("/open/")).text()).toContain("members only");
+  });
+
   it("only hands sessions to Formelab's own hosts", async () => {
     const { cookie } = await signIn(`evil-${uniq()}@example.com`);
     for (const target of ["https://evil.test/", "https://example.com/app", "http://x.example.app/", "https://x.example.com/", "not a url"]) {

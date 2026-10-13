@@ -18,7 +18,7 @@ import { AI_LOGOS } from "./logos";
 
 export const fmtTime = (ms: number | null) => (ms ? new Date(ms).toISOString().replace("T", " ").slice(0, 16) + " UTC" : "never");
 
-const VISIBILITY_LABEL = { restricted: "Only people you share with", all: "Anyone signed in to Formelab" } as const;
+const VISIBILITY_LABEL = { restricted: "Only people you share with", all: "All Formelab members" } as const;
 
 const visibilityOptions = (current: "all" | "restricted") =>
   (["restricted", "all"] as const)

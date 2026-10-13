@@ -129,7 +129,7 @@ const safeJson = (s: string): unknown => {
 export function parseVisibility(raw: unknown): "all" | "restricted" | undefined {
   if (raw === undefined || raw === null || raw === "") return undefined;
   if (raw === "all" || raw === "restricted") return raw;
-  throw badRequest(`visibility must be "all" or "restricted".`, "\"restricted\" (the default) limits the app to its owner, editors and allowed_emails; \"all\" lets anyone signed in to Formelab open it.");
+  throw badRequest(`visibility must be "all" or "restricted".`, "\"restricted\" (the default) limits the app to its owner, editors and allowed_emails; \"all\" lets every Formelab member open it.");
 }
 
 export function parseBool(raw: unknown): boolean | undefined {
@@ -355,7 +355,7 @@ const ownsSite = (u: User, s: SiteRow, ns: NamespaceRow) => s.owner_email === u.
 
 /**
  * Apps someone else owns that were shared with this person by name: as a viewer (allowed_emails),
- * an editor of the app, or an editor of its namespace. Apps open to everyone signed in don't count.
+ * an editor of the app, or an editor of its namespace. Apps open to all members don't count.
  */
 export async function listSharedSites(ctx: Ctx) {
   const { env, user } = ctx;

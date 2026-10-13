@@ -63,6 +63,11 @@ Choices made while building v1, including where the build differs from the spec 
 
 ## Publishing and serving
 
+- **"all" means members, not everyone signed in (audit finding N2).** Anyone can sign in with
+  WorkOS and land on the waitlist, so `canViewSite` only opens `all` apps to active accounts.
+  Waitlisted people can still open apps shared with them by name (`allowed_emails`, editors). Every
+  path (app files, the runtime API with KV, secrets and connected services, MCP `fetch`, icons,
+  listings) goes through `canViewSite`, so this one check covers them all.
 - **Zip parsing is done by hand** (`src/upload.ts`) on top of fflate's streaming `Inflate`. fflate's
   `unzip` APIs don't expose the external attributes needed to detect symlinks, and can't enforce a
   running decompressed-size budget. The parser reads the central directory, rejects symlinks,
