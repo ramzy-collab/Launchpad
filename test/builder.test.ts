@@ -114,7 +114,7 @@ describe("building apps with the person's own API key", () => {
 
     const last = await build(me, "claude", "A sign-up sheet for our team lunch");
     expect(last.done).toMatchObject({ title: "Lunch Sign-up", mountPath: "lunch-sign-up", model: "claude-opus-5-5" });
-    expect(last.done.url).toContain(`${last.done.namespace}.example.app/lunch-sign-up/`);
+    expect(last.done.url).toMatch(/^https:\/\/lunch-sign-up-[a-z0-9]+\.example\.app\//);
 
     const sent = seen.find((s) => s.method === "POST")!;
     expect(sent.url).toContain("https://api.anthropic.com/v1/messages");
