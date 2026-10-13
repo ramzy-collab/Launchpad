@@ -128,6 +128,29 @@ describe("login page and WorkOS redirect", () => {
     expect(authenticated).toHaveLength(0);
   });
 
+  it("restarts a sign-in begun on WorkOS's own pages (no state) instead of failing, without using its code", async () => {
+    mockWorkos("x@example.com");
+    const res = await w("/auth/callback?code=fromworkos");
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toBe("/auth/login?again=1&return=%2Fapp");
+    expect(authenticated).toHaveLength(0);
+
+    // The restarted sign-in completes normally...
+    const start = await w(res.headers.get("location")!);
+    const state = new URL(start.headers.get("location")!).searchParams.get("state")!;
+    expect(state.endsWith("-r")).toBe(true);
+    const done = await w(`/auth/callback?code=c&state=${state}`, { headers: { cookie: cookieFrom(start, "__Host-fl_login")! } });
+    expect(cookieFrom(done, "__Host-fl_session")).not.toBeNull();
+    // ...and only restarts once: without the cookie (a browser dropping it) it stops with a message.
+    expect((await w(`/auth/callback?code=c&state=${state}`)).status).toBe(400);
+  });
+
+  it("keeps where to return when the state cookie is there but WorkOS sent no state", async () => {
+    const start = await w("/auth/login?return=%2Fapp%2Fshared");
+    const res = await w("/auth/callback?code=c", { headers: { cookie: cookieFrom(start, "__Host-fl_login")! } });
+    expect(res.headers.get("location")).toBe("/auth/login?again=1&return=%2Fapp%2Fshared");
+  });
+
   it("only returns to paths on Formelab itself", async () => {
     expect((await signIn(`r-${uniq()}@example.com`, "https://evil.test/")).location).toBe("/app");
     expect((await signIn(`r-${uniq()}@example.com`, "//evil.test/")).location).toBe("/app");

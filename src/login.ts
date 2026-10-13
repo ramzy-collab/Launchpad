@@ -32,6 +32,7 @@ import { base32, escapeHtml, normEmail, randomBytes } from "./util";
 
 const WORKOS_API = "https://api.workos.com";
 const STATE_COOKIE = "__Host-fl_login";
+const RESTARTED = "-r";
 
 export const workosEnabled = (env: Env) => !!(env.WORKOS_CLIENT_ID && env.WORKOS_API_KEY);
 
@@ -50,7 +51,8 @@ const PROVIDERS: Record<string, string> = { google: "GoogleOAuth", email: "authk
 export function loginStart(c: Context<AppEnv>): Response {
   const env = c.env;
   if (!workosEnabled(env)) return c.redirect(homePath(c), 302);
-  const state = base32(randomBytes(20));
+  // "-r" marks a sign-in restarted by loginCallback, so it restarts at most once.
+  const state = base32(randomBytes(20)) + (c.req.query("again") ? RESTARTED : "");
   const returnTo = safeReturn(c.req.query("return"), homePath(c));
   const url = new URL(`${WORKOS_API}/user_management/authorize`);
   url.searchParams.set("client_id", env.WORKOS_CLIENT_ID!);
@@ -79,7 +81,19 @@ export async function loginCallback(c: Context<AppEnv>): Promise<Response> {
   const dot = saved.indexOf(".");
   const state = dot > 0 ? saved.slice(0, dot) : "";
   const code = c.req.query("code");
-  if (!state || state !== c.req.query("state") || !code) {
+  const sent = c.req.query("state") ?? "";
+  if (!state || state !== sent || !code) {
+    // A sign-in Formelab didn't start: WorkOS's own pages (Forgot password, an emailed link, its
+    // sign-in page opened directly) come back without our state, and the state cookie lasts 10
+    // minutes. Such a code is never redeemed (it could be someone else's sign-in); a fresh one is
+    // started instead, which WorkOS answers straight away since the person is signed in there.
+    // Only once, so a browser that drops cookies gets the message below rather than a loop.
+    if (code && (!state || !sent) && !sent.endsWith(RESTARTED)) {
+      const ret = state ? safeReturn(decodeURIComponent(saved.slice(dot + 1)), homePath(c)) : homePath(c);
+      const headers = new Headers({ location: `/auth/login?again=1&return=${encodeURIComponent(ret)}`, "cache-control": "no-store" });
+      headers.append("set-cookie", cookieHeader(STATE_COOKIE, "", 0));
+      return new Response(null, { status: 302, headers });
+    }
     return plainPage(400, "Sign-in expired", "This sign-in link was already used or took too long. Go back to Formelab and log in again.");
   }
   const returnTo = safeReturn(decodeURIComponent(saved.slice(dot + 1)), homePath(c));
