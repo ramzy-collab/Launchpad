@@ -1,18 +1,19 @@
 import { Hono } from "hono";
-import { canManageSite, canViewSite } from "./auth";
+import { canManageSite } from "./auth";
 import type { AppEnv } from "./env";
-import { badRequest, err, forbidden, jsonError, notFound, onError } from "./errors";
+import { badRequest, err, forbidden, jsonError, onError } from "./errors";
 import { kvDelete, kvGet, kvList, kvSet } from "./kv";
 import { proxy, secretDelete, secretList, secretSet } from "./secrets";
 import { geminiAvailable, geminiGenerate } from "./gemini";
 import { flagOnForOwner } from "./flags";
 import { sheetsAvailable, sheetsCall } from "./sheets";
-import { getNamespace, getSiteByMount, validateMountPath } from "./sites";
+import { getNamespace } from "./sites";
 
 /**
- * The per-app runtime API on `<ns>.DOMAIN/_api/*`. The parent sets c.var.user and
- * c.var.namespace. This router enforces the CSRF/origin rules and resolves the site
- * from Host + x-formelab-mount, so an app can never address another namespace.
+ * The per-app runtime API on an app's own host, <host_label>.APP_DOMAIN/_api/*. The parent sets
+ * c.var.user and c.var.site from the host (after checking the user may open the app), so a page
+ * can only ever reach its own app's data: each app is its own origin. This router enforces the
+ * CSRF/origin rules.
  */
 export function runtimeApi() {
   const api = new Hono<AppEnv>();
@@ -27,19 +28,11 @@ export function runtimeApi() {
     if (origin && origin !== new URL(c.req.url).origin) {
       return jsonError(forbidden("Cross-origin requests are not allowed."));
     }
-    const mountHeader = c.req.header("x-formelab-mount");
-    if (!mountHeader) {
+    // The SDK sends this header on every call. It no longer picks the app (the host does), but a
+    // custom header still forces a CORS preflight on cross-site requests, which we refuse above.
+    if (!c.req.header("x-formelab-mount")) {
       return jsonError(badRequest("Missing x-formelab-mount header.", "Call the API through the SDK: <script src=\"/_platform/sdk.js\"></script>."));
     }
-    if (!/^\/([a-z0-9-]+(\/[a-z0-9-]+)*\/)?$/.test(mountHeader)) {
-      return jsonError(badRequest("Malformed x-formelab-mount header.", "Use the SDK; it sets this header for you."));
-    }
-    const ns = c.get("namespace");
-    const site = await getSiteByMount(c.env, ns, validateMountPath(mountHeader));
-    if (!site) return jsonError(notFound("App"));
-    const nsRow = await getNamespace(c.env, ns);
-    if (!nsRow || !canViewSite(c.get("user"), site, nsRow)) return jsonError(forbidden("You don't have access to this app."));
-    c.set("site", site);
     await next();
     c.header("cache-control", "no-store");
   });

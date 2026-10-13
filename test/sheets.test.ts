@@ -1,6 +1,6 @@
 import { env } from "cloudflare:workers";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { call, onOutbound, OWNER, PAGE, publishHtml, uniq } from "./helpers";
+import { call, onOutbound, OWNER, PAGE, publishHtml, uniq, appAt } from "./helpers";
 
 type Seen = { url: string; method: string; auth: string | null; body: string };
 const seen: Seen[] = [];
@@ -54,7 +54,7 @@ async function allowSheets(as: string, ns: string, list: unknown) {
   const site = await env.DB.prepare("SELECT id FROM sites WHERE namespace = ? AND mount_path = 's'").bind(ns).first<{ id: string }>();
   return call(`/_api/admin/sites/${site!.id}`, { as, method: "PATCH", json: { sheets: list } });
 }
-const sheets = (as: string, ns: string, json: unknown) => call(`https://${ns}.example.app/_api/sheets`, { as, mount: "/s/", method: "POST", json });
+const sheets = async (as: string, ns: string, json: unknown) => call(`${await appAt(ns, "s")}/_api/sheets`, { as, mount: "/", method: "POST", json });
 
 afterEach(() => onOutbound(undefined));
 
@@ -70,7 +70,7 @@ describe("Google Sheets as a connected app (OAuth)", () => {
     const { google, cb } = await connectSheets(me);
     expect(google.origin + google.pathname).toBe("https://accounts.google.com/o/oauth2/v2/auth");
     expect(google.searchParams.get("client_id")).toBe("gclient.apps.googleusercontent.com");
-    expect(google.searchParams.get("redirect_uri")).toBe("https://example.app/services/google-sheets/callback");
+    expect(google.searchParams.get("redirect_uri")).toBe("https://app.example.com/services/google-sheets/callback");
     expect(google.searchParams.get("scope")).toContain("https://www.googleapis.com/auth/spreadsheets");
     expect(google.searchParams.get("access_type")).toBe("offline");
     expect(google.searchParams.get("code_challenge_method")).toBe("S256");
@@ -98,7 +98,7 @@ describe("Google Sheets as a connected app (OAuth)", () => {
     await connectSheets(OWNER);
     expect((await allowSheets(OWNER, ns, [SHEET])).status).toBe(200);
 
-    expect(await (await call(`https://${ns}.example.app/_api/sheets`, { as: OWNER, mount: "/s/" })).json()).toEqual({ connected: true, available: true });
+    expect(await (await call(`${await appAt(ns, "s")}/_api/sheets`, { as: OWNER, mount: "/" })).json()).toEqual({ connected: true, available: true });
     const read = await sheets(OWNER, ns, { method: "GET", path: "spreadsheets/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/values/Sheet1!A1:B2" });
     expect(read.status).toBe(200);
     const text = await read.text();

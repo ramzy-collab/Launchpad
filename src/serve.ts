@@ -1,7 +1,6 @@
-import { canViewSite } from "./auth";
 import type { Env, User } from "./env";
 import { extOf, contentTypeFor, isHtmlPath } from "./mime";
-import { getNamespace, resolveSiteForPath, type SiteRow } from "./sites";
+import { resolveSiteForPath, siteUrl, type SiteRow } from "./sites";
 import { appPwaTags } from "./pwa";
 import { escapeHtml } from "./util";
 
@@ -19,7 +18,7 @@ export function plainPage(status: number, title: string, message: string): Respo
 }
 
 /**
- * Inserts <base href="/<mount>/"> as the first child of <head> (or synthesizes one), followed by
+ * Inserts <base href="/"> as the first child of <head> (or synthesizes one), followed by
  * the tags that let the app be installed on a device (see pwa.ts).
  */
 async function injectHead(res: Response, env: Env, site: SiteRow, baseHref: string): Promise<Response> {
@@ -48,14 +47,37 @@ function candidatesFor(rel: string, spa: boolean): string[] {
   return c;
 }
 
+/** The page for someone who signed in but may not open the app. */
+export function noAccessPage(site: SiteRow, user: User): Response {
+  if (site.visibility === "all" && !user.active) {
+    return plainPage(403, "Not yet", "This app is open to Formelab members, and your account is still on the waitlist. You'll be able to open it once you're let in, or if its owner shares it with you.");
+  }
+  return plainPage(403, "Access denied", "You don't have access to this app. Ask its owner to add your email to the allow-list.");
+}
+
 /**
- * Serves an app file for `<ns>.APP_DOMAIN`. Identity has already been established;
- * this does mount resolution, the visibility check, and file lookup.
+ * Serves a file of the app on its own host (<host_label>.APP_DOMAIN). Identity and the
+ * visibility check have already happened; this does the file lookup.
  */
-export async function serveAppFile(req: Request, env: Env, ns: string, user: User): Promise<Response> {
+export async function serveAppFile(req: Request, env: Env, site: SiteRow): Promise<Response> {
   if (req.method !== "GET" && req.method !== "HEAD") {
     return new Response("Method not allowed", { status: 405, headers: { ...BASE_HEADERS, allow: "GET, HEAD" } });
   }
+  let path: string;
+  try {
+    path = decodeURIComponent(new URL(req.url).pathname);
+  } catch {
+    return plainPage(400, "Bad request", "The address is not valid.");
+  }
+  if (path.includes("\0") || path.split("/").includes("..")) return plainPage(400, "Bad request", "The address is not valid.");
+  return serveFromSite(req, env, site, path.slice(1), "/");
+}
+
+/**
+ * Old app addresses, <ns>.APP_DOMAIN/<mount>/<rest> (and <ns>.DOMAIN/...): a permanent redirect to
+ * the app's own host, keeping <rest> and the query. Nothing is served here any more.
+ */
+export async function legacyAppRedirect(req: Request, env: Env, ns: string): Promise<Response> {
   const url = new URL(req.url);
   let path: string;
   try {
@@ -63,24 +85,16 @@ export async function serveAppFile(req: Request, env: Env, ns: string, user: Use
   } catch {
     return plainPage(400, "Bad request", "The address is not valid.");
   }
-  if (path.includes("\0") || path.split("/").includes("..")) return plainPage(400, "Bad request", "The address is not valid.");
-
+  if (path === "/healthz") return new Response("ok", { headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" } });
+  if (/^\/_(api|platform|auth)(\/|$)/.test(path)) return plainPage(404, "Not found", "Apps have moved to their own addresses. Open the app again from Formelab.");
   const site = await resolveSiteForPath(env, ns, path);
   if (!site) return plainPage(404, "Not found", "There is no app at this address.");
-  const nsRow = await getNamespace(env, ns);
-  if (!nsRow || !canViewSite(user, site, nsRow)) {
-    if (nsRow && site.visibility === "all" && !user.active) {
-      return plainPage(403, "Not yet", "This app is open to Formelab members, and your account is still on the waitlist. You'll be able to open it once you're let in, or if its owner shares it with you.");
-    }
-    return plainPage(403, "Access denied", "You don't have access to this app. Ask its owner to add your email to the allow-list.");
-  }
-
-  const mountPrefix = site.mount_path ? `/${site.mount_path}/` : "/";
-  if (site.mount_path && path === `/${site.mount_path}`) {
-    return new Response(null, { status: 301, headers: { ...BASE_HEADERS, location: mountPrefix + url.search } });
-  }
-  const rel = path.slice(mountPrefix.length);
-  return serveFromSite(req, env, site, rel, mountPrefix);
+  const rest = site.mount_path ? path.slice(site.mount_path.length + 1) || "/" : path;
+  const encoded = rest.split("/").map(encodeURIComponent).join("/");
+  return new Response(null, {
+    status: 301,
+    headers: { ...BASE_HEADERS, "cache-control": "public, max-age=3600", location: siteUrl(env, site, req.url).slice(0, -1) + encoded + url.search },
+  });
 }
 
 async function serveFromSite(req: Request, env: Env, site: SiteRow, rel: string, baseHref: string): Promise<Response> {

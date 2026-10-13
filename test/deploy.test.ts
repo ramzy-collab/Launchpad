@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { call, OWNER, PAGE, uniq } from "./helpers";
+import { call, OWNER, PAGE, uniq, appAt } from "./helpers";
 
 async function token(as = OWNER) {
   const res = await call("/_api/admin/tokens", { as, method: "POST", json: { name: "deploy-test", ttlHours: 1 } });
@@ -18,7 +18,7 @@ describe("deploy API (bearer token)", () => {
     const pub = await call("/_api/deploy/sites", { token: t, method: "POST", body: fd });
     expect(pub.status).toBe(201);
     const { url, site } = await pub.json<{ url: string; site: { id: string; ownerEmail: string } }>();
-    expect(url).toBe(`https://${ns}.example.app/d/`);
+    expect(url).toBe(`${await appAt(ns, "d")}/`);
     expect(site.ownerEmail).toBe(OWNER);
 
     const list = await (await call(`/_api/deploy/sites?namespace=${ns}`, { token: t })).json<{ id: string }[]>();

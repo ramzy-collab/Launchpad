@@ -8,7 +8,7 @@ import { contentTypeFor } from "./mime";
 import type { FileMap } from "./upload";
 import { isEmail, normEmail, parseJsonArray, randomId, sortableId } from "./util";
 import { appSharedEmail, namespaceSharedEmail, sendEach } from "./email";
-import { appOrigin, nsOrigin } from "./hosts";
+import { appOrigin, siteOrigin } from "./hosts";
 
 /** Addresses in `next` that weren't in `prev` (both normalized). */
 const added = (next: string[], prev: string[]) => {
@@ -22,7 +22,7 @@ function notifyShared(ctx: Ctx, site: SiteRow, viewers: string[], editors: strin
   const origin = appOrigin(ctx.env, ctx.requestUrl);
   const by = ctx.user.name || ctx.user.email;
   const title = site.title || `${site.namespace}/${site.mount_path}`;
-  const url = siteUrl(ctx.env, site.namespace, site.mount_path, ctx.requestUrl);
+  const url = siteUrl(ctx.env, site, ctx.requestUrl);
   const editorSet = new Set(editors);
   const everyone = [...new Set([...editors, ...viewers])];
   ctx.waitUntil(sendEach(ctx.env, everyone, ctx.user.email, (to) => appSharedEmail(origin, to, { by, title, url, canEdit: editorSet.has(to) })));
@@ -55,6 +55,8 @@ export interface SiteRow {
   icon_path?: string | null;
   /** JSON array of the Google spreadsheet ids the app may use (see src/sheets.ts). */
   sheets?: string;
+  /** The app's own host, <host_label>.APP_DOMAIN, e.g. "hoops-7kq2" (see src/hosts.ts). */
+  host_label: string;
   /** Who may change the app's shared data (KV): "all" who can open it, or its owner and "editors". */
   kv_writes?: "all" | "editors";
 }
@@ -72,7 +74,7 @@ export interface Ctx {
 // Names and paths
 // ---------------------------------------------------------------------------
 
-export const RESERVED_LABELS = new Set(["www", "api", "admin", "mcp", "static", "platform"]);
+export const RESERVED_LABELS = new Set(["www", "api", "admin", "app", "mcp", "static", "platform"]);
 const LABEL_RE = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
 const SEGMENT_RE = /^[a-z0-9-]{1,63}$/;
 
@@ -154,10 +156,34 @@ export function parseTitle(raw: unknown): string | null | undefined {
 // URLs
 // ---------------------------------------------------------------------------
 
-export { nsOrigin };
+/** An app's address: its own host, e.g. https://hoops-7kq2.formelab.app/. */
+export const siteUrl = (env: Env, site: Pick<SiteRow, "host_label">, requestUrl?: string) =>
+  `${siteOrigin(env, site.host_label, requestUrl)}/`;
 
-export const siteUrl = (env: Env, ns: string, mount: string, requestUrl?: string) =>
-  `${nsOrigin(env, ns, requestUrl)}/${mount ? mount + "/" : ""}`;
+const HOST_CODE_ALPHABET = "abcdefghjkmnpqrstuvwxyz23456789"; // no 0/o, 1/l/i
+const HOST_NAME_MAX = 40;
+
+/** "tools/budget" -> "tools-budget": the readable part of an app's host label. */
+export function hostName(namespace: string, mountPath: string): string {
+  const raw = mountPath ? mountPath.replace(/\//g, "-") : namespace;
+  const name = raw.toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/-+/g, "-").slice(0, HOST_NAME_MAX).replace(/^-+|-+$/g, "");
+  return name || "app";
+}
+
+/** A free host label for a new app: its name plus a 4-character code, e.g. "hoops-7kq2". */
+async function newHostLabel(env: Env, namespace: string, mountPath: string): Promise<string> {
+  const name = hostName(namespace, mountPath);
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const bytes = crypto.getRandomValues(new Uint8Array(4));
+    const code = [...bytes].map((b) => HOST_CODE_ALPHABET[b % HOST_CODE_ALPHABET.length]).join("");
+    const label = `${name}-${code}`;
+    const taken = await env.DB.prepare("SELECT 1 FROM sites WHERE host_label = ?1 UNION ALL SELECT 1 FROM namespaces WHERE label = ?1")
+      .bind(label)
+      .first();
+    if (!taken) return label;
+  }
+  throw err(503, "busy", "Couldn't pick an address for the app.", "Publish again.");
+}
 
 export interface SiteView {
   id: string;
@@ -187,7 +213,7 @@ export const siteView = (env: Env, s: SiteRow, requestUrl?: string): SiteView =>
   id: s.id,
   namespace: s.namespace,
   mountPath: s.mount_path,
-  url: siteUrl(env, s.namespace, s.mount_path, requestUrl),
+  url: siteUrl(env, s, requestUrl),
   title: s.title,
   ownerEmail: s.owner_email,
   editors: parseJsonArray(s.editors),
@@ -251,7 +277,8 @@ export async function addSiteSheet(env: Env, siteId: string, sheetId: string): P
 
 export const namespaceView = (n: NamespaceRow, user: User, env: Env, requestUrl?: string) => ({
   label: n.label,
-  url: nsOrigin(env, n.label, requestUrl) + "/",
+  /** Spaces have no address of their own: this is the web app's list of the apps in it. */
+  url: `${appOrigin(env, requestUrl)}/?space=${encodeURIComponent(n.label)}`,
   ownerEmail: n.owner_email,
   editors: parseJsonArray(n.editors),
   isOwner: n.owner_email === user.email,
@@ -271,6 +298,9 @@ export const getSiteByMount = (env: Env, ns: string, mount: string) =>
   env.DB.prepare("SELECT * FROM sites WHERE namespace = ? AND mount_path = ?").bind(ns, mount).first<SiteRow>();
 
 /** Finds the site whose mount path is the longest prefix of `path` (which starts with "/"). */
+export const getSiteByHostLabel = (env: Env, label: string) =>
+  env.DB.prepare("SELECT * FROM sites WHERE host_label = ?").bind(label).first<SiteRow>();
+
 export async function resolveSiteForPath(env: Env, ns: string, path: string): Promise<SiteRow | null> {
   const { results } = await env.DB.prepare("SELECT * FROM sites WHERE namespace = ?").bind(ns).all<SiteRow>();
   let best: SiteRow | null = null;
@@ -338,7 +368,7 @@ export async function updateNamespaceEditors(ctx: Ctx, rawLabel: string, rawEdit
   if (newEditors.length) {
     const origin = appOrigin(ctx.env, ctx.requestUrl);
     const by = ctx.user.name || ctx.user.email;
-    const url = nsOrigin(ctx.env, ns.label, ctx.requestUrl) + "/";
+    const url = `${origin}/shared`;
     ctx.waitUntil(sendEach(ctx.env, newEditors, ctx.user.email, (to) => namespaceSharedEmail(origin, to, { by, namespace: ns.label, url })));
   }
   return namespaceView({ ...ns, editors: JSON.stringify(editors) }, ctx.user, ctx.env, ctx.requestUrl);
@@ -520,6 +550,7 @@ export async function publishSite(ctx: Ctx, input: PublishInput) {
 
   const version = sortableId();
   const id = existing?.id ?? randomId("s_");
+  const hostLabel = existing?.host_label ?? (await newHostLabel(env, label, mount));
   const prefix = `sites/${id}/${version}/`;
   let totalBytes = 0;
   for (const d of input.files.values()) totalBytes += d.length;
@@ -557,8 +588,8 @@ export async function publishSite(ctx: Ctx, input: PublishInput) {
     } else {
       await env.DB.prepare(
         `INSERT INTO sites (id, namespace, mount_path, title, owner_email, editors, visibility, allowed_emails,
-                            hidden, spa, current_version, file_count, total_bytes, created_at, updated_at, kv_writes)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)`,
+                            hidden, spa, current_version, file_count, total_bytes, created_at, updated_at, kv_writes, host_label)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
         .bind(
           id,
@@ -576,6 +607,7 @@ export async function publishSite(ctx: Ctx, input: PublishInput) {
           t,
           t,
           dataWrites ?? "editors",
+          hostLabel,
         )
         .run();
     }

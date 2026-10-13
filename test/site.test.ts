@@ -26,7 +26,7 @@ describe("home page and login", () => {
   it("sends someone already signed in to their dashboard", async () => {
     const res = await call("/", { as: OWNER });
     expect(res.status).toBe(302);
-    expect(res.headers.get("location")).toBe("https://example.app/");
+    expect(res.headers.get("location")).toBe("https://app.example.com/");
   });
 
   it("serves the login screen publicly, pointing at the dashboard", async () => {

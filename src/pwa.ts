@@ -1,22 +1,21 @@
 // Installing Formelab, and every app on it, on a phone or computer (Progressive Web Apps).
 //
-// The web app (APP_DOMAIN) has a manifest, icons and a service worker, so browsers offer to
+// The web app (app.DOMAIN) has a manifest, icons and a service worker, so browsers offer to
 // install it: Add to Home Screen on phones, Install in Chrome and Edge, Add to Dock in Safari.
 // It then opens in its own window with its own icon.
 //
 // Published apps get the same without their makers doing anything: each app's HTML gets a
-// <link rel="manifest"> pointing at a manifest Formelab writes for it (its title, its icon, its
-// path as the app's scope), unless the app ships its own. The manifest needs the visitor's
+// <link rel="manifest"> pointing at a manifest Formelab writes for it (its title, its icon, and its
+// own host as the app's scope), unless the app ships its own. The manifest needs the visitor's
 // sign-in like the app itself (crossorigin="use-credentials"); the icon URLs in it are signed
 // instead, because browsers don't always send cookies when they fetch icons to install them.
 import type { Context } from "hono";
-import { canViewSite } from "./auth";
 import type { AppEnv, Env } from "./env";
-import { namespaceOf } from "./hosts";
+import { appsLabelOf } from "./hosts";
 import { ICON_192_PNG, ICON_512_PNG, MASKABLE_512_PNG, APPLE_TOUCH_ICON_PNG, SW_JS } from "./generated/assets";
 import { iconPathFor, iconResponse, letterIcon, pngSize } from "./icons";
 import { extOf } from "./mime";
-import { getNamespace, getSiteById, getSiteByMount, validateMountPath, type SiteRow } from "./sites";
+import { getSiteById, type SiteRow } from "./sites";
 import { b64decode, escapeHtml } from "./util";
 
 const CANVAS = "#FBFAF7";
@@ -109,7 +108,7 @@ export async function appPwaIcon(c: Context<AppEnv>): Promise<Response> {
   if (kind !== "icon" && kind !== "letter") return notFound();
   if (sig !== (await sign(c.env, `${id}:${version}:${kind}`))) return notFound();
   const site = (await getSiteById(c.env, id)) as IconSite | null;
-  if (!site || site.namespace !== namespaceOf(new URL(c.req.url).hostname, c.env) || String(site.current_version) !== version) return notFound();
+  if (!site || site.host_label !== appsLabelOf(new URL(c.req.url).hostname, c.env) || String(site.current_version) !== version) return notFound();
   const res =
     kind === "letter"
       ? new Response(letterIcon(site), { headers: { "content-type": "image/svg+xml" } })
@@ -137,20 +136,10 @@ async function manifestIcons(env: Env, site: IconSite) {
   return [{ src: await iconUrl(env, site, "letter"), sizes: "any", type: "image/svg+xml", purpose: "any" }];
 }
 
-/** GET /_platform/manifest.webmanifest?mount=<path> on an app's host, for people who can open the app. */
+/** GET /_platform/manifest.webmanifest on an app's host, for people who can open the app (checked before this runs). */
 export async function appManifest(c: Context<AppEnv>): Promise<Response> {
-  const notFound = () => new Response(JSON.stringify({ error: "not_found" }), { status: 404, headers: { ...NO_SNIFF, "content-type": "application/json" } });
-  let mount: string;
-  try {
-    mount = validateMountPath(c.req.query("mount") ?? "");
-  } catch {
-    return notFound();
-  }
-  const ns = c.get("namespace");
-  const site = (await getSiteByMount(c.env, ns, mount)) as IconSite | null;
-  const nsRow = site ? await getNamespace(c.env, ns) : null;
-  if (!site || !nsRow || !canViewSite(c.get("user"), site, nsRow)) return notFound();
-  const scope = mount ? `/${mount}/` : "/";
+  const site = c.get("site") as IconSite;
+  const scope = "/";
   const name = appTitle(site);
   return manifestResponse(
     {
@@ -178,7 +167,7 @@ export async function appPwaTags(env: Env, site: IconSite, html: string): Promis
   const has = (rel: RegExp) => links.some((tag) => rel.test(/\brel\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i.exec(tag)?.slice(1).find((x) => x !== undefined) ?? ""));
   let tags = "";
   if (!has(/\bmanifest\b/i)) {
-    tags += `<link rel="manifest" href="/_platform/manifest.webmanifest?mount=${encodeURIComponent(site.mount_path)}" crossorigin="use-credentials">`;
+    tags += `<link rel="manifest" href="/_platform/manifest.webmanifest" crossorigin="use-credentials">`;
   }
   if (!has(/\bapple-touch-icon\b/i)) {
     const icon = await iconPathFor(env, site);

@@ -5,7 +5,8 @@ import { zipSync, strToU8 } from "fflate";
 
 export const DOMAIN = "example.com";
 export const APP_DOMAIN = "example.app";
-export const APP = `https://${APP_DOMAIN}`;
+/** The web app. */
+export const APP = `https://app.${DOMAIN}`;
 export const ADMIN = `https://admin.${DOMAIN}`;
 export const TEAM = "team.cloudflareaccess.com";
 export const AUD = "test-aud";
@@ -86,12 +87,21 @@ export async function call(url: string, opts: CallOpts = {}): Promise<Response> 
   return exports.default.fetch(new Request(full, { ...opts, headers, body, redirect: "manual" }));
 }
 
-/** Bare paths go to the host that serves them: the management API and web app on APP_DOMAIN, "/admin..." on the admin host, the rest on DOMAIN. */
+/** Bare paths go to the host that serves them: the management API and web app on app.DOMAIN, "/admin..." on the admin host, the rest on DOMAIN. */
 export function resolvePath(path: string): string {
   if (path.startsWith("/_api/admin")) return APP + path;
   if (path === "/app" || path.startsWith("/app/") || path.startsWith("/app?")) return APP + (path.slice(4) || "/");
   if (path === "/admin" || path.startsWith("/admin/") || path.startsWith("/admin?")) return ADMIN + (path.slice(6) || "/");
   return `https://${DOMAIN}${path}`;
+}
+
+/** The origin of the app published at <ns>/<mount>: its own host, https://<host_label>.APP_DOMAIN. */
+export async function appAt(ns: string, mount = ""): Promise<string> {
+  const row = await env.DB.prepare("SELECT host_label FROM sites WHERE namespace = ? AND mount_path = ?")
+    .bind(ns, mount)
+    .first<{ host_label: string }>();
+  if (!row) throw new Error(`No app at ${ns}/${mount}`);
+  return `https://${row.host_label}.${APP_DOMAIN}`;
 }
 
 let seq = 0;

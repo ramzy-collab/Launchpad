@@ -2,7 +2,7 @@ import { env } from "cloudflare:workers";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { decryptSecret, encryptSecret } from "../src/secrets";
 import type { Env } from "../src/env";
-import { call, onOutbound, OWNER, PAGE, publishHtml, uniq } from "./helpers";
+import { appAt, call, onOutbound, OWNER, PAGE, publishHtml, uniq } from "./helpers";
 
 const E = env as unknown as Env;
 const SECRET = "sk-live-0123456789abcdef";
@@ -12,7 +12,7 @@ async function newSite(opts: Record<string, string> = {}, mount = "app") {
   const ns = uniq();
   const res = await publishHtml(OWNER, ns, mount, PAGE("app"), opts);
   const { site } = await res.json<{ site: { id: string } }>();
-  const origin = `https://${ns}.example.app`;
+  const origin = await appAt(ns, mount);
   const api = (path: string, init: Parameters<typeof call>[1] = {}) =>
     call(`${origin}/_api/${path}`, { as: OWNER, mount: `/${mount}/`, ...init });
   return { ns, id: site.id, origin, api };
@@ -60,26 +60,28 @@ describe("runtime API: me and kv", () => {
   });
 });
 
-describe("security 4: namespace isolation", () => {
-  it("an app can't reach another namespace's KV or secrets, even with a forged mount", async () => {
-    const a = await newSite({}, "shared");
-    const b = await newSite({}, "shared");
-    await b.api("kv/private", { method: "PUT", body: '"b-data"' });
-    await b.api("secrets/key", { method: "PUT", json: { hosts: HOSTS, value: SECRET } });
+describe("security 4: every app is its own origin", () => {
+  it("an app's host only ever reaches its own data, whatever the page asks for", async () => {
+    const ns = uniq();
+    await publishHtml(OWNER, ns, "a", PAGE("a"));
+    await publishHtml(OWNER, ns, "b", PAGE("b"), { visibility: "restricted" });
+    const a = await appAt(ns, "a");
+    const b = await appAt(ns, "b");
+    expect(a).not.toBe(b);
+    expect(new URL(a).hostname).toMatch(/^a-[a-z2-9]{4}\.example\.app$/);
+    await call(`${b}/_api/kv/private`, { as: OWNER, mount: "/", method: "PUT", body: '"b-data"' });
+    await call(`${b}/_api/secrets/key`, { as: OWNER, mount: "/", method: "PUT", json: { hosts: HOSTS, value: SECRET } });
 
-    // From A's origin, asking for the same mount path only ever finds A's site.
-    expect((await a.api("kv/private")).status).toBe(404);
-    expect(await (await a.api("secrets")).json()).toEqual([]);
-    await a.api("kv/private", { method: "PUT", body: '"a-data"' });
-    expect(await (await b.api("kv/private")).json()).toEqual({ value: "b-data" });
-
-    // Forged mounts: another namespace's label, absolute URLs, traversal.
-    for (const forged of [`/${b.ns}/shared/`, `https://${b.ns}.example.app/shared/`, "/../shared/", "/shared/../x/", "/SHARED/"]) {
-      const res = await call(`${a.origin}/_api/kv/private`, { as: OWNER, mount: forged });
-      expect([400, 404], forged).toContain(res.status);
+    // From A's host, any mount header (B's path, another host, traversal) still means A.
+    for (const forged of ["/", "/b/", `/${ns}/b/`, `${b}/`, "/../b/"]) {
+      const res = await call(`${a}/_api/kv/private`, { as: OWNER, mount: forged });
+      expect(res.status, forged).toBe(404);
+      expect(await (await call(`${a}/_api/secrets`, { as: OWNER, mount: forged })).json()).toEqual([]);
     }
-    // Mount pointing at a path with no site.
-    expect((await call(`${a.origin}/_api/kv`, { as: OWNER, mount: "/nothing-here/" })).status).toBe(404);
+    // A sibling app's origin is a different origin: refused like any other site.
+    const sneaky = await call(`${b}/_api/kv/private`, { as: OWNER, mount: "/", headers: { origin: a } });
+    expect(sneaky.status).toBe(403);
+    expect(await (await call(`${b}/_api/kv/private`, { as: OWNER, mount: "/" })).json()).toEqual({ value: "b-data" });
   });
 
   it("requires the x-formelab-mount header", async () => {
@@ -91,7 +93,7 @@ describe("security 4: namespace isolation", () => {
 describe("security 10: cross-origin requests", () => {
   it("rejects cross-origin and preflight requests to /_api/*", async () => {
     const { origin, ns } = await newSite();
-    for (const bad of ["https://evil.test", `https://other.example.com`, "null", `http://${ns}.example.app`]) {
+    for (const bad of ["https://evil.test", `https://other.example.com`, "null", origin.replace("https:", "http:"), `https://${ns}.example.app`]) {
       const res = await call(`${origin}/_api/kv/x`, { as: OWNER, mount: "/app/", method: "PUT", body: "1", headers: { origin: bad } });
       expect(res.status, bad).toBe(403);
     }

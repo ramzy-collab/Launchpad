@@ -557,3 +557,33 @@ Choices made while building v1, including where the build differs from the spec 
   went from 5 KB to 6 KB for this.
 - On iPhone and iPad a home screen app keeps its own cookies, separate from Safari, so people sign
   in once more the first time they open it there. Android and desktop share the browser's sign-in.
+
+## One host per app (audit findings #2, #4, N4)
+
+- **Every app has its own host**, `<host_label>.APP_DOMAIN`, where the label is the app's name (its
+  mount path, `/` → `-`, or the space for a root app) plus a 4-character code from an alphabet
+  without look-alikes: `budget-7kq2.formelab.app`. Browsers isolate by origin, not path, so when
+  apps shared `<ns>.APP_DOMAIN`, one app's JavaScript could read a sibling's pages, KV, private
+  data and secrets as the visitor (the runtime API picked the app from a header the page set).
+  Now the app comes from the host, and the `x-formelab-mount` header is only a CSRF signal.
+- **Nobody owns a name for free.** The code makes labels unique, so two people can both have a
+  "hoops". Clean names (`hoops.formelab.app`) and custom domains are left for a paid tier; both are
+  just more hostnames pointing at an app. A label is fixed when the app is first published and
+  kept when it's replaced; new labels also avoid existing namespace labels.
+- **Spaces (namespaces) stay** as the way apps are grouped and shared with editors, and as the
+  `namespace` + `mount_path` pair that publish and update_site use, but they're no longer
+  addresses. A space's link in the web app opens My apps filtered to it (`/?space=<label>`).
+- **The web app moved to `app.DOMAIN`**, so APP_DOMAIN holds nothing but published apps: they're
+  a different registrable domain (a different site) from the web app, admin panel and sign-in.
+  `APP_DOMAIN/...` redirects there. "app" is now a reserved namespace label.
+- **Old addresses redirect permanently**: `<ns>.APP_DOMAIN/<mount>/<rest>` and `<ns>.DOMAIN/...`
+  go to `<host_label>.APP_DOMAIN/<rest>` (longest matching mount, query kept). The old hosts serve
+  nothing else (no `/_api`, no `/_platform`). The redirect doesn't need a sign-in, so it reveals
+  that an app exists at a guessed path, but nothing about it; the app's own host checks access.
+- **Sessions**: each app host gets its own session through the existing hand-off (`/auth/app` →
+  `/_auth/callback`), which now accepts the web app and app hosts. A session for one app doesn't
+  open another.
+- **Migration 0016** fills `host_label` for existing apps in SQL (`random()` per character) and
+  adds a unique index; the chance of two labels colliding is negligible at today's size, and a
+  failed run can simply be re-run.
+- Dev: `APP_DOMAIN=apps.localhost`, since the web app now takes `app.localhost`.

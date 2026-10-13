@@ -24,7 +24,7 @@ cpu_ms = 30000
 [vars]
 # Home page, sign-in, waitlist, MCP connector; the admin panel on admin.DOMAIN.
 DOMAIN = "formelab.ai"
-# The web app, and published apps on <namespace>.APP_DOMAIN.
+# Published apps, one host each: <host_label>.APP_DOMAIN. The web app is app.DOMAIN.
 APP_DOMAIN = "formelab.app"
 ENVIRONMENT = "production"
 # Sender for notification emails, on a domain onboarded to Cloudflare Email Service (README 1.8).
@@ -73,15 +73,16 @@ enabled = true
 
 # ---------------------------------------------------------------------------
 # Local development: `npm run dev` (wrangler dev --env dev).
-# No routes here, so wrangler keeps the real Host header and namespace hosts
-# like http://test.app.localhost:8787 work. Bindings must be repeated per env.
+# No routes here, so wrangler keeps the real Host header and hosts like
+# http://app.localhost:8787 (web app) and http://hoops-7kq2.apps.localhost:8787 (an app) work.
+# Bindings must be repeated per env.
 # ---------------------------------------------------------------------------
 [env.dev]
 routes = []
 
 [env.dev.vars]
 DOMAIN = "localhost"
-APP_DOMAIN = "app.localhost"
+APP_DOMAIN = "apps.localhost"
 ENVIRONMENT = "dev"
 
 [[env.dev.d1_databases]]

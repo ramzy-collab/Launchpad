@@ -1,6 +1,6 @@
 import { env } from "cloudflare:workers";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { call, onOutbound, OWNER, PAGE, publishHtml, uniq } from "./helpers";
+import { call, onOutbound, OWNER, PAGE, publishHtml, uniq, appAt } from "./helpers";
 
 const GOOD = "AIzaSyTESTKEY0123456789abcdefGHIJ";
 type Seen = { url: string; key: string | null; body: string };
@@ -28,7 +28,7 @@ afterEach(() => onOutbound(undefined));
 const setFlag = (state: string, as = OWNER) => call("/_api/admin/features/connected_apps", { as, method: "PUT", json: { state } });
 
 const connect = (as: string, apiKey: string) => call("/_api/admin/services/gemini", { as, method: "PUT", json: { apiKey } });
-const ask = (as: string, ns: string, mount: string, json: unknown) => call(`https://${ns}.example.app/_api/ai/gemini`, { as, mount: mount ? `/${mount}/` : "/", method: "POST", json });
+const ask = async (as: string, ns: string, mount: string, json: unknown) => call(`${await appAt(ns, mount)}/_api/ai/gemini`, { as, mount: "/", method: "POST", json });
 
 describe("Google Gemini as a connected app", () => {
   beforeEach(async () => {
@@ -69,7 +69,7 @@ describe("Google Gemini as a connected app", () => {
     await publishHtml(OWNER, ns, "ai", PAGE("x"), { allowed_emails: friend });
     expect((await connect(OWNER, GOOD)).status).toBe(200);
 
-    expect(await (await call(`https://${ns}.example.app/_api/ai/gemini`, { as: OWNER, mount: "/ai/" })).json()).toEqual({ connected: true, available: true, model: "gemini-3.5-flash-lite" });
+    expect(await (await call(`${await appAt(ns, "ai")}/_api/ai/gemini`, { as: OWNER, mount: "/" })).json()).toEqual({ connected: true, available: true, model: "gemini-3.5-flash-lite" });
     const res = await ask(OWNER, ns, "ai", { prompt: "Summarize: lots of text", system: "Be brief.", schema: { type: "string" }, maxOutputTokens: 50 });
     expect(res.status).toBe(200);
     const text = await res.text();
@@ -123,7 +123,7 @@ describe("the connected_apps feature flag", () => {
     expect((await connect(OWNER, GOOD)).status).toBe(404);
     const ns = uniq();
     await publishHtml(OWNER, ns, "ai", PAGE("x"));
-    expect(await (await call(`https://${ns}.example.app/_api/ai/gemini`, { as: OWNER, mount: "/ai/" })).json()).toEqual({ connected: false, available: false });
+    expect(await (await call(`${await appAt(ns, "ai")}/_api/ai/gemini`, { as: OWNER, mount: "/" })).json()).toEqual({ connected: false, available: false });
     const r = await ask(OWNER, ns, "ai", { prompt: "hi" });
     expect(r.status).toBe(403);
     expect((await r.json<{ error: { code: string } }>()).error.code).toBe("not_available");

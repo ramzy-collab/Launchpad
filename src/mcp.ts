@@ -48,9 +48,10 @@ export function buildServer(ctx: Ctx): McpServer {
     {
       jsonSchemaValidator: new CfWorkerJsonSchemaValidator(),
       instructions:
-        "Formelab hosts small self-contained web apps at https://<namespace>." +
+        "Formelab hosts small self-contained web apps, each at its own address like https://hoops-7kq2." +
         ctx.env.APP_DOMAIN +
-        "/<mount_path>/. Call get_guide before building an app for the first time, then publish with the publish tool. " +
+        "/ (publish returns it). You publish to a namespace (space) and mount_path, which name the app in Formelab. " +
+        "Call get_guide before building an app for the first time, then publish with the publish tool. " +
         "Every app needs an icon (a small SVG favicon linked from index.html); publish refuses apps without one.",
     },
   );
@@ -75,7 +76,7 @@ export function buildServer(ctx: Ctx): McpServer {
 
   server.registerTool(
     "list_namespaces",
-    { description: "List the namespaces you own or can edit. Each namespace is a subdomain: https://<namespace>." + ctx.env.APP_DOMAIN + "/", annotations: { readOnlyHint: true } },
+    { description: "List the namespaces (spaces) you own or can edit. A space groups apps and their editors; each app still gets its own address.", annotations: { readOnlyHint: true } },
     () => run(() => listNamespaces(ctx)),
   );
 
@@ -102,7 +103,7 @@ export function buildServer(ctx: Ctx): McpServer {
         html: z.string().optional().describe("Complete HTML document for a single-file app"),
         zip_base64: z.string().optional().describe("Base64-encoded .zip with index.html at its root"),
         namespace: z.string().describe("Namespace (subdomain) label, e.g. \"ramzy\""),
-        mount_path: z.string().describe("Path under the namespace, e.g. \"budget\" or \"tools/budget\"; \"\" for the root"),
+        mount_path: z.string().describe("The app's name in its space, e.g. \"budget\" or \"tools/budget\"; \"\" for the space's main app. Its address is generated from it, like https://budget-7kq2.<domain>/"),
         title: z.string().optional(),
         spa: z.boolean().optional().describe("Serve index.html for unknown extensionless paths (client-side routing)"),
         visibility: z.enum(["all", "restricted"]).optional().describe("Default \"restricted\": only the owner, editors and allowed_emails can open it. \"all\": every Formelab member (people let in, not those still on the waitlist)"),

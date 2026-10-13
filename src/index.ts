@@ -16,9 +16,11 @@ import { ASSET_VERSION, CONSENT_JS, DASHBOARD_JS, FORMELAB_CSS, GUIDE_MD, HOME_C
 import { apexOrigin, AUTHORIZE_PATH, authorizeGet, authorizePost, oauthProvider } from "./oauth";
 import { runtimeApi } from "./runtime";
 import { appCallback, appHandoff, loginCallback, loginStart, logout, safeReturn, workosEnabled } from "./login";
-import { plainPage, serveAppFile } from "./serve";
+import { legacyAppRedirect, noAccessPage, plainPage, serveAppFile } from "./serve";
 import { readCookie, SESSION_COOKIE } from "./session";
-import { adminOrigin, aiOrigin, appOrigin, hostKind, legacyNamespaceOf, namespaceOf, nsOrigin } from "./hosts";
+import { adminOrigin, aiOrigin, appOrigin, appsLabelOf, hostKind, legacyNamespaceOf } from "./hosts";
+import { canViewSite } from "./auth";
+import { getNamespace, getSiteByHostLabel, type SiteRow } from "./sites";
 import { joinWaitlist } from "./waitlist";
 import { appManifest, appPwaIcon, pwaRoutes } from "./pwa";
 
@@ -132,7 +134,7 @@ apex.get("/_platform/guide.md", guide);
 apex.notFound(() => plainPage(404, "Not found", "There is nothing here."));
 
 // ---------------------------------------------------------------------------
-// Signed-in hosts: the web app (APP_DOMAIN) and the admin panel (admin.DOMAIN)
+// Signed-in hosts: the web app (app.DOMAIN) and the admin panel (admin.DOMAIN)
 // ---------------------------------------------------------------------------
 
 /** The web app: pages without a sign-in go to DOMAIN, which signs the visitor in and hands the session back. */
@@ -239,21 +241,29 @@ adminApp.get("/changelog", (c) => adminPage(c, "changelog"));
 adminApp.get("/vendors", (c) => adminPage(c, "vendors"));
 adminApp.notFound(() => plainPage(404, "Not found", "There is nothing here."));
 // ---------------------------------------------------------------------------
-// Namespace hosts: <ns>.APP_DOMAIN
+// App hosts: <host_label>.APP_DOMAIN, one published app each
 // ---------------------------------------------------------------------------
 
-const nsApp = new Hono<AppEnv>();
-nsApp.onError(onError);
+/** The app each app-host request is for, found by appsHost before siteApp runs. */
+const siteOf = new WeakMap<Request, SiteRow>();
 
-nsApp.get("/healthz", () => text("ok", "text/plain; charset=utf-8", "no-store"));
+const siteApp = new Hono<AppEnv>();
+siteApp.onError(onError);
+siteApp.use("*", async (c, next) => {
+  c.set("site", siteOf.get(c.req.raw)!);
+  await next();
+});
 
-// Namespace hosts get their own session from the apex (see login.ts).
-nsApp.get("/_auth/callback", appCallback);
+siteApp.get("/healthz", () => text("ok", "text/plain; charset=utf-8", "no-store"));
+
+// Each app host gets its own session from the apex (see login.ts).
+siteApp.get("/_auth/callback", appCallback);
 // App icons for installing an app: signed addresses from its manifest, so no sign-in (see pwa.ts).
-nsApp.get("/_platform/app-icon/:id/:version/:kind/:sig", appPwaIcon);
+siteApp.get("/_platform/app-icon/:id/:version/:kind/:sig", appPwaIcon);
 
-nsApp.use("*", async (c, next) => {
-  c.set("namespace", namespaceOf(new URL(c.req.url).hostname, c.env)!);
+// Everything else: a signed-in person who may open this app.
+siteApp.use("*", async (c, next) => {
+  const site = c.get("site");
   const who = await identifyBrowser(c.req.raw, c.env);
   if (!who) {
     if (c.req.path.startsWith("/_api/")) return jsonError(unauthorized());
@@ -262,17 +272,34 @@ nsApp.use("*", async (c, next) => {
     }
     return unauthorizedPage();
   }
+  const nsRow = await getNamespace(c.env, site.namespace);
+  if (!nsRow || !canViewSite(who.user, site, nsRow)) {
+    return c.req.path.startsWith("/_api/") ? jsonError(forbidden("You don't have access to this app.")) : noAccessPage(site, who.user);
+  }
   c.set("user", who.user);
+  c.set("namespace", site.namespace);
   await next();
 });
 
-nsApp.get("/_platform/sdk.js", () => text(SDK_JS, "text/javascript; charset=utf-8", "public, max-age=300"));
-nsApp.get("/_platform/guide.md", guide);
-nsApp.get("/_platform/manifest.webmanifest", appManifest);
-nsApp.all("/_platform/*", () => plainPage(404, "Not found", "There is nothing here."));
-nsApp.route("/_api", runtimeApi());
-nsApp.all("/_api", () => jsonError(forbidden("Not an API endpoint.")));
-nsApp.all("*", (c) => serveAppFile(c.req.raw, c.env, c.get("namespace"), c.get("user")));
+siteApp.get("/_platform/sdk.js", () => text(SDK_JS, "text/javascript; charset=utf-8", "public, max-age=300"));
+siteApp.get("/_platform/guide.md", guide);
+siteApp.get("/_platform/manifest.webmanifest", appManifest);
+siteApp.all("/_platform/*", () => plainPage(404, "Not found", "There is nothing here."));
+siteApp.route("/_api", runtimeApi());
+siteApp.all("/_api", () => jsonError(forbidden("Not an API endpoint.")));
+siteApp.all("*", (c) => serveAppFile(c.req.raw, c.env, c.get("site")));
+
+/** <label>.APP_DOMAIN: the app with that host label, or else an old namespace address to redirect. */
+async function appsHost(req: Request, env: Env, ctx: ExecutionContext, label: string): Promise<Response> {
+  if (new URL(req.url).pathname === "/healthz") return text("ok", "text/plain; charset=utf-8", "no-store");
+  const site = await getSiteByHostLabel(env, label);
+  if (site) {
+    siteOf.set(req, site);
+    return siteApp.fetch(req, env, ctx);
+  }
+  if (await getNamespace(env, label)) return legacyAppRedirect(req, env, label);
+  return plainPage(404, "Not found", "There is no app at this address.");
+}
 
 // ---------------------------------------------------------------------------
 // Host dispatch
@@ -288,12 +315,15 @@ export default {
         return webApp.fetch(req, env, ctx);
       case "admin":
         return adminApp.fetch(req, env, ctx);
-      case "ns":
-        return nsApp.fetch(req, env, ctx);
+      case "apps":
+        return appsHost(req, env, ctx, appsLabelOf(url.hostname, env)!);
+      case "apps-root":
+        // The web app used to live at APP_DOMAIN; it's at app.DOMAIN now.
+        return Response.redirect(`${appOrigin(env, req.url)}${url.pathname}${url.search}`, 301);
       case "legacy-ns": {
-        // Apps used to live at <ns>.DOMAIN; they're at <ns>.APP_DOMAIN now.
+        // Apps used to live at <ns>.DOMAIN/<mount>/; each has its own host now.
         const ns = legacyNamespaceOf(url.hostname, env)!;
-        return Response.redirect(`${nsOrigin(env, ns, req.url)}${url.pathname}${url.search}`, 301);
+        return (await getNamespace(env, ns)) ? legacyAppRedirect(req, env, ns) : plainPage(404, "Not found", "Unknown host.");
       }
       default:
         return plainPage(404, "Not found", "Unknown host.");
