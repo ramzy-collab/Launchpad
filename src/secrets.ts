@@ -177,22 +177,27 @@ export function redact(text: string, values: Map<string, string>): string {
 // ---------------------------------------------------------------------------
 
 async function checkRate(env: Env, siteId: string) {
+  await rateLimit(env, siteId, PROXY_RATE_PER_MINUTE, `This app made more than ${PROXY_RATE_PER_MINUTE} proxy calls in a minute.`);
+}
+
+/** At most `perMinute` calls a minute for `key` (the binding's limit applies when it's configured). */
+export async function rateLimit(env: Env, key: string, perMinute: number, message: string) {
   let ok: boolean;
   if (env.PROXY_LIMITER) {
-    ok = (await env.PROXY_LIMITER.limit({ key: siteId })).success;
+    ok = (await env.PROXY_LIMITER.limit({ key })).success;
   } else {
     const minute = Math.floor(now() / 60_000);
     const row = await env.DB.prepare(
       `INSERT INTO rate_counters (bucket, count, expires_at) VALUES (?1, 1, ?2)
        ON CONFLICT(bucket) DO UPDATE SET count = count + 1 RETURNING count`,
     )
-      .bind(`${siteId}:${minute}`, (minute + 2) * 60_000)
+      .bind(`${key}:${minute}`, (minute + 2) * 60_000)
       .first<{ count: number }>();
-    ok = (row?.count ?? 0) <= PROXY_RATE_PER_MINUTE;
+    ok = (row?.count ?? 0) <= perMinute;
     if (Math.random() < 0.02) await env.DB.prepare("DELETE FROM rate_counters WHERE expires_at < ?").bind(now()).run();
   }
   if (!ok) {
-    throw err(429, "rate_limited", `This app made more than ${PROXY_RATE_PER_MINUTE} proxy calls in a minute.`, "Wait a minute, and cache results in KV or localStorage instead of refetching.");
+    throw err(429, "rate_limited", message, "Wait a minute, and cache results in KV or localStorage instead of refetching.");
   }
 }
 

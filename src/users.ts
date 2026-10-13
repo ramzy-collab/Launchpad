@@ -86,6 +86,7 @@ export async function deleteUser(env: Env, admin: User, rawEmail: string) {
     env.DB.prepare("DELETE FROM auth_codes WHERE session_id IN (SELECT id FROM sessions WHERE email = ?)").bind(email),
     env.DB.prepare("DELETE FROM sessions WHERE email = ?").bind(email),
     env.DB.prepare("DELETE FROM tokens WHERE owner_email = ?").bind(email),
+    env.DB.prepare("DELETE FROM service_keys WHERE owner_email = ?").bind(email),
     env.DB.prepare("DELETE FROM waitlist WHERE email = ?").bind(email),
     env.DB.prepare("DELETE FROM users WHERE email = ?").bind(email),
   ]);

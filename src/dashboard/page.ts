@@ -10,6 +10,7 @@ import { adminOrigin } from "../hosts";
 import { ctxOf } from "../api";
 import { head, htmlResponse } from "./layout";
 import { SERVICE_ICONS, SPRITE_URL } from "./services";
+import { GEMINI_MODEL_NAME, geminiStatus } from "../gemini";
 import { ago, appBrowser, appName, fmtBytes, thumb } from "./apps";
 import { connectedAiApps, type AiApp } from "./aiapps";
 import { AI_LOGOS } from "./logos";
@@ -37,7 +38,7 @@ const PAGES: Record<Page, { title: string; intro: string }> = {
   shared: { title: "Shared with me", intro: "Apps other people have shared with you." },
   spaces: { title: "Spaces", intro: "A space is the first part of your apps' address, like yourname.formelab.app. Invite editors to publish into it with you." },
   connect: { title: "Connect your AI", intro: "Make and publish apps by asking Claude, ChatGPT or Gemini." },
-  connected: { title: "Connected apps", intro: "Services your apps can use, like spreadsheets, payments and email." },
+  connected: { title: "Connected apps", intro: "Services your apps can use through Formelab, without putting keys in them." },
   keys: { title: "Access keys", intro: "For tools that publish without signing in, like Claude Code or a script. Treat a key like a password." },
 };
 
@@ -57,7 +58,7 @@ export function shell(c: Context<AppEnv>, user: User, page: Page, body: string, 
       ${link("spaces", "/spaces")}
       <p class="side-label">Connect</p>
       ${link("connect", "/connect")}
-      <a href="/connected"${current("connected")}>Connected apps <span class="soon">Soon</span></a>
+      <a href="/connected"${current("connected")}>Connected apps</a>
     </nav>`
     : `<nav class="side-nav" aria-label="Main">
       ${link("shared", "/shared")}
@@ -336,23 +337,62 @@ export async function spacesPage(c: Context<AppEnv>): Promise<Response> {
   return shell(c, ctx.user, "spaces", body);
 }
 
-/** Connected apps: services an app can use (coming soon), over a wall of their logos. */
-export function connectedPage(c: Context<AppEnv>): Response {
-  // Every logo once (the list is already shuffled), topped up only if the wall needs more.
+/** Connected apps: services a person's apps can use through Formelab (Google Gemini so far). */
+export async function connectedPage(c: Context<AppEnv>): Promise<Response> {
+  const user = c.get("user");
+  const gemini = await geminiStatus(c.env, user.email);
+  // The coming-soon wall: each logo drawn once in a cached sprite and reused.
   const tiles = Array.from({ length: Math.max(150, SERVICE_ICONS.length) }, (_, n) => {
     const i = n % SERVICE_ICONS.length;
     return `<svg class="svc" viewBox="0 0 48 48"><use href="${SPRITE_URL}#svc-${i}"/></svg>`;
   }).join("");
-  const body = `<section class="soon-wall">
+  const body = `<section class="howto">
+  <h2>Your apps can use</h2>
+  <div class="ai-grid">
+    <button type="button" class="ai-tile" data-dialog="dlg-gemini-service" aria-haspopup="dialog">
+      <span class="ai-logo">${AI_LOGOS.gemini}</span>
+      <span class="ai-name">Google Gemini</span>
+      <span class="ai-where">${e(GEMINI_MODEL_NAME)}: AI answers, summaries, writing</span>
+      ${gemini.connected ? `<span class="badge on"><span class="dot" aria-hidden="true"></span>Connected</span>` : `<span class="badge">Connect</span>`}
+    </button>
+  </div>
+</section>
+
+<dialog id="dlg-gemini-service" class="howto-dialog" aria-labelledby="dlg-gemini-service-title">
+  <form method="dialog" class="dialog-close"><button aria-label="Close">×</button></form>
+  <div class="howto">
+    <div class="dialog-head"><span class="ai-logo">${AI_LOGOS.gemini}</span><h2 id="dlg-gemini-service-title">Google Gemini</h2></div>
+    <p>Give your apps AI: answering questions, summarizing, drafting, sorting. Add your Gemini API key once and any of your apps can use <strong>${e(GEMINI_MODEL_NAME)}</strong>, without the key ever being put in an app.</p>
+    ${
+      gemini.connected
+        ? `<div class="conn-status"><p><span class="dot" aria-hidden="true"></span><strong>Connected</strong> with the key ending in ${e(gemini.hint ?? "")}.</p>
+      <p class="muted">Added ${e(fmtTime(gemini.createdAt ?? null))} · last used ${e(fmtTime(gemini.lastUsedAt ?? null))}</p></div>
+    <h3>Replace the key</h3>`
+        : `<h3>Connect it</h3>
+    <ol>
+      <li>Open <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Google AI Studio → API keys</a> and sign in with Google.</li>
+      <li>Click <strong>Create API key</strong> and copy it.</li>
+      <li>Paste it here and click <strong>Connect</strong>. Formelab checks it with Google first.</li>
+    </ol>`
+    }
+    <form class="inline" data-action="service-connect" data-service="gemini">
+      <input type="password" name="apiKey" required autocomplete="off" spellcheck="false" placeholder="Paste your Gemini API key" aria-label="Gemini API key">
+      <button>${gemini.connected ? "Replace key" : "Connect"}</button>
+    </form>
+    <p class="muted">Your key is encrypted and never shown to apps or to anyone. Apps you share use your key, so calls from people you share them with count toward your Google usage. Ask your AI for an app "that uses Gemini" and it will use this.</p>
+    ${gemini.connected ? `<p><button class="danger" data-action="service-disconnect" data-service="gemini">Disconnect Gemini</button></p>` : ""}
+  </div>
+</dialog>
+
+<section class="soon-wall compact">
   <div class="wall" aria-hidden="true">${tiles}</div>
   <div class="soon-card">
-    <p class="eyebrow">Coming soon</p>
+    <p class="eyebrow">More coming soon</p>
     <h2>Plug your apps into the tools you already use</h2>
-    <p>Soon you'll connect services like Google Sheets, Stripe, Gmail and Notion here, once, and any of your apps can use them. No keys to copy, no code to write.</p>
-    <p class="muted">Looking for Claude, ChatGPT or Gemini? They're under <a href="/connect">Connect your AI</a>.</p>
+    <p>Next up: Google Sheets, Stripe, Gmail, Notion and more. Connect them here once, and any of your apps can use them.</p>
   </div>
 </section>`;
-  return shell(c, c.get("user"), "connected", body);
+  return shell(c, user, "connected", body);
 }
 
 /** Access keys (deploy tokens) for tools that publish without signing in. */

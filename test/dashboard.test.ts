@@ -69,7 +69,8 @@ describe("dashboard", () => {
       if (path !== "/app") expect(html, path).not.toMatch(/\son[a-z]+=/i); // My apps holds the escaped XSS titles from the test above
     }
     const soon = await (await call("/app/connected", { as: OWNER })).text();
-    expect(soon).toContain("Coming soon");
+    expect(soon).toContain("More coming soon");
+    expect(soon).toContain(`data-dialog="dlg-gemini-service"`); // the first connected app
     expect(soon).toContain('<div class="wall" aria-hidden="true">'); // the wall of service logos
     expect(soon).toMatch(/<use href="\/_assets\/services\.svg\?n=\d+#svc-0"\/>/);
     const sprite = await call("/app/_assets/services.svg");

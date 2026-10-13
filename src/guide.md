@@ -49,6 +49,11 @@ Apps get platform features through a small browser SDK, `window.formelab`:
    mount path. KV and secrets are always scoped to one app.
 8. KV is visible to **everyone who can view the app**. Don't store private data there unless the
    app is `restricted` to the right people.
+9. **For AI features, use `formelab.gemini`** (Google Gemini 3.5 Flash-Lite through the owner's
+   connected key). Don't ask the user for an AI API key or put one in a secret: they connect
+   Gemini once in Formelab (Connected apps → Google Gemini), and every app they own can use it.
+   The `whoami` tool says whether it's connected (`connectedApps.gemini`); if it isn't, tell the
+   user to connect it, and build the app to say so too (see `formelab.gemini.available()`).
 
 ## 3. SDK reference
 
@@ -124,6 +129,35 @@ GET/POST/PUT/PATCH/DELETE; body up to 1 MB; 20-second timeout; responses are ret
 to 5 MB (`truncated: true` if cut); redirects are not followed (you get the 3xx and a `location`);
 60 calls per minute per app; an unknown placeholder is an error. If the API echoes the secret back,
 the platform replaces it with `[redacted]`.
+
+### `formelab.gemini`: AI in your app
+
+Calls Google **Gemini 3.5 Flash-Lite** (`gemini-3.5-flash-lite`) with the app owner's Gemini key,
+which they connected once in Formelab. The key never reaches the browser. Anyone who can open the
+app can use it, on the owner's key; calls are limited to 60 a minute per app and show up in the
+app's activity log.
+
+```js
+const { connected } = await formelab.gemini.available();   // false: the owner hasn't connected Gemini
+const r = await formelab.gemini.generate("Summarize this in one sentence: " + text);
+r.text;            // the answer
+r.usage;           // { inputTokens, outputTokens, totalTokens }
+
+// Options: a system instruction, JSON output (optionally with a JSON Schema), an answer length cap.
+const tags = await formelab.gemini.generate("Suggest 3 tags for: " + note, {
+  system: "You label notes. Answer only with JSON.",
+  schema: { type: "array", items: { type: "string" } },
+  maxOutputTokens: 200,
+});
+tags.json();       // ["work", "ideas", "q3"]
+
+// Full control: Gemini's own `contents` format (several turns, inline images as base64).
+await formelab.gemini.generate({ contents: [{ role: "user", parts: [{ text: "Hi" }] }] });
+```
+
+Errors: `gemini_not_connected` (409: show "Connect Google Gemini in Formelab to use this"),
+`gemini_key_rejected`, `gemini_quota` (429 from Google), `rate_limited`, `gemini_unreachable`.
+Show `e.message` and `e.hint`. Temperature and top-P/K aren't supported by this model.
 
 ## 4. Patterns
 

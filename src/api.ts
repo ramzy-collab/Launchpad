@@ -16,6 +16,7 @@ import {
 import { filesFromHtml, filesFromUpload, filesFromZip, MAX_UPLOAD_BYTES, type FileMap } from "./upload";
 import { listConnections, revokeConnection } from "./oauth";
 import { approveWaitlist } from "./login";
+import { connectGemini, disconnectGemini, geminiStatus } from "./gemini";
 import { deleteUser, listUsers, setAdmin } from "./users";
 import { b64decode, isEmail } from "./util";
 
@@ -130,6 +131,9 @@ export function managementApi(kind: "admin" | "deploy") {
     });
     api.post("/users/:email/admin", async (c) => c.json(await setAdmin(c.env, c.get("user"), c.req.param("email"), (await jsonBody(c)).admin)));
     api.delete("/users/:email", async (c) => c.json(await deleteUser(c.env, c.get("user"), c.req.param("email"))));
+    api.get("/services/gemini", async (c) => c.json(await geminiStatus(c.env, c.get("user").email)));
+    api.put("/services/gemini", async (c) => c.json(await connectGemini(c.env, c.get("user"), (await jsonBody(c)).apiKey)));
+    api.delete("/services/gemini", async (c) => c.json(await disconnectGemini(c.env, c.get("user"))));
     api.get("/connections", async (c) => c.json(await listConnections(c.env, c.get("user").email)));
     api.delete("/connections/:id", async (c) => {
       await revokeConnection(c.env, c.get("user").email, c.req.param("id"));

@@ -99,6 +99,12 @@ export function describeActivity(row: AuditRow): string {
       return `Removed the secret ${d.name}`;
     case "proxy":
       return `Called ${d.host} with the secret ${d.secret} (${d.status === "timeout" ? "timed out" : d.status === "error" ? "failed" : `HTTP ${d.status}`})`;
+    case "gemini":
+      return d.status === 200 ? `Asked Gemini${d.tokens ? ` (${d.tokens} tokens)` : ""}` : `Asked Gemini, which failed (${d.status === "timeout" ? "no answer" : `HTTP ${d.status}`})`;
+    case "service_connect":
+      return `Connected ${d.service ?? "a service"} for their apps`;
+    case "service_disconnect":
+      return `Disconnected ${d.service ?? "a service"}`;
     case "delete_site":
       return `Deleted the app ${t}`;
     case "namespace_create":

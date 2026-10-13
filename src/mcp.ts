@@ -1,4 +1,5 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { geminiStatus } from "./gemini";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { CfWorkerJsonSchemaValidator } from "@modelcontextprotocol/sdk/validation/cfworker";
 import { z } from "zod";
@@ -54,8 +55,15 @@ export function buildServer(ctx: Ctx): McpServer {
 
   server.registerTool(
     "whoami",
-    { description: "Show the account this token acts as.", annotations: { readOnlyHint: true } },
-    () => run(async () => ({ email: ctx.user.email, name: ctx.user.name, isAdmin: ctx.user.isAdmin })),
+    { description: "Show the account this token acts as, and which connected apps (like Google Gemini) its apps can use.", annotations: { readOnlyHint: true } },
+    () =>
+      run(async () => ({
+        email: ctx.user.email,
+        name: ctx.user.name,
+        isAdmin: ctx.user.isAdmin,
+        // Connected apps this person's apps can use through the SDK (see the guide).
+        connectedApps: { gemini: (await geminiStatus(ctx.env, ctx.user.email)).connected },
+      })),
   );
 
   server.registerTool(

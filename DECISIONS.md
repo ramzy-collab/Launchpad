@@ -387,3 +387,21 @@ Choices made while building v1, including where the build differs from the spec 
   (`icon_required`, with a hint showing the `<link rel="icon">` to add), so the AI adds one and
   publishes again. Its description and the server's instructions say so up front, and the build
   guide's starter app includes one. Uploads from the web app and the deploy API don't require it.
+
+## Connected apps: Google Gemini
+
+- The first connected app. A person adds their Gemini API key once (Connected apps → Google
+  Gemini); Formelab checks it with Google (a free model lookup) and stores it in `service_keys`
+  (migration 0008), encrypted with `SECRETS_KEK` like app secrets but bound to the person
+  (AAD `user:<email>:gemini`). Only the last four characters are kept in the clear, to show which
+  key it is. Deleting the account deletes it.
+- Apps call **Gemini 3.5 Flash-Lite** (`gemini-3.5-flash-lite`) through the SDK:
+  `formelab.gemini.generate(prompt, { system, schema, json, maxOutputTokens })` or Gemini's own
+  `contents`, and `formelab.gemini.available()`. The runtime API (`/_api/ai/gemini`) adds the
+  key on the server; it never reaches a browser or the app's files.
+- **The app owner's key is used**, also when people the app is shared with use it (they can
+  open the app, so they can use its features). Calls count toward the owner's Google usage, are
+  limited to 60 a minute per app (the proxy's limiter), and each one is in the app's activity log
+  with its token count. Connecting and disconnecting are in the admin activity log.
+- AIs learn about it from the build guide (a ground rule and an SDK section) and from `whoami`
+  (`connectedApps.gemini`), so they use it instead of asking for an API key.

@@ -4,6 +4,7 @@ import type { AppEnv } from "./env";
 import { badRequest, err, forbidden, jsonError, notFound, onError } from "./errors";
 import { kvDelete, kvGet, kvList, kvSet } from "./kv";
 import { proxy, secretDelete, secretList, secretSet } from "./secrets";
+import { geminiAvailable, geminiGenerate } from "./gemini";
 import { getNamespace, getSiteByMount, validateMountPath } from "./sites";
 
 /**
@@ -98,6 +99,20 @@ export function runtimeApi() {
     }
     if (!body || typeof body !== "object") throw badRequest("The body must be a JSON object.", "Use formelab.secrets.proxy(name, { url }).");
     return c.json(await proxy(c.env, c.get("site"), c.get("user"), c.req.param("name"), body as Record<string, unknown>));
+  });
+
+  // Gemini through the app owner's connected key (see gemini.ts). Anyone who can open the app can use it.
+  api.get("/ai/gemini", async (c) => c.json(await geminiAvailable(c.env, c.get("site"))));
+  api.post("/ai/gemini", async (c) => {
+    if (Number(c.req.header("content-length") ?? 0) > 2 * 1024 * 1024) throw err(413, "body_too_large", "The request to Gemini is larger than 1 MB.", "Send a shorter prompt or smaller images.");
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      throw badRequest("The body must be JSON like { \"prompt\": \"...\" }.", 'Use formelab.gemini.generate("your prompt").');
+    }
+    if (!body || typeof body !== "object") throw badRequest("The body must be a JSON object.", 'Use formelab.gemini.generate("your prompt").');
+    return c.json(await geminiGenerate(c.env, c.get("site"), c.get("user"), body as Record<string, unknown>));
   });
 
   api.notFound(() => jsonError(err(404, "not_found", "No such API endpoint.", "Check the SDK reference in /_platform/guide.md.")));

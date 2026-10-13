@@ -70,6 +70,17 @@
           return r;
         });
       }
+    },
+    // Google Gemini through the app owner's connected key (Formelab: Connected apps).
+    gemini: {
+      available: function () { return call("GET", "ai/gemini"); },
+      generate: function (prompt, options) {
+        var req = typeof prompt === "string" ? Object.assign({}, options || {}, { prompt: prompt }) : (prompt || {});
+        return call("POST", "ai/gemini", req).then(function (r) {
+          r.json = function () { return JSON.parse(r.text); };
+          return r;
+        });
+      }
     }
   };
 

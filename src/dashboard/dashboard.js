@@ -4,10 +4,22 @@
   var flash = document.getElementById("flash");
 
   function show(message, isError) {
-    flash.textContent = message;
-    flash.className = isError ? "error" : "ok";
-    flash.hidden = false;
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    // Inside an open dialog the page's own message line is hidden behind it, so use one in the dialog.
+    var dialog = document.querySelector("dialog[open]");
+    var target = flash;
+    if (dialog) {
+      target = dialog.querySelector(".dialog-flash");
+      if (!target) {
+        target = document.createElement("div");
+        target.setAttribute("role", "status");
+        target.className = "dialog-flash";
+        dialog.querySelector(".howto").insertBefore(target, dialog.querySelector(".howto").children[1] || null);
+      }
+    }
+    target.textContent = message;
+    target.className = (dialog ? "dialog-flash " : "") + (isError ? "error" : "ok");
+    target.hidden = false;
+    if (!dialog) window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   function api(method, path, body) {
@@ -88,6 +100,13 @@
     "waitlist-invite": function (form) {
       return api("POST", "/waitlist/approve", { email: form.elements.email.value }).then(function () {
         show("Invited. They can create apps as soon as they log in.");
+        reloadSoon();
+      });
+    },
+    "service-connect": function (form) {
+      return api("PUT", "/services/" + encodeURIComponent(form.dataset.service), { apiKey: form.elements.apiKey.value.trim() }).then(function () {
+        form.reset();
+        show("Connected. Your apps can use it now.");
         reloadSoon();
       });
     },
@@ -289,6 +308,9 @@
     } else if (action === "connection-revoke") {
       if (!confirm("Disconnect this app? It will need to sign in again to use Formelab.")) return;
       p = api("DELETE", "/connections/" + encodeURIComponent(btn.dataset.id)).then(function () { show("Disconnected."); reloadSoon(); });
+    } else if (action === "service-disconnect") {
+      if (!confirm("Disconnect? Your apps that use it will stop working until you connect it again.")) return;
+      p = api("DELETE", "/services/" + encodeURIComponent(btn.dataset.service)).then(function () { show("Disconnected."); reloadSoon(); });
     } else if (action === "token-revoke") {
       if (!confirm("Revoke this key? Anything using it will stop working.")) return;
       p = api("DELETE", "/tokens/" + encodeURIComponent(btn.dataset.id)).then(function () { show("Key revoked."); reloadSoon(); });
