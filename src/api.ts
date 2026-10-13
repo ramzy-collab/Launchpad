@@ -17,7 +17,7 @@ import { filesFromHtml, filesFromUpload, filesFromZip, MAX_UPLOAD_BYTES, type Fi
 import { listConnections, revokeConnection } from "./oauth";
 import { approveWaitlist, setPassword } from "./login";
 import { connectGemini, disconnectGemini, geminiStatus } from "./gemini";
-import { buildApp, connectBuilder, disconnectBuilder, parseBuilder } from "./builder";
+import { buildApp, connectBuilder, editApp, disconnectBuilder, parseBuilder } from "./builder";
 import { addFlagUser, flagOn, removeFlagUser, setFlag } from "./flags";
 import { sheetsDisconnect, sheetsStatus } from "./sheets";
 import { deleteUser, listUsers, setAdmin } from "./users";
@@ -167,7 +167,10 @@ export function managementApi(kind: "admin" | "deploy") {
         if (chars !== sent || chars === 0) send({ progress: (sent = chars) });
       }, 1500);
       send({ progress: 0 });
-      const work = buildApp(ctxOf(c), provider, body.idea, (n) => (chars = n))
+      // With a site_id, change that app; otherwise make a new one from the idea.
+      const onProgress = (n: number) => (chars = n);
+      const job = body.site_id !== undefined ? editApp(ctxOf(c), provider, body.site_id, body.change, onProgress) : buildApp(ctxOf(c), provider, body.idea, onProgress);
+      const work = job
         .then((done) => send({ done }))
         .catch((e) => {
           if (!(e instanceof ApiError)) console.error("build failed", e instanceof Error ? e.message : "");

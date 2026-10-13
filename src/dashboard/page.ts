@@ -174,6 +174,28 @@ export async function appSettingsPage(c: Context<AppEnv>, id: string): Promise<R
     .map((a) => `<tr><td class="nowrap">${e(fmtTime(a.at))}</td><td>${e(a.actor)}</td><td>${e(describeActivity(a))}</td></tr>`)
     .join("");
   const fact = (label: string, value: string) => `<div><dt>${e(label)}</dt><dd>${value}</dd></div>`;
+  // Change it with AI: the person's own Claude or OpenAI key rewrites the app (app_builder flag).
+  const keys = c.get("features")?.has("app_builder") ? await builderKeys(c.env, user.email) : null;
+  const changeButtons = keys
+    ? (["claude", "openai"] as Builder[])
+        .filter((b) => keys[b])
+        .map((b) => `<button type="button" class="make-btn" data-build="${b}" data-site="${e(site.id)}"><span class="ai-mini">${AI_LOGOS[b === "claude" ? "claude" : "chatgpt"]}</span>Change it with ${b === "claude" ? "Claude" : "ChatGPT"}</button>`)
+        .join("")
+    : "";
+  const changeSection = keys
+    ? `<section class="maker">
+  <h2>Change it with AI</h2>
+  ${
+    changeButtons
+      ? `<p class="muted">Say what to change, in your own words. Your AI rewrites the app and publishes the new version here; its data, sharing and settings stay as they are.</p>
+  <textarea rows="3" maxlength="4000" placeholder="Add a dark mode, and a button to export everything as a spreadsheet" aria-label="What should change?"></textarea>
+  <div class="make-row">${changeButtons}</div>`
+      : `<p class="muted">Add your Claude or OpenAI API key on <a href="/new">New app</a> (Add your API key), then come back to change this app by describing what you want.</p>`
+  }
+</section>
+
+`
+    : "";
   const body = `<section class="app-head">
   <p><a href="${mine ? "/" : "/shared"}">← ${mine ? "My apps" : "Shared with me"}</a></p>
   <div class="app-title">
@@ -225,7 +247,7 @@ export async function appSettingsPage(c: Context<AppEnv>, id: string): Promise<R
   <p class="install-actions"><a class="ghost" href="${e(site.url)}" target="_blank" rel="noopener">Open app ↗</a> <a href="/install">How to install →</a></p>
 </section>
 
-<section>
+${changeSection}<section>
   <h2>Publish a new version</h2>
   <p class="muted">Upload a new <code>.html</code> or <code>.zip</code>. It replaces the app's files; its data, secrets and sharing stay as they are.</p>
   <form class="inline" data-action="site-replace" data-namespace="${e(site.namespace)}" data-mount="${e(site.mountPath)}">

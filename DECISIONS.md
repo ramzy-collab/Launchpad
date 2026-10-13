@@ -470,6 +470,19 @@ Choices made while building v1, including where the build differs from the spec 
   the page is closed. Limited to 5 builds a minute per person; each build is in the app's
   activity log with the model and token count.
 
+### Changing an existing app
+
+- The app's page gets a **Change it with AI** box (same `app_builder` flag). `POST
+  /_api/admin/build` with `site_id` and `change` sends the app's current `index.html` and the
+  requested change, and asks for the whole updated file back (no diffs: one complete document is
+  what models get right most reliably, and it's what publishing needs). Only `index.html` is
+  rewritten; the app's other files are copied into the new version unchanged, and publishing in
+  place keeps its data, secrets and sharing as always. The prompt asks to keep `formelab.kv`
+  keys and data shapes so saved data still loads.
+- Anyone who can manage the app (owner, editors, space owner) can change it, with **their own**
+  key. Apps whose `index.html` is over 400 KB are refused, with a pointer to the upload instead.
+  Each change is in the app's activity log with what was asked.
+
 ## Changelog
 
 - `CHANGELOG.md` lists every change in plain language, newest first, one `## YYYY-MM-DD` heading

@@ -1,7 +1,7 @@
 import { env } from "cloudflare:workers";
 import { afterEach, describe, expect, it } from "vitest";
 import { extractHtml, slugify, titleOf } from "../src/builder";
-import { call, onOutbound, OWNER, uniq } from "./helpers";
+import { call, onOutbound, OWNER, publishZip, uniq } from "./helpers";
 
 const CLAUDE_KEY = "sk-ant-api03-TESTKEY0123456789abcdefWXYZ";
 const OPENAI_KEY = "sk-proj-TESTKEY0123456789abcdefOPEN";
@@ -72,7 +72,10 @@ async function person(prefix: string) {
 
 const connect = (as: string, provider: string, apiKey: string) => call(`/_api/admin/builders/${provider}`, { as, method: "PUT", json: { apiKey } });
 async function build(as: string, provider: string, idea: string) {
-  const res = await call("/_api/admin/build", { as, method: "POST", json: { provider, idea } });
+  return run(as, { provider, idea });
+}
+async function run(as: string, json: Record<string, unknown>) {
+  const res = await call("/_api/admin/build", { as, method: "POST", json });
   expect(res.status).toBe(200);
   const lines = new TextDecoder().decode(await res.arrayBuffer()).trim().split("\n").map((l) => JSON.parse(l) as Record<string, any>);
   return lines.at(-1)!;
@@ -143,6 +146,47 @@ describe("building apps with the person's own API key", () => {
     expect(page).not.toContain('data-build="claude"');
   });
 
+  it("changes an existing app from its settings page, keeping its other files and settings", async () => {
+    const me = await person("e");
+    const ns = uniq();
+    const old = `<!doctype html><html><head><title>Chores</title><link rel="stylesheet" href="style.css"></head><body>Old chores</body></html>`;
+    const pub = await publishZip(me, ns, "chores", { "index.html": old, "style.css": "body{color:red}" }, { allowed_emails: "pal@example.com" });
+    const site = await pub.json<{ site: { id: string } }>();
+    const id = site.site.id;
+
+    // No key yet: the page says where to add one.
+    let page = await (await call(`/app/apps/${id}`, { as: me })).text();
+    expect(page).toContain("Change it with AI");
+    expect(page).toContain("Add your Claude or OpenAI API key");
+
+    mockAi({ claudeText: `<!doctype html><html><head><title>Chores</title><link rel="stylesheet" href="style.css"></head><body>New chores, with dark mode</body></html>` });
+    expect((await connect(me, "claude", CLAUDE_KEY)).status).toBe(200);
+    page = await (await call(`/app/apps/${id}`, { as: me })).text();
+    expect(page).toContain(`data-build="claude" data-site="${id}"`);
+    expect(page).not.toContain('data-build="openai"');
+
+    const last = await run(me, { provider: "claude", site_id: id, change: "Add a dark mode" });
+    expect(last.done).toMatchObject({ namespace: ns, mountPath: "chores", title: "Chores" });
+    const prompt = JSON.parse(seen.find((s) => s.method === "POST")!.body).messages[0].content as string;
+    expect(prompt).toContain("Old chores");
+    expect(prompt).toContain("style.css");
+    expect(prompt).toContain("Add a dark mode");
+
+    const row = await env.DB.prepare("SELECT id, current_version, allowed_emails FROM sites WHERE id = ?").bind(id).first<{ current_version: string; allowed_emails: string }>();
+    expect(row!.allowed_emails).toContain("pal@example.com");
+    const read = async (f: string) => (await env.BUCKET.get(`sites/${id}/${row!.current_version}/${f}`))?.text();
+    expect(await read("index.html")).toContain("New chores, with dark mode");
+    expect(await read("style.css")).toBe("body{color:red}");
+    const act = await (await call(`/app/apps/${id}/activity`, { as: me })).text();
+    expect(act).toContain("Changed it with Claude");
+
+    // Someone who can't manage the app can't change it.
+    const stranger = await person("s");
+    expect((await connect(stranger, "claude", CLAUDE_KEY)).status).toBe(200);
+    expect((await run(stranger, { provider: "claude", site_id: id, change: "Delete everything" })).error.code).toBe("not_found");
+    expect((await run(me, { provider: "claude", site_id: id, change: " " })).error.message).toContain("Describe the change");
+  });
+
   it("stays hidden, and its API answers 404, without the app_builder feature", async () => {
     mockAi();
     const me = `f-${uniq()}@example.com`;
@@ -154,6 +198,9 @@ describe("building apps with the person's own API key", () => {
     expect(page).toContain('data-make="claude"');
     expect(page).not.toContain("dlg-key-");
     expect(page).not.toContain("data-build=");
+    const pub = await publishZip(me, uniq(), "x", { "index.html": "<!doctype html><html><head><title>x</title></head></html>" });
+    const id = (await pub.json<{ site: { id: string } }>()).site.id;
+    expect(await (await call(`/app/apps/${id}`, { as: me })).text()).not.toContain("Change it with AI");
   });
 
   it("pulls the HTML out of a chatty answer and names the app from its title", () => {

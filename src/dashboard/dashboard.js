@@ -239,8 +239,8 @@
   // New app, built here: the person's own API key builds the app on the server, which streams
   // progress lines ({ progress } ... then { done } or { error }) and publishes it.
   var BUILDER_NAMES = { claude: "Claude", openai: "ChatGPT" };
-  function build(provider, idea) {
-    var screen = splash(BUILDER_NAMES[provider] + " is building your app…");
+  function build(provider, idea, siteId) {
+    var screen = splash(BUILDER_NAMES[provider] + (siteId ? " is changing your app…" : " is building your app…"));
     var sub = document.createElement("p");
     sub.className = "splash-sub";
     sub.textContent = "This usually takes a minute or two. You can leave this page; the app will still be published.";
@@ -257,7 +257,7 @@
       if (msg.error) { finished = true; fail(msg.error.message + (msg.error.hint ? " " + msg.error.hint : "")); }
       else if (msg.done) {
         finished = true;
-        screen.querySelector(".splash-text").textContent = "It's live! Opening " + msg.done.title + "…";
+        screen.querySelector(".splash-text").textContent = (siteId ? "Updated! Opening " : "It's live! Opening ") + msg.done.title + "…";
         sub.textContent = "";
         setTimeout(function () { location.href = msg.done.url; }, 900);
       } else if (msg.progress) {
@@ -268,7 +268,7 @@
       method: "POST",
       credentials: "same-origin",
       headers: { "x-formelab-request": "1", "content-type": "application/json" },
-      body: JSON.stringify({ provider: provider, idea: idea })
+      body: JSON.stringify(siteId ? { provider: provider, site_id: siteId, change: idea } : { provider: provider, idea: idea })
     }).then(function (res) {
       if (!res.ok || !res.body) {
         return res.json().then(function (d) { throw new Error(d.error.message + (d.error.hint ? " " + d.error.hint : "")); }, function () { throw new Error("Request failed (" + res.status + ")"); });
@@ -293,11 +293,14 @@
   }
   document.addEventListener("click", function (ev) {
     var btn = ev.target.closest("[data-build]");
-    var box = document.getElementById("idea");
-    if (!btn || !box) return;
+    if (!btn) return;
+    // The description box in the same section: the new app idea, or the change to an app.
+    var box = btn.closest("section").querySelector("textarea");
+    if (!box) return;
     var text = box.value.trim();
-    if (!text) { show("Describe your app first, or pick one of the ideas.", true); box.focus(); return; }
-    build(btn.dataset.build, text);
+    var siteId = btn.dataset.site;
+    if (!text) { show(siteId ? "Say what to change first." : "Describe your app first, or pick one of the ideas.", true); box.focus(); return; }
+    build(btn.dataset.build, text, siteId);
   });
 
   // App browser (My apps, Shared with me): search, filters, sort, and tiles or list.

@@ -11,8 +11,8 @@ import { ApiError, badRequest, err } from "./errors";
 import { enabledFlags, withFlags } from "./flags";
 import { GUIDE_MD } from "./generated/assets";
 import { decryptSecret, encryptSecret, rateLimit } from "./secrets";
-import { createNamespace, getNamespace, getSiteByMount, listNamespaces, publishSite, RESERVED_LABELS, type Ctx } from "./sites";
-import { filesFromHtml } from "./upload";
+import { createNamespace, getNamespace, getSiteByMount, listNamespaces, publishSite, requireManageableSite, RESERVED_LABELS, type Ctx } from "./sites";
+import { filesFromHtml, type FileMap } from "./upload";
 
 export type Builder = "claude" | "openai";
 export const BUILDERS: Record<Builder, { service: string; name: string; keyUrl: string }> = {
@@ -116,6 +116,17 @@ the guide's ground rules and checklist. Save data with formelab.kv (or formelab.
 person's own data) so it lasts; the app is published with data_writes "everyone", so every viewer
 can write shared data.`;
 
+const EDIT_RULES = `You are changing an existing Formelab web app for its owner. The guide below
+describes Formelab. Formelab publishes what you write for you, so ignore the guide's publishing
+section and don't ask the user anything: make the change they ask for, sensibly, and keep
+everything else working as it does now. Keep the app's formelab.kv keys and data shapes, so the
+data people already saved still loads.
+
+Reply with the ONE complete, updated HTML document for the app's index.html and nothing else: no
+explanation, no Markdown fences, no "rest unchanged" placeholders. Start with <!doctype html>.
+Keep its <title> and icon unless asked to change them, and follow the guide's ground rules and
+checklist.`;
+
 /** The model's answer as an HTML document: tolerates a Markdown fence or a sentence around it. */
 export function extractHtml(text: string): string {
   let t = text.trim();
@@ -168,7 +179,7 @@ async function freeMount(env: Env, ns: string, title: string): Promise<string> {
 type Progress = (chars: number) => void;
 type Generated = { html: string; model: string; tokens: number };
 
-async function generateWithClaude(key: string, system: string, idea: string, progress: Progress): Promise<Generated> {
+async function generateWithClaude(key: string, system: string, prompt: string, progress: Progress): Promise<Generated> {
   let chars = 0;
   const stream = anthropic(key).beta.messages.stream({
     model: CLAUDE_MODEL,
@@ -179,7 +190,7 @@ async function generateWithClaude(key: string, system: string, idea: string, pro
     betas: ["server-side-fallback-2026-07-01"],
     fallbacks: "default",
     system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
-    messages: [{ role: "user", content: idea }],
+    messages: [{ role: "user", content: prompt }],
   });
   stream.on("text", (delta) => {
     chars += delta.length;
@@ -219,14 +230,14 @@ async function pickOpenAiModel(key: string): Promise<string> {
   return ranked[0]!.id;
 }
 
-async function generateWithOpenAi(key: string, system: string, idea: string, progress: Progress, modelOverride?: string): Promise<Generated> {
+async function generateWithOpenAi(key: string, system: string, prompt: string, progress: Progress, modelOverride?: string): Promise<Generated> {
   const model = modelOverride || (await pickOpenAiModel(key));
   let res: Response;
   try {
     res = await fetch(`${OPENAI_API}/responses`, {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
-      body: JSON.stringify({ model, instructions: system, input: idea, max_output_tokens: MAX_OUTPUT_TOKENS, stream: true }),
+      body: JSON.stringify({ model, instructions: system, input: prompt, max_output_tokens: MAX_OUTPUT_TOKENS, stream: true }),
     });
   } catch {
     throw err(504, "builder_unreachable", "Couldn't reach OpenAI.", "Try again in a moment.");
@@ -283,21 +294,33 @@ export interface BuildResult {
   model: string;
 }
 
-/** Builds an app from a description with the person's own API key, then publishes it to their space. */
-export async function buildApp(ctx: Ctx, b: Builder, rawIdea: unknown, progress: Progress): Promise<BuildResult> {
+type Prepared = { key: string; guide: string };
+
+/** Checks the request and the person's key, and loads what every build needs. */
+async function prepare(ctx: Ctx, b: Builder, text: string, what: string): Promise<Prepared> {
   const { env, user } = ctx;
   if (!user.active) throw err(403, "waitlisted", "Your account is still on the waitlist.", "You can make apps once you're let in.");
-  const idea = String(rawIdea ?? "").trim();
-  if (!idea) throw badRequest("Describe your app first.", "Say what it should do, in your own words.");
-  if (idea.length > MAX_IDEA) throw badRequest(`Keep the description under ${MAX_IDEA} characters.`, "Start with the main idea; you can add to the app later.");
+  if (!text) throw badRequest(`Describe ${what} first.`, "Say what you want, in your own words.");
+  if (text.length > MAX_IDEA) throw badRequest(`Keep the description under ${MAX_IDEA} characters.`, "Start with the main idea; you can make more changes after.");
   const row = await loadRow(env, user.email, b);
   if (!row) throw err(409, "builder_not_connected", `Connect ${BUILDERS[b].name} first.`, "Paste your API key on the New app page.");
   await rateLimit(env, `build:${user.email}`, BUILDS_PER_MINUTE, `You started more than ${BUILDS_PER_MINUTE} builds in a minute.`);
-
   const key = await decryptSecret(env, scope(user.email), BUILDERS[b].service, row.iv, row.ciphertext);
-  const system = `${BUILD_RULES}\n\n---\n\n${withFlags(GUIDE_MD, await enabledFlags(env, user))}`;
-  const generated = b === "claude" ? await generateWithClaude(key, system, idea, progress) : await generateWithOpenAi(key, system, idea, progress);
-  await env.DB.prepare("UPDATE service_keys SET last_used_at = ? WHERE owner_email = ? AND service = ?").bind(now(), user.email, BUILDERS[b].service).run();
+  return { key, guide: withFlags(GUIDE_MD, await enabledFlags(env, user)) };
+}
+
+async function generate(ctx: Ctx, b: Builder, key: string, system: string, prompt: string, progress: Progress): Promise<Generated> {
+  const generated = b === "claude" ? await generateWithClaude(key, system, prompt, progress) : await generateWithOpenAi(key, system, prompt, progress);
+  await ctx.env.DB.prepare("UPDATE service_keys SET last_used_at = ? WHERE owner_email = ? AND service = ?").bind(now(), ctx.user.email, BUILDERS[b].service).run();
+  return generated;
+}
+
+/** Builds an app from a description with the person's own API key, then publishes it to their space. */
+export async function buildApp(ctx: Ctx, b: Builder, rawIdea: unknown, progress: Progress): Promise<BuildResult> {
+  const { env, user } = ctx;
+  const idea = String(rawIdea ?? "").trim();
+  const { key, guide } = await prepare(ctx, b, idea, "your app");
+  const generated = await generate(ctx, b, key, `${BUILD_RULES}\n\n---\n\n${guide}`, idea, progress);
 
   const title = titleOf(generated.html);
   const namespace = await homeNamespace(ctx);
@@ -305,4 +328,45 @@ export async function buildApp(ctx: Ctx, b: Builder, rawIdea: unknown, progress:
   const published = await publishSite(ctx, { namespace, mountPath, files: filesFromHtml(generated.html), title, dataWrites: "everyone" });
   await audit(env, user.email, "ai_build", `${namespace}/${mountPath}`, { siteId: published.site.id, builder: BUILDERS[b].name, model: generated.model, tokens: generated.tokens });
   return { url: published.url, title, namespace, mountPath, model: generated.model };
+}
+
+const MAX_EDIT_HTML = 400 * 1024;
+
+/** All of an app's current files, so a change to index.html can keep the rest. */
+async function currentFiles(env: Env, prefix: string): Promise<FileMap> {
+  const files: FileMap = new Map();
+  let cursor: string | undefined;
+  do {
+    const list = await env.BUCKET.list({ prefix, cursor, limit: 1000 });
+    for (const o of list.objects) {
+      const obj = await env.BUCKET.get(o.key);
+      if (obj) files.set(o.key.slice(prefix.length), new Uint8Array(await obj.arrayBuffer()));
+    }
+    cursor = list.truncated ? list.cursor : undefined;
+  } while (cursor);
+  return files;
+}
+
+/** Changes an existing app as asked, with the person's own API key, and publishes the new version in place. */
+export async function editApp(ctx: Ctx, b: Builder, siteId: unknown, rawChange: unknown, progress: Progress): Promise<BuildResult> {
+  const { env, user } = ctx;
+  const { site } = await requireManageableSite(ctx, String(siteId ?? ""));
+  const change = String(rawChange ?? "").trim();
+  const { key, guide } = await prepare(ctx, b, change, "the change");
+  const files = await currentFiles(env, `sites/${site.id}/${site.current_version}/`);
+  const index = files.get("index.html");
+  if (!index) throw err(409, "no_index", "This app has no index.html to change.", "Publish a new version from a file instead.");
+  if (index.length > MAX_EDIT_HTML) throw err(413, "too_large", "This app's index.html is too big to change with AI here.", "Change it in your AI app, or publish a new version from a file.");
+  const others = [...files.keys()].filter((p) => p !== "index.html");
+  const prompt =
+    `The app's current index.html:\n\n<index.html>\n${new TextDecoder().decode(index)}\n</index.html>\n\n` +
+    (others.length ? `The app also has these files, which stay as they are: ${others.slice(0, 200).join(", ")}\n\n` : "") +
+    `The change to make:\n${change}`;
+  const generated = await generate(ctx, b, key, `${EDIT_RULES}\n\n---\n\n${guide}`, prompt, progress);
+
+  files.set("index.html", new TextEncoder().encode(generated.html));
+  const published = await publishSite(ctx, { namespace: site.namespace, mountPath: site.mount_path, files });
+  const target = `${site.namespace}/${site.mount_path}`;
+  await audit(env, user.email, "ai_edit", target, { siteId: site.id, builder: BUILDERS[b].name, model: generated.model, tokens: generated.tokens, change: change.slice(0, 200) });
+  return { url: published.url, title: published.site.title ?? titleOf(generated.html), namespace: site.namespace, mountPath: site.mount_path, model: generated.model };
 }

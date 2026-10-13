@@ -109,6 +109,8 @@ export function describeActivity(row: AuditRow): string {
       return d.status === 200 ? `Asked Gemini${d.tokens ? ` (${d.tokens} tokens)` : ""}` : `Asked Gemini, which failed (${d.status === "timeout" ? "no answer" : `HTTP ${d.status}`})`;
     case "ai_build":
       return `Built it with ${d.builder ?? "AI"}${d.model ? ` (${d.model}` + (d.tokens ? `, ${d.tokens} tokens)` : ")") : ""}, using their own API key`;
+    case "ai_edit":
+      return `Changed it with ${d.builder ?? "AI"}${d.change ? `: "${d.change}"` : ""}`;
     case "feature_flag":
       return `Set ${d.feature ?? t} to ${d.state === "on" ? "on for everyone" : d.state === "admins" ? "admins only" : "off"}`;
     case "feature_flag_user_add":
