@@ -4,11 +4,11 @@ Everything that has changed in Formelab, newest first. Shown in the admin panel 
 
 ## 2026-10-13
 
-- **Sign in on Formelab itself.** The login page at formelab.ai/login asks for your email first, then for your password if you have one or emails you a code if you don't, with Continue with Google underneath and a "Last used" label on the way you logged in last time. No trip to WorkOS's page; Forgot password and the reset link stay on Formelab too.
+- **Sign in on Formelab itself.** The login page at formelab.ai/login asks for your email first, then for your password, with "Email me a code instead" if you'd rather (codes are only sent when you ask), with Continue with Google underneath and a "Last used" label on the way you logged in last time. No trip to WorkOS's page; Forgot password and the reset link stay on Formelab too.
 - **Set your own password.** A new Password page in the account menu lets people set or change a password, then log in with their email and password instead of waiting for a code. It asks you to log in again first if your last sign-in was more than 15 minutes ago.
 - **Logging out really logs you out.** Logging out now also ends your sign-in at WorkOS, so the next Log in asks for a code or password again instead of signing you straight back in.
 - Fixed: logging out of the web app showed a browser error page instead of the home page.
-- Logging in and logging out go straight through, without a "Logging you in/out" page in between.
+- **Logging in and out feel smoother.** A Formelab loading screen shows while you're being logged in or out, logging out takes you to the login page, and there's no plain "Logging you in/out" page in between anymore.
 - Fixed: "Sign-in expired" after Forgot password or an emailed sign-in link. Those sign-ins now finish normally.
 - **Turn a feature on for one person.** In the admin panel's Features tab, each feature has a "Turn on for this person" box: enter someone's email and they get the feature right away, whether it's Off, Admins only or Everyone. Their apps get it too, since features follow an app's owner. Remove them to take it back. Both show up in Activity.
 - **Google Sheets, the first sign-in connected app.** Under Connected apps, people click Connect with Google and allow access to their spreadsheets; their apps can then read, add and update rows and create sheets through the SDK (`formelab.sheets`). No keys to copy: the sign-in is stored encrypted and refreshed automatically. Behind the Connected apps feature flag, and in Google's testing mode for now (test users only).

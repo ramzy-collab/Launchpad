@@ -220,7 +220,7 @@ export async function logout(c: Context<AppEnv>): Promise<Response> {
   if (origin && origin !== new URL(c.req.url).origin) return plainPage(403, "Not allowed", "Log out from Formelab itself.");
   const id = c.get("sessionId");
   const { workosSid } = id ? await destroySession(c.env, id) : { workosSid: null };
-  let to = onAdminHost(c) ? `${adminOrigin(c.env, c.req.url)}/login` : `${aiOrigin(c.env, c.req.url)}/`;
+  let to = `${onAdminHost(c) ? adminOrigin(c.env, c.req.url) : aiOrigin(c.env, c.req.url)}/login`;
   if (workosSid && workosEnabled(c.env)) {
     const out = new URL(`${WORKOS_API}/user_management/sessions/logout`);
     out.searchParams.set("session_id", workosSid);

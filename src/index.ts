@@ -12,7 +12,7 @@ import { homePage } from "./dashboard/home";
 import { forgotGet, forgotPost, resetGet, resetPost, signInCode, signInGet, signInPost } from "./signin";
 import type { AppEnv, Env } from "./env";
 import { forbidden, jsonError, onError, unauthorized } from "./errors";
-import { ASSET_VERSION, CONSENT_JS, DASHBOARD_JS, FORMELAB_CSS, GUIDE_MD, HOME_CSS, SDK_JS, SITE_JS, THEME_JS } from "./generated/assets";
+import { ASSET_VERSION, CONSENT_JS, DASHBOARD_JS, FORMELAB_CSS, GUIDE_MD, HOME_CSS, SDK_JS, SIGNIN_JS, SITE_JS, THEME_JS } from "./generated/assets";
 import { apexOrigin, AUTHORIZE_PATH, authorizeGet, authorizePost, oauthProvider } from "./oauth";
 import { runtimeApi } from "./runtime";
 import { appCallback, appHandoff, loginCallback, loginStart, logout, safeReturn, workosEnabled } from "./login";
@@ -43,6 +43,7 @@ const assetRoutes: [string, (c: Context<AppEnv>) => Response][] = [
   ["/_assets/home.css", asset(HOME_CSS, "text/css; charset=utf-8")],
   ["/_assets/theme.js", asset(THEME_JS, "text/javascript; charset=utf-8")],
   ["/_assets/site.js", asset(SITE_JS, "text/javascript; charset=utf-8")],
+  ["/_assets/signin.js", asset(SIGNIN_JS, "text/javascript; charset=utf-8")],
   ["/_assets/dashboard.js", asset(DASHBOARD_JS, "text/javascript; charset=utf-8")],
   ["/_assets/consent.js", asset(CONSENT_JS, "text/javascript; charset=utf-8")],
   ["/_assets/services.svg", asset(SERVICES_SPRITE, "image/svg+xml")],

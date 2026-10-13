@@ -298,3 +298,16 @@ footer a:hover { color: var(--ink); }
   * { transition: none !important; animation: none !important; }
   .rail { overflow-x: auto; }
 }
+
+/* ---------- Splash: logging in and out ---------- */
+.splash { position: fixed; inset: 0; z-index: 100; display: grid; place-content: center; justify-items: center; gap: 22px; background: var(--bg); opacity: 0; visibility: hidden; transition: opacity .2s ease, visibility 0s linear .2s; }
+.splash.on { opacity: 1; visibility: visible; transition: opacity .2s ease; }
+.splash-mark { width: 64px; height: 64px; border-radius: 19px; background: var(--accent); position: relative; display: grid; place-items: center; color: #fff; font-family: "Bricolage Grotesque", "Inter Tight", system-ui, sans-serif; font-weight: 800; font-size: 40px; line-height: 1; animation: splash-bob 1.4s ease-in-out infinite; }
+.splash-mark::after { content: ""; position: absolute; width: 18px; height: 18px; border-radius: 50%; background: var(--pop-1); right: -6px; top: -6px; animation: splash-dot 1.4s ease-in-out infinite; }
+.splash-text { margin: 0; font-size: 18px; font-weight: 500; color: var(--ink); }
+.splash-bar { width: 160px; height: 4px; border-radius: 99px; background: var(--line); overflow: hidden; position: relative; }
+.splash-bar::after { content: ""; position: absolute; inset: 0; width: 40%; border-radius: 99px; background: var(--accent); animation: splash-slide 1.1s ease-in-out infinite; }
+@keyframes splash-bob { 0%, 100% { transform: rotate(-6deg) translateY(0); } 50% { transform: rotate(6deg) translateY(-8px); } }
+@keyframes splash-dot { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.25); } }
+@keyframes splash-slide { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
+@media (prefers-reduced-motion: reduce) { .splash-mark, .splash-mark::after, .splash-bar::after { animation: none !important; } .splash-bar::after { width: 100%; } }

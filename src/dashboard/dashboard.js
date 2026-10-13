@@ -49,6 +49,17 @@
     for (var i = 0; i < buttons.length; i++) buttons[i].disabled = on;
   }
 
+  // A full-page loading screen (styles in formelab.css, .splash).
+  function splash(text) {
+    var el = document.createElement("div");
+    el.className = "splash";
+    el.setAttribute("role", "status");
+    el.innerHTML = '<span class="splash-mark" aria-hidden="true">F</span><p class="splash-text"></p><span class="splash-bar" aria-hidden="true"></span>';
+    el.querySelector(".splash-text").textContent = text;
+    document.body.appendChild(el);
+    requestAnimationFrame(function () { el.classList.add("on"); });
+  }
+
   function reloadSoon() { setTimeout(function () { location.reload(); }, 900); }
 
   var handlers = {
@@ -162,9 +173,12 @@
     if (form.classList.contains("logout")) {
       ev.preventDefault();
       busy(form, true);
+      splash("Logging you out…");
+      // Keep the splash up long enough to read, even when the server answers at once.
+      var shown = new Promise(function (resolve) { setTimeout(resolve, 900); });
       fetch(form.action, { method: "POST", headers: { "x-formelab-request": "1" }, credentials: "same-origin" })
         .then(function (res) { return res.ok ? res.json() : Promise.reject(); })
-        .then(function (r) { location.assign(r.to); })
+        .then(function (r) { return shown.then(function () { location.assign(r.to); }); })
         .catch(function () { form.submit(); });
       return;
     }

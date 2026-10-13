@@ -124,7 +124,7 @@ function frame(v: View, title: string, intro: string, body: string, status = 200
     `<!doctype html>
 <html lang="en">
 <head>
-${homeHead(v.admin ? "Formelab admin" : "Log in to Formelab")}
+${homeHead(v.admin ? "Formelab admin" : "Log in to Formelab", ["signin.js"])}
 </head>
 <body>
 ${topNav(v.admin)}
@@ -177,8 +177,8 @@ function signInForm(v: View, status = 200): Response {
   return frame(v, v.admin ? "Formelab admin" : "Log in", v.admin ? "Log in to manage Formelab." : "Welcome back to your Formelab workspace.", body, status);
 }
 
-/** Step two for people with a password. */
-function passwordForm(v: View, email: string, status = 200): Response {
+/** Step two: the password, with an emailed code as the other way in. */
+function passwordForm(v: View, email: string, hasPassword = true, status = 200): Response {
   const body = `<form method="post" action="/login" class="signin">
         ${returnField(v)}
         <input type="email" name="email" autocomplete="username" value="${e(email)}" hidden readonly>
@@ -187,7 +187,8 @@ function passwordForm(v: View, email: string, status = 200): Response {
         </label>
         <button class="btn w100" name="action" value="password">Log in</button>
         <button class="ghost" name="action" value="code" formnovalidate>Email me a code instead</button>
-      </form>`;
+      </form>
+      ${hasPassword ? "" : `<p class="hint center-text">New here, or haven't set a password? Choose <b>Email me a code</b>. You can set a password afterwards under Password in your account menu.</p>`}`;
   return frame(v, "Enter your password", `${changeEmail(v, email)}`, body, status);
 }
 
@@ -271,15 +272,14 @@ export async function signInPost(c: Context<AppEnv>): Promise<Response> {
   if (!isEmail(email)) return signInForm({ ...v, error: "Enter your email address." }, 400);
 
   const action = String(f.get("action") ?? "email");
-  if (action === "use-password") return passwordForm(v, email);
-  // Step one: people Formelab knows have a password are asked for it; everyone else, new people
-  // included, gets an emailed code (and can switch to a password from there).
-  if (action === "email") {
+  // Step one leads to the password; a code is only sent when someone asks for one, so nobody gets
+  // emails they didn't want. People without a password yet are pointed to the code.
+  if (action === "email" || action === "use-password") {
     const row = await c.env.DB.prepare("SELECT has_password FROM users WHERE email = ?").bind(email).first<{ has_password: number }>();
-    if (row?.has_password === 1) return passwordForm(v, email);
+    return passwordForm(v, email, row?.has_password === 1);
   }
 
-  if (action === "email" || action === "code") {
+  if (action === "code") {
     const sent = await workos(c.env, "/user_management/magic_auth", { email, ...visitor(c) });
     if (!sent.ok) return signInForm({ ...v, error: (sent.status < 500 && sent.message) || "Couldn't send a code. Try again in a minute." }, sent.status >= 500 ? 502 : 400);
     const page = codeForm(v, email, false);
@@ -288,7 +288,7 @@ export async function signInPost(c: Context<AppEnv>): Promise<Response> {
   }
 
   const password = String(f.get("password") ?? "");
-  if (!password) return passwordForm({ ...v, error: "Enter your password, or choose Email me a code." }, email, 400);
+  if (!password) return passwordForm({ ...v, error: "Enter your password, or choose Email me a code." }, email, true, 400);
   const res = await authenticate(c, { grant_type: "password", email, password });
   if (res.ok) return completeSignIn(c, res.data, moveOn(v.returnTo));
   return authProblem(c, v, email, res);
@@ -323,9 +323,9 @@ function authProblem(c: Context<AppEnv>, v: View, email: string, res: Extract<Wo
     const link = `<a class="tlink" href="${e(withReturn("/auth/login", v))}">Continue on the secure sign-in page</a>`;
     return signInForm({ ...v, error: "Your account needs another sign-in step.", extra: link }, 400);
   }
-  if (res.status >= 500 || res.status === 0) return passwordForm({ ...v, error: "The sign-in service isn't answering. Try again in a minute." }, email, 502);
-  if (res.status === 429) return passwordForm({ ...v, error: "Too many tries. Wait a minute, then try again." }, email, 429);
-  return passwordForm({ ...v, error: "That password isn't right. Try again, or choose Email me a code." }, email, 400);
+  if (res.status >= 500 || res.status === 0) return passwordForm({ ...v, error: "The sign-in service isn't answering. Try again in a minute." }, email, true, 502);
+  if (res.status === 429) return passwordForm({ ...v, error: "Too many tries. Wait a minute, then try again." }, email, true, 429);
+  return passwordForm({ ...v, error: "That password isn't right. Try again, or choose Email me a code." }, email, true, 400);
 }
 
 /** GET /login/forgot */

@@ -141,7 +141,7 @@ when ready.
    `http://admin.localhost:8787/auth/callback` in the staging environment.
    Set **Password reset URL** to `https://example.com/reset-password` (the reset email links
    there) and **Initiate login URI** to `https://example.com/auth/login`.
-   Under **Sign-out redirects** (sometimes labelled logout redirects), add `https://example.com/`
+   Under **Sign-out redirects** (sometimes labelled logout redirects), add `https://example.com/login`
    and `https://admin.example.com/login`. Logging out of Formelab ends the WorkOS session too and
    then returns there; without them WorkOS shows an error after logout.
 3. Copy the **Client ID** and **API key** from **API Keys**, then:
