@@ -208,8 +208,9 @@ function sessionIdOf(accessToken: string | undefined): string | null {
 }
 
 /**
- * POST /auth/logout: ends the Formelab sign-in everywhere, then the WorkOS session behind it, so
- * the next "Log in" asks for a code or password again instead of signing straight back in.
+ * POST /auth/logout: ends the Formelab sign-in everywhere and the WorkOS session behind it (so
+ * the next "Log in" asks for a password or code again instead of signing straight back in), then
+ * goes to the login page of the host the person logged out of.
  *
  * It never redirects: the logout form is posted from pages whose CSP says `form-action 'self'`,
  * which also covers redirects after the POST, so the browser would block one to another host
@@ -220,13 +221,8 @@ export async function logout(c: Context<AppEnv>): Promise<Response> {
   if (origin && origin !== new URL(c.req.url).origin) return plainPage(403, "Not allowed", "Log out from Formelab itself.");
   const id = c.get("sessionId");
   const { workosSid } = id ? await destroySession(c.env, id) : { workosSid: null };
-  let to = `${onAdminHost(c) ? adminOrigin(c.env, c.req.url) : aiOrigin(c.env, c.req.url)}/login`;
-  if (workosSid && workosEnabled(c.env)) {
-    const out = new URL(`${WORKOS_API}/user_management/sessions/logout`);
-    out.searchParams.set("session_id", workosSid);
-    out.searchParams.set("return_to", to);
-    to = out.toString();
-  }
+  if (workosSid && workosEnabled(c.env)) await revokeWorkosSession(c.env, workosSid);
+  const to = `${onAdminHost(c) ? adminOrigin(c.env, c.req.url) : aiOrigin(c.env, c.req.url)}/login`;
   // The web app and admin panel log out in the background and then go to `to` themselves, so
   // nobody sees a page in between; the page is for browsers without JavaScript.
   const page =
@@ -235,6 +231,24 @@ export async function logout(c: Context<AppEnv>): Promise<Response> {
       : movingOnPage("Logged out", "Logging you out…", to);
   page.headers.append("set-cookie", cookieHeader(SESSION_COOKIE, "", 0));
   return page;
+}
+
+/**
+ * Ends a WorkOS session from the server, rather than by sending the browser through WorkOS's
+ * logout page: that page only returns to addresses listed in WorkOS's settings and goes to its
+ * default otherwise. Logging out of Formelab goes on regardless if WorkOS doesn't answer.
+ */
+async function revokeWorkosSession(env: Env, sessionId: string): Promise<void> {
+  try {
+    const res = await fetch(`${WORKOS_API}/user_management/sessions/revoke`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${env.WORKOS_API_KEY}`, "content-type": "application/json" },
+      body: JSON.stringify({ session_id: sessionId }),
+    });
+    if (!res.ok) console.error("workos revoke session failed", res.status);
+  } catch {
+    console.error("workos revoke session unreachable");
+  }
 }
 
 /** A page that sends the browser on to `to` straight away, with a link in case it doesn't. */
