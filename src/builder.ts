@@ -10,15 +10,21 @@ import { now } from "./env";
 import { ApiError, badRequest, err } from "./errors";
 import { enabledFlags, withFlags } from "./flags";
 import { GUIDE_MD } from "./generated/assets";
+import { connectGemini, disconnectGemini, GEMINI_MODEL } from "./gemini";
 import { decryptSecret, encryptSecret, rateLimit } from "./secrets";
 import { createNamespace, getNamespace, getSiteByMount, listNamespaces, publishSite, requireManageableSite, RESERVED_LABELS, type Ctx } from "./sites";
 import { filesFromHtml, type FileMap } from "./upload";
 
-export type Builder = "claude" | "openai";
+export type Builder = "claude" | "openai" | "gemini";
+// Gemini's builder key is the same stored key as the Google Gemini connected app (service
+// "gemini"): saving or removing it in either place does it for both.
 export const BUILDERS: Record<Builder, { service: string; name: string; keyUrl: string }> = {
   claude: { service: "anthropic", name: "Claude", keyUrl: "https://console.anthropic.com/settings/keys" },
   openai: { service: "openai", name: "ChatGPT (OpenAI)", keyUrl: "https://platform.openai.com/api-keys" },
+  gemini: { service: "gemini", name: "Google Gemini", keyUrl: "https://aistudio.google.com/apikey" },
 };
+/** Button labels: "Make it with Claude", "Change it with Gemini". */
+export const BUILDER_LABEL: Record<Builder, string> = { claude: "Claude", openai: "ChatGPT", gemini: "Gemini" };
 
 export const CLAUDE_MODEL = "claude-opus-5-5";
 const OPENAI_API = "https://api.openai.com/v1";
@@ -27,8 +33,8 @@ const MAX_OUTPUT_TOKENS = 32000;
 export const BUILDS_PER_MINUTE = 5;
 
 export function parseBuilder(raw: unknown): Builder {
-  if (raw === "claude" || raw === "openai") return raw;
-  throw badRequest("Pick Claude or ChatGPT.", 'Send provider "claude" or "openai".');
+  if (raw === "claude" || raw === "openai" || raw === "gemini") return raw;
+  throw badRequest("Pick Claude, ChatGPT or Gemini.", 'Send provider "claude", "openai" or "gemini".');
 }
 
 const scope = (email: string) => `user:${email}`;
@@ -38,11 +44,12 @@ const loadRow = (env: Env, email: string, b: Builder) =>
 
 /** Which builders this person has a key for, with the key's last four characters. */
 export async function builderKeys(env: Env, email: string): Promise<Partial<Record<Builder, { hint: string }>>> {
-  const { results } = await env.DB.prepare("SELECT service, hint FROM service_keys WHERE owner_email = ? AND service IN ('anthropic', 'openai')")
+  const { results } = await env.DB.prepare("SELECT service, hint FROM service_keys WHERE owner_email = ? AND service IN ('anthropic', 'openai', 'gemini')")
     .bind(email)
     .all<{ service: string; hint: string }>();
   const out: Partial<Record<Builder, { hint: string }>> = {};
-  for (const r of results) out[r.service === "anthropic" ? "claude" : "openai"] = { hint: r.hint };
+  const byService = Object.fromEntries((Object.keys(BUILDERS) as Builder[]).map((b) => [BUILDERS[b].service, b]));
+  for (const r of results) out[byService[r.service] as Builder] = { hint: r.hint };
   return out;
 }
 
@@ -62,6 +69,10 @@ const anthropic = (apiKey: string) => new Anthropic({ apiKey, maxRetries: 1, fet
 
 /** Checks the key with Anthropic or OpenAI (a free model lookup), then saves it encrypted. */
 export async function connectBuilder(env: Env, user: User, b: Builder, rawKey: unknown) {
+  if (b === "gemini") {
+    const status = await connectGemini(env, user, rawKey);
+    return { connected: true, hint: status.hint };
+  }
   const key = String(rawKey ?? "").trim();
   if (!/^[A-Za-z0-9._~-]{20,400}$/.test(key)) {
     throw badRequest(`That doesn't look like ${b === "claude" ? "an Anthropic" : "an OpenAI"} API key.`, `Copy the whole key from ${BUILDERS[b].keyUrl}, with no spaces.`);
@@ -100,6 +111,7 @@ export async function connectBuilder(env: Env, user: User, b: Builder, rawKey: u
 }
 
 export async function disconnectBuilder(env: Env, user: User, b: Builder) {
+  if (b === "gemini") return disconnectGemini(env, user);
   const res = await env.DB.prepare("DELETE FROM service_keys WHERE owner_email = ? AND service = ?").bind(user.email, BUILDERS[b].service).run();
   if (res.meta.changes) await audit(env, user.email, "service_disconnect", null, { service: BUILDERS[b].name });
   return { ok: true };
@@ -286,6 +298,81 @@ async function generateWithOpenAi(key: string, system: string, prompt: string, p
   return { html: extractHtml(text), model, tokens };
 }
 
+const GEMINI_API = "https://generativelanguage.googleapis.com/v1beta";
+
+/** The newest Gemini Flash model the key can use (free tier); Flash-Lite if there's none. */
+async function pickGeminiModel(key: string): Promise<string> {
+  const res = await fetch(`${GEMINI_API}/models?pageSize=1000`, { headers: { "x-goog-api-key": key } });
+  if (res.status === 400 || res.status === 401 || res.status === 403) throw err(502, "builder_key_rejected", "Google rejected your Gemini API key.", "Paste a new key on the New app page (Gemini → Change key).");
+  if (!res.ok) throw err(502, "builder_error", `Gemini had a problem: ${await openaiError(res)}`, "Try again in a moment.");
+  const { models = [] } = await res.json<{ models?: { name: string }[] }>();
+  const ranked = models
+    .map((m) => ({ id: m.name.replace(/^models\//, ""), v: m.name.match(/^models\/gemini-(\d+(?:\.\d+)?)-flash$/)?.[1] }))
+    .filter((m): m is { id: string; v: string } => !!m.v)
+    .sort((a, b) => Number(b.v) - Number(a.v));
+  return ranked[0]?.id ?? GEMINI_MODEL;
+}
+
+async function generateWithGemini(key: string, system: string, prompt: string, progress: Progress): Promise<Generated> {
+  const model = await pickGeminiModel(key);
+  let res: Response;
+  try {
+    res = await fetch(`${GEMINI_API}/models/${model}:streamGenerateContent?alt=sse`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-goog-api-key": key },
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: system }] },
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        generationConfig: { maxOutputTokens: MAX_OUTPUT_TOKENS },
+      }),
+    });
+  } catch {
+    throw err(504, "builder_unreachable", "Couldn't reach Gemini.", "Try again in a moment.");
+  }
+  if (!res.ok || !res.body) {
+    const why = await openaiError(res);
+    if (res.status === 401 || res.status === 403) throw err(502, "builder_key_rejected", "Google rejected your Gemini API key.", "Paste a new key on the New app page (Gemini → Change key).");
+    if (res.status === 429) throw err(429, "builder_quota", `You've reached Gemini's free limit for now: ${why}`, "Wait a minute and try again. The daily limit resets at midnight Pacific time.");
+    throw err(502, "builder_error", `Gemini had a problem: ${why}`, "Try again in a moment.");
+  }
+  let text = "";
+  let tokens = 0;
+  let finish: string | undefined;
+  let blocked: string | undefined;
+  const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
+  let buf = "";
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buf += value;
+    let nl: number;
+    while ((nl = buf.indexOf("\n")) >= 0) {
+      const line = buf.slice(0, nl).trim();
+      buf = buf.slice(nl + 1);
+      if (!line.startsWith("data:")) continue;
+      let ev: {
+        candidates?: { content?: { parts?: { text?: string; thought?: boolean }[] }; finishReason?: string }[];
+        promptFeedback?: { blockReason?: string };
+        usageMetadata?: { totalTokenCount?: number };
+      };
+      try {
+        ev = JSON.parse(line.slice(5));
+      } catch {
+        continue;
+      }
+      const cand = ev.candidates?.[0];
+      for (const p of cand?.content?.parts ?? []) if (!p.thought && p.text) text += p.text;
+      if (cand?.finishReason) finish = cand.finishReason;
+      if (ev.promptFeedback?.blockReason) blocked = ev.promptFeedback.blockReason;
+      if (ev.usageMetadata?.totalTokenCount) tokens = ev.usageMetadata.totalTokenCount;
+      progress(text.length);
+    }
+  }
+  if (blocked || finish === "SAFETY" || finish === "PROHIBITED_CONTENT") throw badRequest("Gemini declined to build this app.", "Try describing it differently.");
+  if (finish === "MAX_TOKENS") throw err(502, "builder_too_long", "The app came out too long to finish.", "Ask for a smaller first version, then add to it.");
+  return { html: extractHtml(text), model, tokens };
+}
+
 export interface BuildResult {
   url: string;
   title: string;
@@ -310,7 +397,12 @@ async function prepare(ctx: Ctx, b: Builder, text: string, what: string): Promis
 }
 
 async function generate(ctx: Ctx, b: Builder, key: string, system: string, prompt: string, progress: Progress): Promise<Generated> {
-  const generated = b === "claude" ? await generateWithClaude(key, system, prompt, progress) : await generateWithOpenAi(key, system, prompt, progress);
+  const generated =
+    b === "claude"
+      ? await generateWithClaude(key, system, prompt, progress)
+      : b === "openai"
+        ? await generateWithOpenAi(key, system, prompt, progress)
+        : await generateWithGemini(key, system, prompt, progress);
   await ctx.env.DB.prepare("UPDATE service_keys SET last_used_at = ? WHERE owner_email = ? AND service = ?").bind(now(), ctx.user.email, BUILDERS[b].service).run();
   return generated;
 }

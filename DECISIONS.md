@@ -470,6 +470,20 @@ Choices made while building v1, including where the build differs from the spec 
   the page is closed. Limited to 5 builds a minute per person; each build is in the app's
   activity log with the model and token count.
 
+### Gemini as a free builder
+
+- Anthropic and OpenAI keys need paid API credits; Gemini's API has a free tier (a key from
+  Google AI Studio, no billing). So Gemini is a third builder. It picks the newest plain
+  `gemini-N.N-flash` model the key lists (Flash is what the free tier covers; no `-lite`,
+  `-preview` or Pro), falling back to Flash-Lite, and streams with `streamGenerateContent?alt=sse`.
+  A 429 explains the free limits.
+- **One Gemini key, two uses.** The builder's key is the connected app's key: the same
+  `service_keys` row (service `gemini`, same encryption scope), saved and checked by
+  `connectGemini` and removed by `disconnectGemini` whichever page it's done from. So it moves
+  "both ways" with no copying, and there's never a stale second copy. Both pages say so, and
+  removing it warns that apps stop using Gemini too. Saving it from New app works even with
+  `connected_apps` off; apps only use it once that flag is on for the owner.
+
 ### Changing an existing app
 
 - The app's page gets a **Change it with AI** box (same `app_builder` flag). `POST

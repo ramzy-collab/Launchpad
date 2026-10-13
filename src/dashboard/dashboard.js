@@ -238,7 +238,7 @@
 
   // New app, built here: the person's own API key builds the app on the server, which streams
   // progress lines ({ progress } ... then { done } or { error }) and publishes it.
-  var BUILDER_NAMES = { claude: "Claude", openai: "ChatGPT" };
+  var BUILDER_NAMES = { claude: "Claude", openai: "ChatGPT", gemini: "Gemini" };
   function build(provider, idea, siteId) {
     var screen = splash(BUILDER_NAMES[provider] + (siteId ? " is changing your app…" : " is building your app…"));
     var sub = document.createElement("p");
@@ -450,7 +450,9 @@
       if (!confirm("Disconnect this app? It will need to sign in again to use Formelab.")) return;
       p = api("DELETE", "/connections/" + encodeURIComponent(btn.dataset.id)).then(function () { show("Disconnected."); reloadSoon(); });
     } else if (action === "builder-disconnect") {
-      if (!confirm("Remove your API key? Make it will ask for a key again.")) return;
+      if (!confirm(btn.dataset.provider === "gemini"
+        ? "Remove your Gemini key? It's also the key under Connected apps, so your apps stop using Gemini until you add one again."
+        : "Remove your API key? Make it will ask for a key again.")) return;
       p = api("DELETE", "/builders/" + encodeURIComponent(btn.dataset.provider)).then(function () { show("Key removed."); reloadSoon(); });
     } else if (action === "service-disconnect") {
       if (!confirm("Disconnect? Your apps that use it will stop working until you connect it again.")) return;

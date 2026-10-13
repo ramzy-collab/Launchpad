@@ -109,7 +109,7 @@ export const VENDORS: Vendor[] = [
   {
     name: "Google Gemini API",
     group: "service",
-    purpose: "The first connected app: people's apps call Gemini 3.5 Flash-Lite with the app owner's own key.",
+    purpose: "The first connected app: people's apps call Gemini 3.5 Flash-Lite with the app owner's own key. The same key builds and changes apps on New app with the newest free Gemini Flash model.",
     plan: "Paid by each person on their own Google account; Formelab pays nothing. Behind the connected_apps feature flag.",
     setup: "Nothing on Formelab's side; people add keys under Connected apps.",
     since: "2026-10-13",

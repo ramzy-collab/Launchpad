@@ -16,7 +16,7 @@ import { sheetsConfigured, sheetsStatus } from "../sheets";
 import { ago, appBrowser, appName, fmtBytes, thumb } from "./apps";
 import { connectedAiApps, type AiApp } from "./aiapps";
 import { AI_LOGOS } from "./logos";
-import { BUILDERS, builderKeys, type Builder } from "../builder";
+import { BUILDER_LABEL, BUILDERS, builderKeys, type Builder } from "../builder";
 import { PWA_HEAD } from "../pwa";
 
 export const fmtTime = (ms: number | null) => (ms ? new Date(ms).toISOString().replace("T", " ").slice(0, 16) + " UTC" : "never");
@@ -177,9 +177,9 @@ export async function appSettingsPage(c: Context<AppEnv>, id: string): Promise<R
   // Change it with AI: the person's own Claude or OpenAI key rewrites the app (app_builder flag).
   const keys = c.get("features")?.has("app_builder") ? await builderKeys(c.env, user.email) : null;
   const changeButtons = keys
-    ? (["claude", "openai"] as Builder[])
+    ? (["claude", "openai", "gemini"] as Builder[])
         .filter((b) => keys[b])
-        .map((b) => `<button type="button" class="make-btn" data-build="${b}" data-site="${e(site.id)}"><span class="ai-mini">${AI_LOGOS[b === "claude" ? "claude" : "chatgpt"]}</span>Change it with ${b === "claude" ? "Claude" : "ChatGPT"}</button>`)
+        .map((b) => `<button type="button" class="make-btn" data-build="${b}" data-site="${e(site.id)}"><span class="ai-mini">${AI_LOGOS[b === "openai" ? "chatgpt" : b]}</span>Change it with ${BUILDER_LABEL[b]}</button>`)
         .join("")
     : "";
   const changeSection = keys
@@ -190,7 +190,7 @@ export async function appSettingsPage(c: Context<AppEnv>, id: string): Promise<R
       ? `<p class="muted">Say what to change, in your own words. Your AI rewrites the app and publishes the new version here; its data, sharing and settings stay as they are.</p>
   <textarea rows="3" maxlength="4000" placeholder="Add a dark mode, and a button to export everything as a spreadsheet" aria-label="What should change?"></textarea>
   <div class="make-row">${changeButtons}</div>`
-      : `<p class="muted">Add your Claude or OpenAI API key on <a href="/new">New app</a> (Add your API key), then come back to change this app by describing what you want.</p>`
+      : `<p class="muted">Add your Claude, OpenAI or free Gemini API key on <a href="/new">New app</a> (Add your API key), then come back to change this app by describing what you want.</p>`
   }
 </section>
 
@@ -381,45 +381,76 @@ export async function newAppPage(c: Context<AppEnv>): Promise<Response> {
   const MAKERS: { b: Builder; app: AiApp; label: string }[] = [
     { b: "claude", app: "claude", label: "Make it with Claude" },
     { b: "openai", app: "chatgpt", label: "Make it with ChatGPT" },
+    { b: "gemini", app: "gemini", label: "Make it with Gemini" },
   ];
-  const makers = MAKERS.map(({ b, app, label }) => {
+  // Gemini only builds here (its app can't be opened with an idea typed in), so it shows only with the flag.
+  const makers = MAKERS.filter(({ b }) => builderOn || b !== "gemini").map(({ b, app, label }) => {
     const key = keys[b];
+    // Opening the Claude or ChatGPT app with the idea typed in, for people who connected it.
+    const canOpen = b !== "gemini" && connected.has(app);
     if (!builderOn) {
       return `<div class="make"><button type="button" class="make-btn" data-make="${app}"><span class="ai-mini">${AI_LOGOS[app]}</span>${label}</button>${state(app, `Connect ${app === "claude" ? "Claude" : "ChatGPT"} first`)}</div>`;
     }
     const btn = key
       ? `<button type="button" class="make-btn" data-build="${b}"><span class="ai-mini">${AI_LOGOS[app]}</span>${label}</button>`
-      : connected.has(app)
+      : canOpen
         ? `<button type="button" class="make-btn" data-make="${app}"><span class="ai-mini">${AI_LOGOS[app]}</span>${label}</button>`
         : `<button type="button" class="make-btn" data-dialog="dlg-key-${b}" aria-haspopup="dialog"><span class="ai-mini">${AI_LOGOS[app]}</span>${label}</button>`;
     const note = key
       ? `<span class="badge on"><span class="dot" aria-hidden="true"></span>Your API key …${e(key.hint)}</span><button type="button" class="linkish muted" data-dialog="dlg-key-${b}" aria-haspopup="dialog">Change key</button>`
-      : connected.has(app)
+      : canOpen
         ? `${state(app, "")}<button type="button" class="linkish muted" data-dialog="dlg-key-${b}" aria-haspopup="dialog">Or build it here with an API key</button>`
-        : `<button type="button" class="linkish muted" data-dialog="dlg-key-${b}" aria-haspopup="dialog">Add your API key</button>`;
+        : `<button type="button" class="linkish muted" data-dialog="dlg-key-${b}" aria-haspopup="dialog">${b === "gemini" ? "Add your free API key" : "Add your API key"}</button>`;
     return `<div class="make">${btn}${note}</div>`;
   }).join("\n    ");
+  const KEY_HELP: Record<Builder, { org: string; site: string; placeholder: string; intro: string; steps: string }> = {
+    claude: {
+      org: "Anthropic",
+      site: "console.anthropic.com",
+      placeholder: "sk-ant-…",
+      intro: "What it uses is billed to your own Anthropic account.",
+      steps: "<li>Make sure the account has credits. This is separate from a Claude Pro or Max plan.</li>",
+    },
+    openai: {
+      org: "OpenAI",
+      site: "platform.openai.com",
+      placeholder: "sk-…",
+      intro: "What it uses is billed to your own OpenAI account.",
+      steps: "<li>Make sure the account has credits or billing set up. This is separate from a ChatGPT Plus or Pro plan.</li>",
+    },
+    gemini: {
+      org: "Google",
+      site: "Google AI Studio",
+      placeholder: "AIza… or AQ.…",
+      intro: "Google's free tier is enough to build apps: no credit card needed. It allows a few builds a minute and a daily limit, and Google may use free-tier requests to improve its products.",
+      steps: "<li>Click <strong>Create API key</strong>. You don't need to set up billing.</li>",
+    },
+  };
   const keyDialogs = (builderOn ? MAKERS : []).map(({ b, app }) => {
     const who = BUILDERS[b];
-    const org = b === "claude" ? "Anthropic" : "OpenAI";
-    const console = b === "claude" ? "console.anthropic.com" : "platform.openai.com";
+    const help = KEY_HELP[b];
+    const name = BUILDER_LABEL[b];
     return `<dialog id="dlg-key-${b}" class="howto-dialog" aria-labelledby="dlg-key-${b}-title">
   <form method="dialog" class="dialog-close"><button aria-label="Close">×</button></form>
   <div class="howto">
-    <div class="dialog-head"><span class="ai-logo">${AI_LOGOS[app]}</span><h2 id="dlg-key-${b}-title">Build with ${b === "claude" ? "Claude" : "ChatGPT"} right here</h2></div>
-    <p>Paste an API key once. After that, <strong>Make it</strong> builds your app here and publishes it, with nothing to set up in the ${b === "claude" ? "Claude" : "ChatGPT"} app. What it uses is billed to your own ${org} account.</p>
+    <div class="dialog-head"><span class="ai-logo">${AI_LOGOS[app]}</span><h2 id="dlg-key-${b}-title">Build with ${name} right here</h2></div>
+    <p>Paste an API key once. After that, <strong>Make it</strong> builds your app here and publishes it${b === "gemini" ? "" : `, with nothing to set up in the ${name} app`}. ${help.intro}</p>
     <ol>
-      <li>Open <a href="${who.keyUrl}" target="_blank" rel="noopener">${console}</a> and sign in.</li>
-      <li>Make sure the account has credits or billing set up. This is separate from a ${b === "claude" ? "Claude Pro or Max" : "ChatGPT Plus or Pro"} plan.</li>
-      <li>Create a key, copy it, and paste it below.</li>
+      <li>Open <a href="${who.keyUrl}" target="_blank" rel="noopener">${help.site}</a> and sign in${b === "gemini" ? " with Google" : ""}.</li>
+      ${help.steps}
+      <li>${b === "gemini" ? "Copy the key" : "Create a key, copy it,"} and paste it below.</li>
     </ol>
     <form class="inline" data-action="builder-connect" data-provider="${b}">
-      <input name="apiKey" type="password" autocomplete="off" required placeholder="${b === "claude" ? "sk-ant-…" : "sk-…"}" aria-label="${org} API key">
+      <input name="apiKey" type="password" autocomplete="off" required placeholder="${help.placeholder}" aria-label="${help.org} API key">
       <button>Save key</button>
     </form>
-    <p class="muted">The key is encrypted and only used when you press Make it. Formelab never shows it again.</p>
+    <p class="muted">The key is encrypted and Formelab never shows it again.${
+      b === "gemini"
+        ? " It's the same key as Google Gemini under Connected apps: save or remove it in either place and it changes in both. Your apps can use it for AI features there."
+        : " It's only used when you press Make it or Change it."
+    }</p>
     ${keys[b] ? `<p><button type="button" class="danger" data-action="builder-disconnect" data-provider="${b}">Remove my key …${e(keys[b]!.hint)}</button></p>` : ""}
-    ${keys[b] ? "" : `<p class="muted">Rather use the ${b === "claude" ? "Claude" : "ChatGPT"} app? <button type="button" class="linkish" data-make="${app}">Open it with your idea typed in</button> (needs <a href="/connect#${app}">Formelab connected</a> there).</p>`}
+    ${keys[b] || b === "gemini" ? "" : `<p class="muted">Rather use the ${name} app? <button type="button" class="linkish" data-make="${app}">Open it with your idea typed in</button> (needs <a href="/connect#${app}">Formelab connected</a> there).</p>`}
   </div>
 </dialog>`;
   }).join("\n");
@@ -583,6 +614,7 @@ export async function connectedPage(c: Context<AppEnv>): Promise<Response> {
       <button>${gemini.connected ? "Replace key" : "Connect"}</button>
     </form>
     <p class="muted">Your key is encrypted and never shown to apps or to anyone. Apps you share use your key, so calls from people you share them with count toward your Google usage. Ask your AI for an app "that uses Gemini" and it will use this.</p>
+    ${c.get("features")?.has("app_builder") ? `<p class="muted">This is also the key behind <strong>Make it with Gemini</strong> on <a href="/new">New app</a>: save or remove it in either place and it changes in both.</p>` : ""}
     ${gemini.connected ? `<p><button class="danger" data-action="service-disconnect" data-service="gemini">Disconnect Gemini</button></p>` : ""}
   </div>
 </dialog>

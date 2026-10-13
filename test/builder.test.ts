@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { extractHtml, slugify, titleOf } from "../src/builder";
 import { call, onOutbound, OWNER, publishZip, uniq } from "./helpers";
 
+const GEMINI_KEY = "AIzaSyTESTKEY0123456789abcdefGEMI";
 const CLAUDE_KEY = "sk-ant-api03-TESTKEY0123456789abcdefWXYZ";
 const OPENAI_KEY = "sk-proj-TESTKEY0123456789abcdefOPEN";
 const APP_HTML = `<!doctype html><html><head><title>Lunch Sign-up</title><link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'/%3E"></head><body><h1>Lunch</h1></body></html>`;
@@ -29,7 +30,7 @@ function claudeStream(text: string, stop = "end_turn") {
   ]);
 }
 
-function mockAi(opts: { claudeText?: string; claudeStop?: string; openaiText?: string } = {}) {
+function mockAi(opts: { claudeText?: string; claudeStop?: string; openaiText?: string; geminiText?: string; geminiFinish?: string } = {}) {
   seen.length = 0;
   onOutbound(async (req) => {
     const body = req.method === "POST" ? await req.text() : "";
@@ -55,6 +56,18 @@ function mockAi(opts: { claudeText?: string; claudeStop?: string; openaiText?: s
           .join(""),
         { headers: { "content-type": "text/event-stream" } },
       );
+    }
+    if (url.hostname === "generativelanguage.googleapis.com") {
+      if (req.headers.get("x-goog-api-key") !== GEMINI_KEY) return Response.json({ error: { message: "API key not valid." } }, { status: 400 });
+      if (req.method === "GET" && url.pathname.endsWith("/models")) {
+        return Response.json({ models: [{ name: "models/gemini-3.5-flash-lite" }, { name: "models/gemini-3.5-flash" }, { name: "models/gemini-3.6-flash-preview" }, { name: "models/gemini-3.5-pro" }, { name: "models/gemini-2.5-flash" }] });
+      }
+      if (req.method === "GET") return Response.json({ name: "models/gemini-3.5-flash-lite" });
+      const text = opts.geminiText ?? APP_HTML;
+      const chunk = (t: string, extra: Record<string, unknown> = {}) => `data: ${JSON.stringify({ candidates: [{ content: { parts: [{ text: t }] }, ...extra }] })}\r\n\r\n`;
+      return new Response(chunk(text.slice(0, 30)) + chunk(text.slice(30), { finishReason: opts.geminiFinish ?? "STOP" }) + `data: ${JSON.stringify({ usageMetadata: { totalTokenCount: 77 } })}\r\n\r\n`, {
+        headers: { "content-type": "text/event-stream" },
+      });
     }
     return new Response("unexpected", { status: 599 });
   });
@@ -137,13 +150,43 @@ describe("building apps with the person's own API key", () => {
     expect((await build(me, "claude", "x")).error.code).toBe("builder_no_html");
     mockAi({ claudeStop: "max_tokens" });
     expect((await build(me, "claude", "x")).error.code).toBe("builder_too_long");
-    expect((await call("/_api/admin/build", { as: me, method: "POST", json: { provider: "gemini", idea: "x" } })).status).toBe(400);
+    expect((await call("/_api/admin/build", { as: me, method: "POST", json: { provider: "mistral", idea: "x" } })).status).toBe(400);
 
     // Removing the key works, and the page asks for one again.
     expect((await call("/_api/admin/builders/claude", { as: me, method: "DELETE" })).status).toBe(200);
     const page = await (await call("/app/new", { as: me })).text();
     expect(page).toContain('data-dialog="dlg-key-claude"');
     expect(page).not.toContain('data-build="claude"');
+  });
+
+  it("builds with a free Gemini key, which is the same key as the Gemini connected app", async () => {
+    mockAi();
+    const me = await person("g");
+    expect((await call("/_api/admin/features/connected_apps/users", { as: OWNER, method: "POST", json: { email: me } })).status).toBe(200);
+    expect((await connect(me, "gemini", "AIzaSyWRONGKEY0123456789abcdefXXXX")).status).toBe(400);
+
+    // Saved on New app, it shows as connected under Connected apps.
+    expect(await (await connect(me, "gemini", GEMINI_KEY)).json()).toEqual({ connected: true, hint: "GEMI" });
+    expect(await (await call("/_api/admin/services/gemini", { as: me })).json()).toMatchObject({ connected: true, hint: "GEMI" });
+    expect(await (await call("/app/connected", { as: me })).text()).toContain("Make it with Gemini");
+
+    const last = await build(me, "gemini", "A habit tracker");
+    expect(last.done).toMatchObject({ title: "Lunch Sign-up", model: "gemini-3.5-flash" });
+    const sent = seen.find((x) => x.method === "POST")!;
+    expect(sent.url).toBe("https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:streamGenerateContent?alt=sse");
+    expect(JSON.parse(sent.body)).toMatchObject({ contents: [{ role: "user", parts: [{ text: "A habit tracker" }] }] });
+
+    mockAi({ geminiFinish: "MAX_TOKENS" });
+    expect((await build(me, "gemini", "x")).error.code).toBe("builder_too_long");
+
+    // Removed on New app, it's gone from Connected apps too; and the other way round.
+    expect((await call("/_api/admin/builders/gemini", { as: me, method: "DELETE" })).status).toBe(200);
+    expect(await (await call("/_api/admin/services/gemini", { as: me })).json()).toMatchObject({ connected: false });
+    mockAi();
+    expect((await call("/_api/admin/services/gemini", { as: me, method: "PUT", json: { apiKey: GEMINI_KEY } })).status).toBe(200);
+    const page = await (await call("/app/new", { as: me })).text();
+    expect(page).toContain('data-build="gemini"');
+    expect(page).toContain("Your API key …GEMI");
   });
 
   it("changes an existing app from its settings page, keeping its other files and settings", async () => {
@@ -157,7 +200,7 @@ describe("building apps with the person's own API key", () => {
     // No key yet: the page says where to add one.
     let page = await (await call(`/app/apps/${id}`, { as: me })).text();
     expect(page).toContain("Change it with AI");
-    expect(page).toContain("Add your Claude or OpenAI API key");
+    expect(page).toContain("Add your Claude, OpenAI or free Gemini API key");
 
     mockAi({ claudeText: `<!doctype html><html><head><title>Chores</title><link rel="stylesheet" href="style.css"></head><body>New chores, with dark mode</body></html>` });
     expect((await connect(me, "claude", CLAUDE_KEY)).status).toBe(200);
