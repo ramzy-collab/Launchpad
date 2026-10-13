@@ -25,7 +25,7 @@ describe("admin: users", () => {
     const pub = await publishHtml(gone, ns, "mine", PAGE("theirs"));
     const { site } = await pub.json<{ site: { id: string } }>();
     await call(`https://${ns}.example.app/_api/kv/k`, { as: gone, mount: "/mine/", method: "PUT", body: '"v"' });
-    await call(`https://${ns}.example.app/_api/secrets/s`, { as: gone, mount: "/mine/", method: "PUT", json: { value: "shh" } });
+    await call(`https://${ns}.example.app/_api/secrets/s`, { as: gone, mount: "/mine/", method: "PUT", json: { hosts: ["api.test"], value: "shh" } });
     await call("/_api/admin/tokens", { as: gone, method: "POST", json: { name: "t" } });
     // An app of the owner's shared with them, and a namespace they edit.
     const ownerNs = uniq();

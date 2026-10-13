@@ -152,7 +152,7 @@ describe("app activity logs", () => {
     expect((await patch({ visibility: "all", title: "Renamed app" })).status).toBe(200);
     // Saving the settings form unchanged logs nothing.
     expect((await patch({ visibility: "all", title: "Renamed app", allowed_emails: [viewer], editors: [editor] })).status).toBe(200);
-    await call(`https://${ns}.example.app/_api/secrets/api-key`, { as: OWNER, mount: "/log/", method: "PUT", json: { value: "shh" } });
+    await call(`https://${ns}.example.app/_api/secrets/api-key`, { as: OWNER, mount: "/log/", method: "PUT", json: { hosts: ["api.test"], value: "shh" } });
 
     const res = await call(url, { as: OWNER });
     expect(res.status).toBe(200);

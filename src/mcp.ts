@@ -139,6 +139,10 @@ export function buildServer(ctx: Ctx): McpServer {
         visibility: z.enum(["all", "restricted"]).optional(),
         allowed_emails: emails,
         editors: emails,
+        sheets: z
+          .array(z.string())
+          .optional()
+          .describe("Owner only: the Google spreadsheets (ids or links) this app may use through formelab.sheets. Replaces the list."),
       },
       annotations: { idempotentHint: true },
     },

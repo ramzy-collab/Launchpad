@@ -23,7 +23,8 @@ server.
 3. **Build a single-file app**: one complete `index.html` with inline CSS and JS.
    - Include `<head>` and `<meta name="viewport">`; keep asset URLs relative.
    - Add `<script src="/_platform/sdk.js"></script>` only if you use the SDK.
-   - Never embed API keys. Add a small settings form that calls `formelab.secrets.set(...)`, and
+   - Never embed API keys. Add a small settings form that calls
+     `formelab.secrets.set(name, value, { hosts: ["api.example.com"] })` (hosts are required), and
      call APIs with `formelab.secrets.proxy(name, { url, headers })` using `{{value}}`.
    - No background jobs: fetch on load or on click; cache in `localStorage` for fast first paint.
    - Wrap SDK calls in `try/catch` and show `e.message` and `e.hint`.

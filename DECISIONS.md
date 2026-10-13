@@ -93,6 +93,21 @@ Choices made while building v1, including where the build differs from the spec 
   no DNS API, so a public hostname that resolves to a private address can't be detected here.
   Cloudflare's network does not route Worker subrequests into private networks, which covers this
   in practice. The check runs **after** placeholder substitution, so a secret can't smuggle a host.
+- **Host allow-lists:** every secret is stored with the hosts it may be sent to (`hosts`, a JSON
+  column, required when setting a secret). The proxy checks the final URL's host after
+  substitution and returns `host_not_allowed` otherwise. Without this, anyone who could view an app
+  could send its secrets to a server of their own (audit finding 1). Hosts are exact names or
+  `*.domain` for subdomains, each must pass the SSRF guard, and setting a secret always replaces
+  value and hosts together, so an editor can't widen the hosts of a value they never saw. Secrets
+  saved before migration `0010` have `hosts = NULL` and are refused (`secret_needs_hosts`) until
+  set again: the owner chose a clean break over leaving existing secrets open.
+- **Google Sheets is limited per app (audit finding N1).** The owner's Google token reaches every
+  spreadsheet they own, so each app carries its own list of spreadsheet ids (`sites.sheets`).
+  `sheetsCall` refuses any path that doesn't name a listed spreadsheet (`sheet_not_allowed`), before
+  calling Google. Only the app's owner can change the list, since it's their account; editors
+  can't. Creating a spreadsheet (`POST spreadsheets`) is owner-only too, and the new id is added to
+  the app's list. The `drive.file` scope would be tighter still, but would make every existing
+  connection reconnect and stop apps opening sheets by id; it's a possible later step.
 - **Redaction (beyond the spec):** some APIs echo request headers back (httpbin does). The proxy
   replaces every substituted value of 6+ characters (and the `{{basic}}` value) with `[redacted]` in
   the returned text and `location`, so "secret values never appear in any API response" holds even

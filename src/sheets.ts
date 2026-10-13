@@ -13,8 +13,8 @@ import { badRequest, err } from "./errors";
 import { appOrigin } from "./hosts";
 import { decryptSecret, encryptSecret, rateLimit } from "./secrets";
 import { cookieHeader, readCookie } from "./session";
-import type { SiteRow } from "./sites";
-import { b64encode, base32, randomBytes } from "./util";
+import { addSiteSheet, type SiteRow } from "./sites";
+import { b64encode, base32, parseJsonArray, randomBytes } from "./util";
 
 const b64url = (bytes: Uint8Array) => b64encode(bytes).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 
@@ -208,6 +208,24 @@ export async function sheetsCall(env: Env, site: SiteRow, viewer: User, req: She
   if (url.origin !== "https://sheets.googleapis.com" || !url.pathname.startsWith("/v4/spreadsheets") || /%2e/i.test(path)) {
     throw badRequest("That isn't a Google Sheets API path.", 'Use a path like "spreadsheets/<id>/values/Sheet1!A1:C10".');
   }
+  // The owner's connection reaches every spreadsheet in their Google account, so each app may only
+  // use the spreadsheets its owner listed for it (or created through it).
+  const sheetId = /^spreadsheets\/([^/:]+)/.exec(path)?.[1];
+  const creating = method === "POST" && path === "spreadsheets";
+  if (creating) {
+    if (viewer.email !== site.owner_email) {
+      throw err(403, "sheets_owner_only", "Only the app's owner can create spreadsheets with it.", "New spreadsheets go into the owner's Google account. Ask the owner to create it.");
+    }
+  } else if (!sheetId) {
+    throw badRequest('path must name a spreadsheet, like "spreadsheets/<id>/values/Sheet1!A1:C10".', "Use formelab.sheets.read/append/update, or create().");
+  } else if (!parseJsonArray(site.sheets).includes(sheetId)) {
+    throw err(
+      403,
+      "sheet_not_allowed",
+      "This app isn't allowed to use that spreadsheet.",
+      "The app's owner can add it under the app's settings in Formelab (Google Sheets), or with update_site's sheets field.",
+    );
+  }
   if (req.query && typeof req.query === "object") {
     for (const [k, v] of Object.entries(req.query as Record<string, unknown>)) {
       for (const item of Array.isArray(v) ? v : [v]) url.searchParams.append(k, String(item));
@@ -244,6 +262,10 @@ export async function sheetsCall(env: Env, site: SiteRow, viewer: User, req: She
     data = text ? JSON.parse(text) : null;
   } catch {
     data = text;
+  }
+  if (res.ok && creating) {
+    const created = (data as { spreadsheetId?: unknown })?.spreadsheetId;
+    if (typeof created === "string" && /^[A-Za-z0-9_-]{20,128}$/.test(created)) await addSiteSheet(env, site.id, created);
   }
   if (!res.ok) {
     const message = (data as { error?: { message?: string } })?.error?.message ?? `HTTP ${res.status}`;

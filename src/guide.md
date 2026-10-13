@@ -58,7 +58,8 @@ Apps get platform features through a small browser SDK, `window.formelab`:
 10. **To read or write a spreadsheet, use `formelab.sheets`** (Google Sheets through the owner's
    connected Google account). Never ask for Google credentials. `whoami` says whether it's
    connected (`connectedApps.googleSheets`); if not, tell the user to connect it in Formelab
-   (Connected apps → Google Sheets).
+   (Connected apps → Google Sheets). An app can only use the spreadsheets listed for it: after
+   publishing, pass the spreadsheet ids or links the user gave you to `update_site`'s `sheets`.
 <!-- /flag:connected_apps -->
 
 ## 3. SDK reference
@@ -91,14 +92,22 @@ await formelab.kv.delete("settings");
 Only the app's owner and editors can set or delete secrets. Anyone who can view the app can *use*
 them through the proxy, but nobody can read them back.
 
+Every secret names the **hosts** it may be sent to. The proxy refuses any other host, so a viewer
+can't point a secret at a server of their own. List exact host names (`api.example.com`), or
+`*.example.com` for any subdomain of `example.com` (not `example.com` itself). Use the API's real
+host, with no scheme or path.
+
 ```js
-await formelab.secrets.set("weather_key", "abc123");                         // a string
-await formelab.secrets.set("stripe", { public: "pk_...", secret: "sk_..." });  // an object
+await formelab.secrets.set("weather_key", "abc123", { hosts: ["api.openweathermap.org"] });  // a string
+await formelab.secrets.set("stripe", { public: "pk_...", secret: "sk_..." }, { hosts: ["api.stripe.com"] });  // an object
 await formelab.secrets.list();                                                 // ["stripe", "weather_key"]
 await formelab.secrets.delete("weather_key");
 ```
 
 Names are 1–64 characters of `a-z 0-9 _ -`. Values are at most 8 KB; at most 50 secrets per app.
+Setting a secret again replaces both its value and its hosts. To add a host, set the secret again
+with the full list. A secret saved before host lists existed fails with `secret_needs_hosts` until it
+is set again.
 
 ### `formelab.secrets.proxy(name, { url, method, headers, body })`
 
@@ -130,7 +139,8 @@ await formelab.secrets.proxy("openai", {
 });
 ```
 
-Rules: `https` only; public hosts only (no localhost, private IPs or the platform itself);
+Rules: only the secret's own hosts (`host_not_allowed` otherwise); `https` only; public hosts only
+(no localhost, private IPs or the platform itself);
 GET/POST/PUT/PATCH/DELETE; body up to 1 MB; 20-second timeout; responses are returned as text up
 to 5 MB (`truncated: true` if cut); redirects are not followed (you get the 3xx and a `location`);
 60 calls per minute per app; an unknown placeholder is an error. If the API echoes the secret back,
@@ -173,6 +183,11 @@ Formelab. Anyone who can open the app can use it, as the owner; calls are limite
 per app and show up in the app's activity log. A spreadsheet's id is the long part of its URL:
 `docs.google.com/spreadsheets/d/<id>/edit`.
 
+**An app can only use the spreadsheets listed for it.** The owner lists them in the app's settings
+in Formelab, or an AI sets them with `update_site` (`sheets: ["<id or link>"]`). Only the owner can
+change the list, and only the owner can `create()` a spreadsheet; one created through the app is
+added to its list automatically. Any other spreadsheet fails with `sheet_not_allowed`.
+
 ```js
 const { connected } = await formelab.sheets.available();   // false: the owner hasn't connected it
 const rows = await formelab.sheets.read(id, "Sheet1!A1:C50");              // [["Name","Email"], ...]
@@ -184,16 +199,55 @@ await formelab.sheets.request("POST", `spreadsheets/${id}:batchUpdate`, { body: 
 ```
 
 Values are entered as if typed (`USER_ENTERED`), so numbers, dates and formulas work. Store the
-spreadsheet id in KV (or ask the owner for it in a settings form) rather than hard-coding it.
-Errors: `sheets_not_connected` (409), `sheets_reconnect` (the owner must reconnect),
+spreadsheet id in KV rather than hard-coding it.
+Errors: `sheets_not_connected` (409), `sheet_not_allowed` (403: not on the app's list),
+`sheets_owner_only` (403: only the owner can create), `sheets_reconnect` (the owner must reconnect),
 `sheets_forbidden`, `sheets_not_found`, `rate_limited`. Show `e.message` and `e.hint`.
+
+#### Combining several spreadsheets
+
+An app can list several spreadsheets (up to 50) and combine them, for example sales, stock and
+staffing into one dashboard. List every one in the app's settings or with `update_site`'s
+`sheets`. Each spreadsheet read is one call against the app's 60 calls a minute, shared by
+everyone using the app, so **don't re-read every sheet for every visitor**. Cache the combined
+result in KV and refresh it only when it's a few minutes old:
+
+```js
+const SOURCES = [SALES_ID, STOCK_ID, STAFF_ID];   // the ids listed for this app (or keep them in KV)
+const MAX_AGE = 5 * 60 * 1000;                     // refresh at most every 5 minutes
+
+async function combined() {
+  const cached = await formelab.kv.get("combined");
+  if (cached && Date.now() - cached.at < MAX_AGE) return cached.data;
+  try {
+    const [sales, stock, staff] = await Promise.all([
+      formelab.sheets.read(SOURCES[0], "Sheet1!A:F"),
+      formelab.sheets.read(SOURCES[1], "Sheet1!A:D"),
+      formelab.sheets.read(SOURCES[2], "Roster!A:C"),
+    ]);
+    const data = summarize(sales, stock, staff);    // keep only what the page shows
+    await formelab.kv.set("combined", { at: Date.now(), data });
+    return data;
+  } catch (e) {
+    if (cached) return cached.data;                 // rate-limited or offline: show the last good result
+    throw e;
+  }
+}
+```
+
+- Read several ranges of **one** spreadsheet in a single call with
+  `formelab.sheets.request("GET", "spreadsheets/" + id + "/values:batchGet", { query: { ranges: ["A!A:C", "B!A:C"] } })`.
+- A KV value holds at most 64 KB, so store the summary the page needs, not every raw row. For more,
+  split it across keys (`combined:sales`, `combined:stock`).
+- Show when the data was last refreshed (`cached.at`), and offer a "Refresh" button that skips the
+  cache, for the owner only, so viewers can't use up the limit.
 
 <!-- /flag:connected_apps -->
 ## 4. Patterns
 
 ### Dashboard over an external API
 
-1. A settings panel (shown to editors) calls `formelab.secrets.set("api_key", value)`.
+1. A settings panel (shown to editors) calls `formelab.secrets.set("api_key", value, { hosts: ["api.example.com"] })`.
 2. On load, render the last snapshot from `localStorage` immediately, then refresh via the proxy.
 3. Save the fresh snapshot to `localStorage` (and to KV if every viewer should share it).
 
@@ -277,7 +331,7 @@ visits, lets an editor store a key, and calls `https://httpbin.org/anything` thr
     $("keyform").addEventListener("submit", async (ev) => {
       ev.preventDefault();
       try {
-        await formelab.secrets.set("demo_key", $("key").value);
+        await formelab.secrets.set("demo_key", $("key").value, { hosts: ["httpbin.org"] });
         $("key").value = "";
         $("error").textContent = "Key saved.";
       } catch (e) { fail(e); }
@@ -335,7 +389,7 @@ The script calls `POST https://<DOMAIN>/_api/deploy/sites` (multipart: `file`, `
 
 - [ ] One self-contained `index.html` unless the user needs more files.
 - [ ] Has `<head>`; all asset URLs are relative; nothing points at `/_api/` or `/_platform/` except the SDK script tag.
-- [ ] No API keys or passwords anywhere in the code. Secrets go through `secrets.set` + `secrets.proxy`.
+- [ ] No API keys or passwords anywhere in the code. Secrets go through `secrets.set` (with `hosts`) + `secrets.proxy`.
 - [ ] Data loads on page load or user action (no background jobs). Fast first paint from a cache where it helps.
 - [ ] Every SDK call is wrapped in `try/catch`, and errors show `e.message` and `e.hint` to the user.
 - [ ] KV keys are namespaced (`"vote:" + email`), values stay well under 64 KB.
