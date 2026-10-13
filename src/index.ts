@@ -8,10 +8,11 @@ import { appIcon } from "./icons";
 import { sheetsCallback, sheetsConnect } from "./sheets";
 import { enabledFlags, withFlags } from "./flags";
 import { accountPage, appActivityPage, appSettingsPage, connectedPage, dashboardPage, keysPage, newAppPage, sharedPage, spacesPage } from "./dashboard/page";
-import { homePage, loginPage } from "./dashboard/home";
+import { homePage } from "./dashboard/home";
+import { forgotGet, forgotPost, resetGet, resetPost, signInCode, signInGet, signInPost } from "./signin";
 import type { AppEnv, Env } from "./env";
 import { forbidden, jsonError, onError, unauthorized } from "./errors";
-import { CONSENT_JS, DASHBOARD_JS, FORMELAB_CSS, GUIDE_MD, HOME_CSS, SDK_JS, SITE_JS, THEME_JS } from "./generated/assets";
+import { ASSET_VERSION, CONSENT_JS, DASHBOARD_JS, FORMELAB_CSS, GUIDE_MD, HOME_CSS, SDK_JS, SIGNIN_JS, SITE_JS, THEME_JS } from "./generated/assets";
 import { apexOrigin, AUTHORIZE_PATH, authorizeGet, authorizePost, oauthProvider } from "./oauth";
 import { runtimeApi } from "./runtime";
 import { appCallback, appHandoff, loginCallback, loginStart, logout, safeReturn, workosEnabled } from "./login";
@@ -30,12 +31,19 @@ const guide = async (c: Context<AppEnv>) => text(withFlags(GUIDE_MD, await enabl
 const unauthorizedPage = () => plainPage(401, "Sign-in required", "Log in to Formelab, then reload this page.");
 
 /** Whether the request carries any sign-in at all (a session cookie or an Access JWT). */
-const asset = (body: string, type: string) => () => text(body, type, "public, max-age=300");
-const assetRoutes: [string, () => Response][] = [
+/**
+ * Pages link assets with ?v=<hash of this build's assets>. A request for another build's version
+ * (during a deploy, a new page can reach an old copy of the Worker) is answered but not cached, so
+ * the browser doesn't keep a stale stylesheet under the new address.
+ */
+const asset = (body: string, type: string) => (c: Context<AppEnv>) =>
+  text(body, type, c.req.query("v") === ASSET_VERSION ? "public, max-age=300" : "no-store");
+const assetRoutes: [string, (c: Context<AppEnv>) => Response][] = [
   ["/_assets/formelab.css", asset(FORMELAB_CSS, "text/css; charset=utf-8")],
   ["/_assets/home.css", asset(HOME_CSS, "text/css; charset=utf-8")],
   ["/_assets/theme.js", asset(THEME_JS, "text/javascript; charset=utf-8")],
   ["/_assets/site.js", asset(SITE_JS, "text/javascript; charset=utf-8")],
+  ["/_assets/signin.js", asset(SIGNIN_JS, "text/javascript; charset=utf-8")],
   ["/_assets/dashboard.js", asset(DASHBOARD_JS, "text/javascript; charset=utf-8")],
   ["/_assets/consent.js", asset(CONSENT_JS, "text/javascript; charset=utf-8")],
   ["/_assets/services.svg", asset(SERVICES_SPRITE, "image/svg+xml")],
@@ -70,11 +78,14 @@ apex.get("/", async (c) => {
   if (hasSignIn(c.req.raw) && (await identifyBrowser(c.req.raw, c.env))) return c.redirect(`${appOrigin(c.env, c.req.url)}/`, 302);
   return homePage();
 });
-apex.get("/login", async (c) => {
-  const returnTo = safeReturn(c.req.query("return"));
-  if (hasSignIn(c.req.raw) && (await identifyBrowser(c.req.raw, c.env))) return c.redirect(returnTo, 302);
-  return loginPage({ workos: workosEnabled(c.env), returnTo });
-});
+// Formelab's own sign-in page (see signin.ts); Google and stray WorkOS sign-ins use /auth/*.
+apex.get("/login", signInGet);
+apex.post("/login", signInPost);
+apex.post("/login/code", signInCode);
+apex.get("/login/forgot", forgotGet);
+apex.post("/login/forgot", forgotPost);
+apex.get("/reset-password", resetGet);
+apex.post("/reset-password", resetPost);
 apex.get("/auth/login", loginStart);
 apex.get("/auth/callback", loginCallback);
 apex.post("/_api/waitlist", async (c) => {
@@ -202,11 +213,13 @@ webApp.notFound(() => plainPage(404, "Not found", "There is nothing here."));
 
 // The admin panel (admins only; adminPage answers 404 to everyone else).
 const adminApp = signedInHost(requireAdminSignIn, (app) => {
-  app.get("/login", async (c) => {
-    const returnTo = safeReturn(c.req.query("return"), "/");
-    if (hasSignIn(c.req.raw) && (await identifyBrowser(c.req.raw, c.env))) return c.redirect(returnTo, 302);
-    return loginPage({ workos: workosEnabled(c.env), returnTo, admin: true });
-  });
+  app.get("/login", signInGet);
+  app.post("/login", signInPost);
+  app.post("/login/code", signInCode);
+  app.get("/login/forgot", forgotGet);
+  app.post("/login/forgot", forgotPost);
+  app.get("/reset-password", resetGet);
+  app.post("/reset-password", resetPost);
   app.get("/auth/login", loginStart);
   app.get("/auth/callback", loginCallback);
 });

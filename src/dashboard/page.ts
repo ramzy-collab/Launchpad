@@ -530,5 +530,5 @@ export async function accountPage(c: Context<AppEnv>): Promise<Response> {
 /** The login flow on DOMAIN, ending with a fresh session handed back to this page. */
 function reauthUrl(c: Context<AppEnv>): string {
   const back = `/auth/app?return=${encodeURIComponent(`${appOrigin(c.env, c.req.url)}/account`)}`;
-  return `${aiOrigin(c.env, c.req.url)}/auth/login?provider=email&return=${encodeURIComponent(back)}`;
+  return `${aiOrigin(c.env, c.req.url)}/login?return=${encodeURIComponent(back)}`;
 }

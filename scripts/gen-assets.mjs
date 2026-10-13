@@ -16,6 +16,7 @@ const assets = {
   HOME_CSS: "src/dashboard/home.css",
   THEME_JS: "src/dashboard/theme.js",
   SITE_JS: "src/dashboard/site.js",
+  SIGNIN_JS: "src/dashboard/signin.js",
   CONSENT_JS: "src/dashboard/consent.js",
   SKILL_MD: "skill/SKILL.md",
   CHANGELOG_MD: "CHANGELOG.md",

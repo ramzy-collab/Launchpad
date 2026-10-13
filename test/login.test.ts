@@ -92,11 +92,22 @@ afterEach(() => {
 });
 
 describe("login page and WorkOS redirect", () => {
-  it("offers Google and email, keeping where to return", async () => {
-    const html = await (await w("/login?return=%2Fapp%2Fshared")).text();
+  it("is a Formelab page asking for an email first, with Google below, keeping where to return", async () => {
+    const res = await w("/login?return=%2Fapp%2Fshared");
+    expect(res.status).toBe(200);
+    const html = await res.text();
     expect(html).toContain('href="/auth/login?provider=google&amp;return=%2Fapp%2Fshared"');
-    expect(html).toContain('href="/auth/login?provider=email&amp;return=%2Fapp%2Fshared"');
+    expect(html).toContain('<form method="post" action="/login"');
+    expect(html).toContain('name="return" value="/app/shared"');
+    expect(html).toContain("Continue with email");
+    // No Log in / Join the waitlist buttons in the top bar during sign-in.
+    expect(html).not.toContain('class="nav-r"');
+    expect(html).not.toContain('type="password"');
+    expect(html).not.toContain("Last used");
+    expect(res.headers.get("content-security-policy")).toContain("form-action 'self' https://example.app https://*.example.app;".slice(0, -1));
     expect(html).not.toMatch(/\son[a-z]+=/i);
+    expect(html).toContain('/_assets/signin.js?v=');
+    expect((await (await w("/login?return=https%3A%2F%2Fevil.test%2F")).text())).toContain('name="return" value="/app"');
   });
 
   it("without WorkOS keys, keeps the Cloudflare Access button", async () => {
@@ -311,16 +322,26 @@ describe("accounts and the waitlist, continued", () => {
     const to = new URL(refreshTarget(await res.text()));
     expect(to.origin + to.pathname).toBe("https://api.workos.com/user_management/sessions/logout");
     expect(to.searchParams.get("session_id")).toBe(`session_${email}`);
-    expect(to.searchParams.get("return_to")).toBe("https://example.com/");
+    expect(to.searchParams.get("return_to")).toBe("https://example.com/login");
     expect((await w(`${APP}/`, { headers: { cookie: appCookie } })).status).toBe(302);
     expect((await w("/auth/app?return=" + encodeURIComponent(APP + "/"), { headers: { cookie } })).headers.get("location")).toMatch(/^\/login/);
+  });
+
+  it("the web app logs out in the background, then goes where the answer says", async () => {
+    const email = `bg-${uniq()}@example.com`;
+    const { cookie } = await signIn(email);
+    const res = await w(`${APP}/auth/logout`, { method: "POST", headers: { cookie: await hostCookie(cookie, APP), origin: APP, "x-formelab-request": "1" } });
+    expect(res.headers.get("content-type")).toContain("application/json");
+    expect(res.headers.getSetCookie().join("\n")).toContain("Max-Age=0");
+    const { to } = (await res.json()) as { to: string };
+    expect(new URL(to).searchParams.get("session_id")).toBe(`session_${email}`);
   });
 
   it("logging out a session from before WorkOS sessions were recorded still works", async () => {
     const { cookie } = await signIn(`old-${uniq()}@example.com`);
     await env.DB.prepare("UPDATE sessions SET workos_sid = NULL").run();
     const res = await w("/auth/logout", { method: "POST", headers: { cookie, origin: "https://example.com" } });
-    expect(refreshTarget(await res.text())).toBe("https://example.com/");
+    expect(refreshTarget(await res.text())).toBe("https://example.com/login");
   });
 
   it("refuses a logout posted from another site", async () => {
@@ -487,7 +508,7 @@ describe("passwords", () => {
     expect(page).not.toContain('data-action="password-set"');
     const relogin = /href="([^"]+)">Log in again/.exec(page)![1]!.replace(/&amp;/g, "&");
     const url = new URL(relogin);
-    expect(url.origin + url.pathname).toBe("https://example.com/auth/login");
+    expect(url.origin + url.pathname).toBe("https://example.com/login");
     expect(url.searchParams.get("return")).toBe(`/auth/app?return=${encodeURIComponent(`${APP}/account`)}`);
 
     const res = await put(appCookie, "correct horse battery");
@@ -519,5 +540,185 @@ describe("passwords", () => {
     });
     expect(res.status).toBe(403);
     expect(passwordsSet).toHaveLength(0);
+  });
+});
+
+describe("Formelab's own sign-in page", () => {
+  let calls: { url: string; body: Record<string, unknown> }[] = [];
+  /** WorkOS's API: `answer` decides each call's response; unknown calls fail loudly. */
+  function mockApi(answer: (path: string, body: Record<string, unknown>) => Response | undefined) {
+    calls = [];
+    onOutbound(async (req) => {
+      const body = (await req.json()) as Record<string, unknown>;
+      calls.push({ url: req.url, body });
+      return answer(new URL(req.url).pathname, body) ?? new Response("unexpected", { status: 599 });
+    });
+  }
+  const signedIn = (email: string, method = "MagicAuth") =>
+    Response.json({
+      user: { id: "user_" + email, email, email_verified: true, first_name: "Pat", last_name: null },
+      access_token: accessToken("session_" + email),
+      authentication_method: method,
+    });
+
+  const post = (path: string, fields: Record<string, string>, opts: { origin?: string; cookie?: string; host?: string } = {}) => {
+    const host = opts.host ?? "https://example.com";
+    const headers: Record<string, string> = { origin: opts.origin ?? host, "content-type": "application/x-www-form-urlencoded", "cf-connecting-ip": "203.0.113.9", "user-agent": "test-browser" };
+    if (opts.cookie) headers.cookie = opts.cookie;
+    return w(host + path, { method: "POST", headers, body: new URLSearchParams(fields).toString() });
+  };
+
+  it("asks people with a password for it, and logs them in", async () => {
+    const email = `pass-${uniq()}@example.com`;
+    await env.DB.prepare("INSERT INTO users (email, created_at, has_password) VALUES (?, 0, 1)").bind(email).run();
+    mockApi((path, body) => (path === "/user_management/authenticate" && body.password === "right password!" ? signedIn(email, "Password") : undefined));
+    const step = await post("/login", { email: email.toUpperCase(), action: "email", return: "/app/shared" });
+    const stepHtml = await step.text();
+    expect(stepHtml).toContain("Enter your password");
+    expect(stepHtml).toContain('autocomplete="current-password"');
+    expect(stepHtml).toContain(`value="${email}"`);
+    expect(stepHtml).not.toContain("set a password");
+    expect(calls).toHaveLength(0);
+
+    const res = await post("/login", { email, password: "right password!", action: "password", return: "/app/shared" });
+    // Straight on, no page in between: the login page's CSP lets the form lead to the web app.
+    expect(res.status).toBe(303);
+    expect(res.headers.get("location")).toBe("/app/shared");
+    const cookie = cookieFrom(res, "__Host-fl_session")!;
+    expect(cookie).not.toBeNull();
+    expect(calls[0]!.body).toMatchObject({ grant_type: "password", email, client_id: "client_test", client_secret: "sk_test", ip_address: "203.0.113.9", user_agent: "test-browser" });
+    // A real session, recording the WorkOS session for logout.
+    const row = await env.DB.prepare("SELECT workos_sid FROM sessions WHERE email = ?").bind(email).first<{ workos_sid: string }>();
+    expect(row!.workos_sid).toBe(`session_${email}`);
+    // The next visit labels email as the way they logged in last time.
+    const last = cookieFrom(res, "__Host-fl_last")!;
+    expect(last).toBe("__Host-fl_last=email");
+    expect(await (await w("/login", { headers: { cookie: last } })).text()).toContain("Last used");
+  });
+
+  it("asks everyone for a password first and only emails a code when asked", async () => {
+    const email = `new-${uniq()}@example.com`;
+    mockApi((path) => (path === "/user_management/magic_auth" ? Response.json({ id: "ma_1" }) : undefined));
+    const step = await post("/login", { email, action: "email" });
+    const stepHtml = await step.text();
+    expect(stepHtml).toContain("Enter your password");
+    expect(stepHtml).toContain("haven&#39;t set a password".replace("&#39;", "'"));
+    expect(calls).toHaveLength(0);
+
+    const res = await post("/login", { email, action: "code" });
+    const html = await res.text();
+    expect(html).toContain("We sent a code to <b>" + email);
+    expect(calls[0]!.url).toBe("https://api.workos.com/user_management/magic_auth");
+    expect(html).toContain('value="use-password"');
+    expect(await (await post("/login", { email, action: "use-password" })).text()).toContain("Enter your password");
+  });
+
+  it("remembers that someone has a password once they log in with one", async () => {
+    const email = `remember-${uniq()}@example.com`;
+    mockApi(() => signedIn(email, "Password"));
+    await post("/login", { email, password: "a password here", action: "password" });
+    const row = await env.DB.prepare("SELECT has_password FROM users WHERE email = ?").bind(email).first<{ has_password: number }>();
+    expect(row!.has_password).toBe(1);
+  });
+
+  it("says so when the password is wrong, keeping the email", async () => {
+    mockApi(() => Response.json({ error: "invalid_grant", error_description: "Invalid credentials." }, { status: 400 }));
+    const res = await post("/login", { email: "who@example.com", password: "nope", action: "password" });
+    expect(res.status).toBe(400);
+    const html = await res.text();
+    expect(html).toContain("That password isn&#39;t right");
+    expect(html).toContain('value="who@example.com"');
+    expect(cookieFrom(res, "__Host-fl_session")).toBeNull();
+  });
+
+  it("emails a code and logs in with it; new people land on the waitlist", async () => {
+    const email = `code-${uniq()}@example.com`;
+    mockApi((path, body) => {
+      if (path === "/user_management/magic_auth") return Response.json({ id: "ma_1", email: body.email });
+      if (path === "/user_management/authenticate" && body.code === "123456") return signedIn(email);
+      if (path === "/user_management/authenticate") return Response.json({ error: "invalid_grant" }, { status: 400 });
+      return undefined;
+    });
+    const sent = await post("/login", { email, action: "code", return: "/app" });
+    expect(sent.status).toBe(200);
+    expect(await sent.text()).toContain("We sent a code to <b>" + email);
+    expect(calls[0]).toMatchObject({ url: "https://api.workos.com/user_management/magic_auth", body: { email } });
+    const pending = cookieFrom(sent, "__Host-fl_signin")!;
+
+    const wrong = await post("/login/code", { code: "000000", return: "/app" }, { cookie: pending });
+    expect(wrong.status).toBe(400);
+    expect(await wrong.text()).toContain("That code didn");
+
+    const ok = await post("/login/code", { code: "123 456", return: "/app" }, { cookie: pending });
+    expect(ok.status).toBe(303);
+    expect(cookieFrom(ok, "__Host-fl_session")).not.toBeNull();
+    expect(calls.at(-1)!.body).toMatchObject({ grant_type: "urn:workos:oauth:grant-type:magic-auth:code", email, code: "123456" });
+    expect(await env.DB.prepare("SELECT email FROM waitlist WHERE email = ?").bind(email).first()).not.toBeNull();
+  });
+
+  it("asks for the emailed code when WorkOS wants the address confirmed first", async () => {
+    const email = `verify-${uniq()}@example.com`;
+    mockApi((path, body) => {
+      if (body.grant_type === "password") return Response.json({ code: "email_verification_required", message: "Verify", pending_authentication_token: "pat_123" }, { status: 403 });
+      if (body.grant_type === "urn:workos:oauth:grant-type:email-verification:code" && body.pending_authentication_token === "pat_123") return signedIn(email);
+      return undefined;
+    });
+    const step = await post("/login", { email, password: "a password here", action: "password" });
+    expect(await step.text()).toContain("To confirm it");
+    const done = await post("/login/code", { code: "654321" }, { cookie: cookieFrom(step, "__Host-fl_signin")! });
+    expect(cookieFrom(done, "__Host-fl_session")).not.toBeNull();
+  });
+
+  it("sends steps it doesn't handle (like two-factor) to WorkOS's own page", async () => {
+    mockApi(() => Response.json({ code: "mfa_challenge", message: "MFA" }, { status: 403 }));
+    const res = await post("/login", { email: "mfa@example.com", password: "a password here", action: "password" });
+    expect(await res.text()).toContain('href="/auth/login">Continue on the secure sign-in page');
+  });
+
+  it("refuses forms posted from another site, and expired code steps", async () => {
+    mockApi(() => undefined);
+    expect((await post("/login", { email: "x@example.com", password: "p" }, { origin: "https://evil.test" })).status).toBe(403);
+    expect(calls).toHaveLength(0);
+    const res = await post("/login/code", { code: "123456" });
+    expect(res.status).toBe(400);
+    expect(await res.text()).toContain("That took too long");
+  });
+
+  it("forgot password asks WorkOS to email a link, with the same answer either way", async () => {
+    mockApi((path) => (path === "/user_management/password_reset" ? Response.json({ id: "pr_1" }) : undefined));
+    expect(await (await w("/login/forgot")).text()).toContain('action="/login/forgot"');
+    const res = await post("/login/forgot", { email: "forgot@example.com" });
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain("If there's a Formelab account for <b>forgot@example.com</b>");
+    expect(calls).toEqual([{ url: "https://api.workos.com/user_management/password_reset", body: { email: "forgot@example.com" } }]);
+  });
+
+  it("the reset link lets someone choose a new password", async () => {
+    mockApi((path, body) =>
+      path === "/user_management/password_reset/confirm" && body.token === "tok_1" ? Response.json({ user: { email: "reset@example.com" } }) : undefined,
+    );
+    const page = await (await w("/reset-password?token=tok_1")).text();
+    expect(page).toContain('name="token" value="tok_1"');
+    expect((await post("/reset-password", { token: "tok_1", password: "long enough pw", confirm: "different pw!!" })).status).toBe(400);
+    expect(calls).toHaveLength(0);
+    const res = await post("/reset-password", { token: "tok_1", password: "long enough pw", confirm: "long enough pw" });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("Password saved");
+    expect(html).toContain("Enter your password");
+    expect(html).toContain('value="reset@example.com"');
+    expect(calls[0]!.body).toEqual({ token: "tok_1", new_password: "long enough pw" });
+  });
+
+  it("on the admin host, only admins get in", async () => {
+    const email = `nonadmin-${uniq()}@example.com`;
+    mockApi(() => signedIn(email));
+    const res = await post("/login", { email, password: "a password here", action: "password", return: "/" }, { host: ADMIN });
+    expect(res.status).toBe(403);
+    expect(cookieFrom(res, "__Host-fl_session")).toBeNull();
+    mockApi(() => signedIn(OWNER));
+    const ok = await post("/login", { email: OWNER, password: "a password here", action: "password", return: "/users" }, { host: ADMIN });
+    expect(ok.headers.get("location")).toBe("/users");
+    expect(cookieFrom(ok, "__Host-fl_session")).not.toBeNull();
   });
 });

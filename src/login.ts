@@ -30,7 +30,7 @@ import {
 } from "./session";
 import { base32, escapeHtml, normEmail, randomBytes } from "./util";
 
-const WORKOS_API = "https://api.workos.com";
+export const WORKOS_API = "https://api.workos.com";
 const STATE_COOKIE = "__Host-fl_login";
 const RESTARTED = "-r";
 
@@ -42,8 +42,8 @@ export function safeReturn(raw: string | null | undefined, fallback = "/app"): s
   return v.startsWith("/") && !v.startsWith("//") && !v.startsWith("/\\") ? v : fallback;
 }
 
-const onAdminHost = (c: Context<AppEnv>) => hostKind(new URL(c.req.url).hostname, c.env) === "admin";
-const homePath = (c: Context<AppEnv>) => (onAdminHost(c) ? "/" : "/app");
+export const onAdminHost = (c: Context<AppEnv>) => hostKind(new URL(c.req.url).hostname, c.env) === "admin";
+export const homePath = (c: Context<AppEnv>) => (onAdminHost(c) ? "/" : "/app");
 
 const PROVIDERS: Record<string, string> = { google: "GoogleOAuth", email: "authkit" };
 
@@ -112,7 +112,44 @@ export async function loginCallback(c: Context<AppEnv>): Promise<Response> {
     console.error("workos authenticate failed", res.status);
     return plainPage(502, "Couldn't sign you in", "The sign-in service didn't accept this attempt. Go back to Formelab and try again.");
   }
-  const { user: wu, access_token } = await res.json<{ user: WorkosUser; access_token?: string }>();
+  const signedIn = await res.json<WorkosAuthentication>();
+  const done = await completeSignIn(c, signedIn, (headers) => {
+    headers.set("location", returnTo);
+    return new Response(null, { status: 302, headers });
+  });
+  done.headers.append("set-cookie", cookieHeader(STATE_COOKIE, "", 0));
+  return done;
+}
+
+/** A successful answer from WorkOS's /user_management/authenticate. */
+export interface WorkosAuthentication {
+  user: WorkosUser;
+  access_token?: string;
+  /** How the person signed in: "Password", "MagicAuth", "GoogleOAuth", … */
+  authentication_method?: string;
+}
+
+/** The sign-in method this browser used last, for the login page's "Last used" label. */
+export const LAST_USED_COOKIE = "__Host-fl_last";
+export type LastUsed = "email" | "google";
+const lastUsedOf = (method: string | undefined): LastUsed | null =>
+  method === "GoogleOAuth" ? "google" : method === "Password" || method === "MagicAuth" ? "email" : null;
+
+/** Remembers that this person has a password, so the login page asks for it. */
+export const markHasPassword = (env: Env, email: string) =>
+  env.DB.prepare("UPDATE users SET has_password = 1 WHERE email = ?").bind(normEmail(email)).run();
+
+/**
+ * Turns a WorkOS sign-in into a Formelab one: checks the email, creates or updates the account
+ * (new people land on the waitlist), and starts a session. `respond` builds the response from the
+ * headers (cache-control and the session cookie) once everything checks out.
+ */
+export async function completeSignIn(
+  c: Context<AppEnv>,
+  { user: wu, access_token, authentication_method }: WorkosAuthentication,
+  respond: (headers: Headers) => Response,
+): Promise<Response> {
+  const env = c.env;
   if (!wu?.email || wu.email_verified === false) {
     return plainPage(403, "Email not verified", "Confirm your email address with the code we sent, then log in again.");
   }
@@ -120,24 +157,26 @@ export async function loginCallback(c: Context<AppEnv>): Promise<Response> {
   const email = normEmail(wu.email);
   const workosSid = sessionIdOf(access_token);
   const name = [wu.first_name, wu.last_name].filter(Boolean).join(" ") || null;
+  const headers = new Headers({ "cache-control": "no-store" });
+  const last = lastUsedOf(authentication_method);
+  if (last) headers.append("set-cookie", cookieHeader(LAST_USED_COOKIE, last, 365 * 24 * 3600));
+  const remember = () => (authentication_method === "Password" ? markHasPassword(env, email) : null);
 
   // The admin panel's own sign-in: admins only, nobody is added to the waitlist from here.
   if (onAdminHost(c)) {
     const row = await env.DB.prepare("SELECT is_admin FROM users WHERE email = ?").bind(email).first<{ is_admin: number }>();
     if (!isOwnerEmail(env, email) && row?.is_admin !== 1) {
-      const page = plainPage(403, "Not an admin", `${email} can't manage Formelab. Use your lab at ${aiOrigin(env, c.req.url)} instead.`);
-      page.headers.append("set-cookie", cookieHeader(STATE_COOKIE, "", 0));
-      return page;
+      return plainPage(403, "Not an admin", `${email} can't manage Formelab. Use your lab at ${aiOrigin(env, c.req.url)} instead.`);
     }
     await upsertUser(env, email, name, { workosId: wu.id });
-    const headers = new Headers({ location: returnTo, "cache-control": "no-store" });
+    await remember();
     headers.append("set-cookie", await createSession(env, email, new URL(c.req.url).hostname, { expiresAt: now() + ADMIN_SESSION_TTL_MS, workosSid }));
-    headers.append("set-cookie", cookieHeader(STATE_COOKIE, "", 0));
-    return new Response(null, { status: 302, headers });
+    return respond(headers);
   }
 
   const status = isOwnerEmail(env, email) || (await isApproved(env, email)) ? "active" : "waitlisted";
   const user = await upsertUser(env, email, name, { status, workosId: wu.id });
+  await remember();
   // Someone who signs in before being let in lands on the waitlist, so an admin can approve them.
   if (!user.active) {
     const added = await env.DB.prepare("INSERT INTO waitlist (email, created_at) VALUES (?, ?) ON CONFLICT(email) DO NOTHING").bind(email, now()).run();
@@ -148,10 +187,8 @@ export async function loginCallback(c: Context<AppEnv>): Promise<Response> {
     }
   }
 
-  const headers = new Headers({ location: returnTo, "cache-control": "no-store" });
   headers.append("set-cookie", await createSession(env, email, new URL(c.req.url).hostname, { workosSid }));
-  headers.append("set-cookie", cookieHeader(STATE_COOKIE, "", 0));
-  return new Response(null, { status: 302, headers });
+  return respond(headers);
 }
 
 async function isApproved(env: Env, email: string): Promise<boolean> {
@@ -174,31 +211,39 @@ function sessionIdOf(accessToken: string | undefined): string | null {
  * POST /auth/logout: ends the Formelab sign-in everywhere, then the WorkOS session behind it, so
  * the next "Log in" asks for a code or password again instead of signing straight back in.
  *
- * It answers with a page that moves on by itself rather than a redirect: the logout form is
- * posted from pages whose CSP says `form-action 'self'`, which also covers redirects after the
- * POST, so the browser would block a redirect to another host (formelab.ai, or WorkOS).
+ * It never redirects: the logout form is posted from pages whose CSP says `form-action 'self'`,
+ * which also covers redirects after the POST, so the browser would block one to another host
+ * (formelab.ai, or WorkOS). dashboard.js posts it in the background and moves on itself.
  */
 export async function logout(c: Context<AppEnv>): Promise<Response> {
   const origin = c.req.header("origin");
   if (origin && origin !== new URL(c.req.url).origin) return plainPage(403, "Not allowed", "Log out from Formelab itself.");
   const id = c.get("sessionId");
   const { workosSid } = id ? await destroySession(c.env, id) : { workosSid: null };
-  let to = onAdminHost(c) ? `${adminOrigin(c.env, c.req.url)}/login` : `${aiOrigin(c.env, c.req.url)}/`;
+  let to = `${onAdminHost(c) ? adminOrigin(c.env, c.req.url) : aiOrigin(c.env, c.req.url)}/login`;
   if (workosSid && workosEnabled(c.env)) {
     const out = new URL(`${WORKOS_API}/user_management/sessions/logout`);
     out.searchParams.set("session_id", workosSid);
     out.searchParams.set("return_to", to);
     to = out.toString();
   }
-  const page = movingOnPage("Logged out", "You're logged out of Formelab.", to);
+  // The web app and admin panel log out in the background and then go to `to` themselves, so
+  // nobody sees a page in between; the page is for browsers without JavaScript.
+  const page =
+    c.req.header("x-formelab-request") === "1"
+      ? new Response(JSON.stringify({ to }), { headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" } })
+      : movingOnPage("Logged out", "Logging you out…", to);
   page.headers.append("set-cookie", cookieHeader(SESSION_COOKIE, "", 0));
   return page;
 }
 
 /** A page that sends the browser on to `to` straight away, with a link in case it doesn't. */
-function movingOnPage(title: string, message: string, to: string): Response {
+export function movingOnPage(title: string, message: string, to: string): Response {
   const href = escapeHtml(to);
-  const body = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="0;url=${href}"><title>${escapeHtml(title)}</title></head><body style="font-family:system-ui,sans-serif;max-width:40rem;margin:4rem auto;padding:0 1rem;color:#222"><h1>${escapeHtml(title)}</h1><p>${escapeHtml(message)} <a href="${href}">Continue</a></p></body></html>`;
+  const body = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="0;url=${href}"><title>${escapeHtml(title)}</title>
+<style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#FAFAF8;color:#6E6D68;font:16px/1.5 system-ui,sans-serif}@media(prefers-color-scheme:dark){body{background:#111110;color:#A8A69F}}
+.s{width:28px;height:28px;margin:0 auto 14px;border:3px solid #ECEAE4;border-top-color:#5B4CF5;border-radius:50%;animation:r .8s linear infinite}@keyframes r{to{transform:rotate(1turn)}}a{color:inherit}</style></head>
+<body><div><div class="s" aria-hidden="true"></div><p><a href="${href}">${escapeHtml(message)}</a></p></div></body></html>`;
   return new Response(body, {
     headers: {
       "content-type": "text/html; charset=utf-8",
@@ -325,5 +370,6 @@ export async function setPassword(env: Env, user: User, sessionId: string | unde
     }
     throw err(502, "upstream", "Couldn't save your password.", "Try again in a minute.");
   }
+  await markHasPassword(env, user.email);
   await audit(env, user.email, "password_set", user.email);
 }

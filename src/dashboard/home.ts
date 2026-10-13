@@ -4,16 +4,17 @@
 import { escapeHtml as e } from "../util";
 import { HOME_FONTS, head, htmlResponse } from "./layout";
 
-const homeHead = (title: string, scripts: string[] = []) => head(title, scripts, { css: "home.css", fonts: HOME_FONTS });
+export const homeHead = (title: string, scripts: string[] = []) => head(title, scripts, { css: "home.css", fonts: HOME_FONTS });
 
 const CHECK = (stroke: string, width = 3.5) =>
   `<svg viewBox="0 0 24 24" fill="none" stroke="${stroke}" stroke-width="${width}"><path d="M20 6 9 17l-5-5"/></svg>`;
 
-function topNav(admin = false): string {
+/** The top bar. `actions` adds Log in and Join the waitlist (the home page only, not the login pages). */
+export function topNav(admin = false, actions = !admin): string {
   return `<div class="container">
   <nav>
     <a class="logo" href="/" aria-label="Formelab home"><span class="mark" aria-hidden="true">F</span>Formelab${admin ? " admin" : ""}</a>
-    ${admin ? "" : `<div class="nav-r">
+    ${!actions ? "" : `<div class="nav-r">
       <a class="nbtn" href="/login">Log in</a>
       <a class="cta" href="/#signup" data-join><span class="long">Join the waitlist</span><span class="short">Join</span></a>
     </div>`}
@@ -202,23 +203,13 @@ ${topNav()}
 </html>`);
 }
 
-const GOOGLE_G = `<svg width="20" height="20" viewBox="0 0 48 48" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="m6.3 14.7 6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-7.9l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg>`;
-
 /**
- * The login screen. With WorkOS configured it offers Google and email (AuthKit's hosted page also
- * shows any other sign-in methods enabled there); otherwise its button leads to Cloudflare Access.
+ * The login screen without WorkOS: its button leads to Cloudflare Access. With WorkOS configured,
+ * /login goes straight to WorkOS's sign-in page instead (see loginStartPath).
+ * `admin` is the admin panel's own, separate sign-in on admin.DOMAIN.
  */
-/** The login screen. `admin` is the admin panel's own, separate sign-in on admin.DOMAIN. */
-export function loginPage(opts: { workos: boolean; returnTo: string; admin?: boolean }): Response {
-  const ret = opts.returnTo === (opts.admin ? "/" : "/app") ? "" : `&return=${encodeURIComponent(opts.returnTo)}`;
-  const options = opts.workos
-    ? `<a class="ghost provider" href="/auth/login?provider=google${e(ret)}">${GOOGLE_G}Continue with Google</a>
-      <a class="btn w100" href="/auth/login?provider=email${e(ret)}">Continue with email</a>
-      ${opts.admin
-        ? `<p class="hint">For Formelab admins only. This sign-in is separate from your lab and lasts 8 hours.</p>`
-        : `<p class="hint">With email, you can use your password or a one-time code. Set a password any time under Password in your account menu.</p>
-      <p class="hint">New to Formelab? Log in the same way. We'll save your spot on the waitlist and let you know when you can start building.</p>`}`
-    : `<a class="btn w100" href="/app">Log in</a>
+export function loginPage(opts: { returnTo: string; admin?: boolean }): Response {
+  const options = `<a class="btn w100" href="/app">Log in</a>
       <p class="hint">You'll confirm it's you with a one-time code sent to your email, or with your work account.</p>`;
   return htmlResponse(`<!doctype html>
 <html lang="en">
@@ -226,7 +217,7 @@ export function loginPage(opts: { workos: boolean; returnTo: string; admin?: boo
 ${homeHead(opts.admin ? "Formelab admin" : "Log in to Formelab")}
 </head>
 <body>
-${topNav(opts.admin)}
+${topNav(opts.admin, false)}
 
 <main>
   <div class="container center">

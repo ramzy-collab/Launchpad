@@ -4,6 +4,8 @@ export interface Env {
   PROXY_LIMITER?: RateLimit;
   /** Public waitlist sign-ups per client IP. */
   WAITLIST_LIMITER?: RateLimit;
+  /** Sign-in attempts (password, code, reset) per client IP. */
+  LOGIN_LIMITER?: RateLimit;
   /** OAuth grants, clients and tokens for the Claude chat connector (workers-oauth-provider). */
   OAUTH_KV: KVNamespace;
   /** Injected by OAuthProvider into requests it hands to the default handler. */
