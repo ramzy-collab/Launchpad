@@ -153,31 +153,13 @@ export async function connectPage(c: Context<AppEnv>): Promise<Response> {
 </dialog>`,
   ).join("\n");
 
-  const body = `<section>
+  const body = `<section class="howto">
   <h2>Pick your AI</h2>
+  ${user.active ? "" : `<p class="note">Your account is still on the waitlist. You can connect now, but your AI can only create apps once you're let in.</p>`}
   <div class="ai-grid">${tiles}</div>
   ${others.length ? `<h3>Other connected apps</h3>${status(others)}` : ""}
 </section>
 
-<section class="howto">
-  <h2>Your connector URL</h2>
-  <p>Claude, ChatGPT and Gemini all connect to Formelab with this address. You'll sign in to Formelab and click <strong>Allow</strong>; there's no key to copy.</p>
-  <div class="copyrow"><pre id="mcp-url">${e(url)}</pre><button type="button" data-copy="#mcp-url">Copy</button></div>
-  ${user.active ? "" : `<p class="note">Your account is still on the waitlist. You can connect now, but your AI can only create apps once you're let in.</p>`}
-</section>
-
-
-${dialogs}
-
-<section class="howto" id="help">
-  <h2>If something's off</h2>
-  <ul>
-    <li><strong>"Your account is still on the waitlist":</strong> your AI can connect but can't create apps until you're let in.</li>
-    <li><strong>It asks you to sign in again:</strong> connections last up to 30 days, then the AI app asks you to reconnect.</li>
-    <li><strong>Wrong account:</strong> the Formelab window shows who you're signed in as. Log out of Formelab and connect again with the right one.</li>
-    <li><strong>To disconnect:</strong> click the app above and choose <strong>Disconnect</strong>.</li>
-    <li><strong>Who can see what your AI publishes:</strong> new apps are private to you. Share them from <a href="/">My apps</a>, under each app's <strong>Settings</strong>.</li>
-  </ul>
-</section>`;
+${dialogs}`;
   return shell(c, user, "connect", body);
 }

@@ -96,7 +96,9 @@ describe("dashboard", () => {
     expect(res.status).toBe(200);
     const html = await res.text();
     expect(html).toContain('<a href="/connect" aria-current="page">Connect your AI</a>');
-    expect(html).toContain('<pre id="mcp-url">https://example.com/mcp</pre>');
+    expect(html).toContain('<pre id="mcp-url-claude">https://example.com/mcp</pre>'); // the connector URL, in each app's dialog
+    expect(html).not.toContain("Your connector URL");
+    expect(html).not.toContain("If something's off");
     // A tile per AI app, each opening its steps in a dialog; nothing is connected yet.
     for (const id of ["claude", "chatgpt", "gemini", "claude-code"]) {
       expect(html).toContain(`data-dialog="dlg-${id}"`);
