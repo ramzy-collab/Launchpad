@@ -216,7 +216,8 @@ export function loginPage(opts: { workos: boolean; returnTo: string; admin?: boo
       <a class="btn w100" href="/auth/login?provider=email${e(ret)}">Continue with email</a>
       ${opts.admin
         ? `<p class="hint">For Formelab admins only. This sign-in is separate from your lab and lasts 8 hours.</p>`
-        : `<p class="hint">New to Formelab? Log in the same way. We'll save your spot on the waitlist and let you know when you can start building.</p>`}`
+        : `<p class="hint">With email, you can use your password or a one-time code. Set a password any time under Password in your account menu.</p>
+      <p class="hint">New to Formelab? Log in the same way. We'll save your spot on the waitlist and let you know when you can start building.</p>`}`
     : `<a class="btn w100" href="/app">Log in</a>
       <p class="hint">You'll confirm it's you with a one-time code sent to your email, or with your work account.</p>`;
   return htmlResponse(`<!doctype html>

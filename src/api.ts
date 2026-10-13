@@ -15,7 +15,7 @@ import {
 } from "./sites";
 import { filesFromHtml, filesFromUpload, filesFromZip, MAX_UPLOAD_BYTES, type FileMap } from "./upload";
 import { listConnections, revokeConnection } from "./oauth";
-import { approveWaitlist } from "./login";
+import { approveWaitlist, setPassword } from "./login";
 import { connectGemini, disconnectGemini, geminiStatus } from "./gemini";
 import { addFlagUser, flagOn, removeFlagUser, setFlag } from "./flags";
 import { sheetsDisconnect, sheetsStatus } from "./sheets";
@@ -115,6 +115,10 @@ export function managementApi(kind: "admin" | "deploy") {
       const ttl = body.ttlHours === undefined ? TOKEN_DEFAULT_TTL_HOURS : Number(body.ttlHours);
       const { token, info } = await mintToken(c.env, c.get("user"), String(body.name ?? ""), ttl);
       return c.json({ token, ...info }, 201);
+    });
+    api.put("/account/password", async (c) => {
+      await setPassword(c.env, c.get("user"), c.get("sessionId"), (await jsonBody(c)).password);
+      return c.json({ ok: true });
     });
     api.get("/tokens", async (c) => c.json(await listTokens(c.env, c.get("user"))));
     api.delete("/tokens/:id", async (c) => {

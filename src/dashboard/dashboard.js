@@ -35,7 +35,9 @@
         try { data = text ? JSON.parse(text) : null; } catch (e) {}
         if (!res.ok) {
           var err = (data && data.error) || { message: "Request failed (" + res.status + ")", hint: "" };
-          throw new Error(err.message + (err.hint ? " " + err.hint : ""));
+          var error = new Error(err.message + (err.hint ? " " + err.hint : ""));
+          error.code = err.code;
+          throw error;
         }
         return data;
       });
@@ -125,6 +127,23 @@
         show("Connected. Your apps can use it now.");
         reloadSoon();
       });
+    },
+    "password-set": function (form) {
+      if (form.elements.password.value !== form.elements.confirm.value) {
+        show("The two passwords don't match.", true);
+        return;
+      }
+      return api("PUT", "/account/password", { password: form.elements.password.value }).then(
+        function () {
+          form.reset();
+          show("Password saved. You can log in with your email and this password now.");
+        },
+        function (e) {
+          // The sign-in got too old while the page was open: reload to ask for a fresh one.
+          if (e.code === "reauth_required") reloadSoon();
+          throw e;
+        }
+      );
     },
     "token-create": function (form) {
       return api("POST", "/tokens", { name: form.elements.name.value, ttlHours: Number(form.elements.ttlHours.value) }).then(function (r) {

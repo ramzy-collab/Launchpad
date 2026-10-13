@@ -26,14 +26,33 @@ function cookieFrom(res: Response, name: string): string | null {
 }
 
 let authenticated: unknown[] = [];
-function mockWorkos(email: string, verified = true) {
+let passwordsSet: { url: string; auth: string | null; body: unknown }[] = [];
+/** An AuthKit-style access token; only its `sid` claim is read, so it needn't be signed. */
+const accessToken = (sid: string) =>
+  ["{\"alg\":\"none\"}", JSON.stringify({ sid, sub: "u" })].map((p) => btoa(p).replace(/=+$/, "").replace(/\+/g, "-").replace(/\//g, "_")).join(".") + ".x";
+function mockWorkos(email: string, verified = true, passwordStatus = 200) {
   onOutbound(async (req) => {
     if (req.url === "https://api.workos.com/user_management/authenticate") {
       authenticated.push(await req.json());
-      return Response.json({ user: { id: "user_" + email, email, email_verified: verified, first_name: "Test", last_name: null } });
+      return Response.json({
+        user: { id: "user_" + email, email, email_verified: verified, first_name: "Test", last_name: null },
+        access_token: accessToken("session_" + email),
+      });
+    }
+    if (req.method === "PUT" && req.url.startsWith("https://api.workos.com/user_management/users/")) {
+      passwordsSet.push({ url: req.url, auth: req.headers.get("authorization"), body: await req.json() });
+      return passwordStatus === 200
+        ? Response.json({ id: "u" })
+        : Response.json({ code: "password_strength_error", message: "Password does not meet strength requirements." }, { status: passwordStatus });
     }
     return new Response("unexpected", { status: 599 });
   });
+}
+
+/** Where a page that moves on by itself (logout) sends the browser. */
+function refreshTarget(html: string): string {
+  const m = /<meta http-equiv="refresh" content="0;url=([^"]+)">/.exec(html);
+  return m ? m[1]!.replace(/&amp;/g, "&") : "";
 }
 
 /** Goes through /auth/login → (WorkOS) → /auth/callback and returns the session cookie. */
@@ -69,6 +88,7 @@ const onApp = async (path: string, cookie: string) => w(APP + path, { headers: {
 afterEach(() => {
   onOutbound(undefined);
   authenticated = [];
+  passwordsSet = [];
 });
 
 describe("login page and WorkOS redirect", () => {
@@ -228,7 +248,9 @@ describe("the admin panel's own sign-in", () => {
     expect((await w(`${APP}/`, { headers: { cookie: admin.cookie } })).status).toBe(302);
     const lab = await signIn(OWNER);
     const out = await w(`${ADMIN}/auth/logout`, { method: "POST", headers: { cookie: admin.cookie, origin: ADMIN } });
-    expect(out.headers.get("location")).toBe(`${ADMIN}/login`);
+    const to = new URL(refreshTarget(await out.text()));
+    expect(to.origin + to.pathname).toBe("https://api.workos.com/user_management/sessions/logout");
+    expect(to.searchParams.get("return_to")).toBe(`${ADMIN}/login`);
     expect((await w(`${ADMIN}/`, { headers: { cookie: admin.cookie } })).status).toBe(302);
     expect((await onApp("/", lab.cookie)).status).toBe(200);
   });
@@ -248,21 +270,40 @@ describe("accounts and the waitlist, continued", () => {
   it("logging out ends the session", async () => {
     const { cookie } = await signIn(`out-${uniq()}@example.com`);
     const res = await w("/auth/logout", { method: "POST", headers: { cookie, origin: "https://example.com" } });
-    expect(res.status).toBe(302);
+    expect(res.status).toBe(200);
     expect(res.headers.getSetCookie().join("\n")).toContain("Max-Age=0");
     expect((await w("/auth/app?return=" + encodeURIComponent(APP + "/"), { headers: { cookie } })).status).toBe(302);
     expect((await w("/auth/app?return=" + encodeURIComponent(APP + "/"), { headers: { cookie } })).headers.get("location")).toMatch(/^\/login/);
   });
 
-  it("logging out on the web app ends the sign-in everywhere", async () => {
-    const { cookie } = await signIn(`out2-${uniq()}@example.com`);
+  it("logging out on the web app ends the sign-in everywhere, WorkOS included", async () => {
+    const email = `out2-${uniq()}@example.com`;
+    const { cookie } = await signIn(email);
     const appCookie = await hostCookie(cookie, APP);
     expect((await w(`${APP}/`, { headers: { cookie: appCookie } })).status).toBe(200);
     const res = await w(`${APP}/auth/logout`, { method: "POST", headers: { cookie: appCookie, origin: APP } });
-    expect(res.status).toBe(302);
-    expect(res.headers.get("location")).toBe("https://example.com/");
+    // Not a redirect: the web app's CSP (form-action 'self') would block one to another host.
+    expect(res.status).toBe(200);
+    expect(res.headers.get("location")).toBeNull();
+    const to = new URL(refreshTarget(await res.text()));
+    expect(to.origin + to.pathname).toBe("https://api.workos.com/user_management/sessions/logout");
+    expect(to.searchParams.get("session_id")).toBe(`session_${email}`);
+    expect(to.searchParams.get("return_to")).toBe("https://example.com/");
     expect((await w(`${APP}/`, { headers: { cookie: appCookie } })).status).toBe(302);
     expect((await w("/auth/app?return=" + encodeURIComponent(APP + "/"), { headers: { cookie } })).headers.get("location")).toMatch(/^\/login/);
+  });
+
+  it("logging out a session from before WorkOS sessions were recorded still works", async () => {
+    const { cookie } = await signIn(`old-${uniq()}@example.com`);
+    await env.DB.prepare("UPDATE sessions SET workos_sid = NULL").run();
+    const res = await w("/auth/logout", { method: "POST", headers: { cookie, origin: "https://example.com" } });
+    expect(refreshTarget(await res.text())).toBe("https://example.com/");
+  });
+
+  it("refuses a logout posted from another site", async () => {
+    const { cookie } = await signIn(`csrf-${uniq()}@example.com`);
+    const res = await w(`${APP}/auth/logout`, { method: "POST", headers: { cookie: await hostCookie(cookie, APP), origin: "https://evil.test" } });
+    expect(res.status).toBe(403);
   });
 
   it("a session cookie only works on the host it was made for", async () => {
@@ -380,5 +421,80 @@ describe("namespace hosts get their own session", () => {
     for (const target of ["https://evil.test/", "https://example.com/app", "http://x.example.app/", "https://x.example.com/", "not a url"]) {
       expect((await w(`/auth/app?return=${encodeURIComponent(target)}`, { headers: { cookie } })).status, target).toBe(400);
     }
+  });
+});
+
+describe("passwords", () => {
+  const put = (cookie: string, password: unknown) =>
+    w(`${APP}/_api/admin/account/password`, {
+      method: "PUT",
+      headers: { cookie, origin: APP, "x-formelab-request": "1", "content-type": "application/json" },
+      body: JSON.stringify({ password }),
+    });
+
+  it("right after signing in, someone can set a password at WorkOS", async () => {
+    const email = `pw-${uniq()}@example.com`;
+    const { cookie } = await signIn(email);
+    const appCookie = await hostCookie(cookie, APP);
+    const page = await (await w(`${APP}/account`, { headers: { cookie: appCookie } })).text();
+    expect(page).toContain('data-action="password-set"');
+    expect(page).toContain('autocomplete="new-password"');
+
+    const res = await put(appCookie, "correct horse battery");
+    expect(res.status).toBe(200);
+    expect(passwordsSet).toEqual([
+      { url: `https://api.workos.com/user_management/users/${encodeURIComponent("user_" + email)}`, auth: "Bearer sk_test", body: { password: "correct horse battery" } },
+    ]);
+    const logged = await env.DB.prepare("SELECT action FROM audit WHERE actor = ? AND action = 'password_set'").bind(email).first();
+    expect(logged).not.toBeNull();
+  });
+
+  it("the account menu links to it", async () => {
+    const { cookie } = await signIn(`pwm-${uniq()}@example.com`);
+    expect(await (await onApp("/", cookie)).text()).toContain('href="/account"');
+  });
+
+  it("asks for a fresh sign-in when the last one is old", async () => {
+    const email = `pwold-${uniq()}@example.com`;
+    const { cookie } = await signIn(email);
+    const appCookie = await hostCookie(cookie, APP);
+    await env.DB.prepare("UPDATE sessions SET created_at = created_at - ? WHERE email = ?").bind(60 * 60_000, email).run();
+
+    const page = await (await w(`${APP}/account`, { headers: { cookie: appCookie } })).text();
+    expect(page).not.toContain('data-action="password-set"');
+    const relogin = /href="([^"]+)">Log in again/.exec(page)![1]!.replace(/&amp;/g, "&");
+    const url = new URL(relogin);
+    expect(url.origin + url.pathname).toBe("https://example.com/auth/login");
+    expect(url.searchParams.get("return")).toBe(`/auth/app?return=${encodeURIComponent(`${APP}/account`)}`);
+
+    const res = await put(appCookie, "correct horse battery");
+    expect(res.status).toBe(403);
+    expect(((await res.json()) as { error: { code: string } }).error.code).toBe("reauth_required");
+    expect(passwordsSet).toHaveLength(0);
+  });
+
+  it("turns down short passwords before asking WorkOS, and passes on WorkOS's reason", async () => {
+    const email = `pwweak-${uniq()}@example.com`;
+    const { cookie } = await signIn(email);
+    const appCookie = await hostCookie(cookie, APP);
+    expect((await put(appCookie, "short")).status).toBe(400);
+    expect((await put(appCookie, 12345678901)).status).toBe(400);
+    expect(passwordsSet).toHaveLength(0);
+
+    mockWorkos(email, true, 422);
+    const res = await put(appCookie, "aaaaaaaaaaaa");
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: { message: string } }).error.message).toBe("Password does not meet strength requirements.");
+  });
+
+  it("needs the web app's own request header, like the rest of its API", async () => {
+    const { cookie } = await signIn(`pwcsrf-${uniq()}@example.com`);
+    const res = await w(`${APP}/_api/admin/account/password`, {
+      method: "PUT",
+      headers: { cookie: await hostCookie(cookie, APP), "content-type": "application/json" },
+      body: JSON.stringify({ password: "correct horse battery" }),
+    });
+    expect(res.status).toBe(403);
+    expect(passwordsSet).toHaveLength(0);
   });
 });

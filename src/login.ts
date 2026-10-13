@@ -6,9 +6,11 @@
 // /auth/app. The admin panel (admin.DOMAIN) runs the same flow on its own host instead, so it
 // has a separate, shorter sign-in that only admins can complete.
 import type { Context } from "hono";
+import { decodeJwt } from "jose";
 import { audit } from "./audit";
 import { isOwnerEmail, upsertUser } from "./auth";
-import type { AppEnv, Env } from "./env";
+import type { AppEnv, Env, User } from "./env";
+import { err } from "./errors";
 import { now } from "./env";
 import { acceptedEmail, notifyAdminOfSignup, publicOrigin, sendEmail, waitlistJoinedEmail } from "./email";
 import { plainPage } from "./serve";
@@ -19,13 +21,14 @@ import {
   destroySession,
   mintAppCode,
   readCookie,
+  signedInAt,
   redeemAppCode,
   SESSION_COOKIE,
   ADMIN_SESSION_TTL_MS,
   APEX_SESSION_TTL_MS,
   APP_SESSION_TTL_MS,
 } from "./session";
-import { base32, normEmail, randomBytes } from "./util";
+import { base32, escapeHtml, normEmail, randomBytes } from "./util";
 
 const WORKOS_API = "https://api.workos.com";
 const STATE_COOKIE = "__Host-fl_login";
@@ -95,12 +98,13 @@ export async function loginCallback(c: Context<AppEnv>): Promise<Response> {
     console.error("workos authenticate failed", res.status);
     return plainPage(502, "Couldn't sign you in", "The sign-in service didn't accept this attempt. Go back to Formelab and try again.");
   }
-  const { user: wu } = await res.json<{ user: WorkosUser }>();
+  const { user: wu, access_token } = await res.json<{ user: WorkosUser; access_token?: string }>();
   if (!wu?.email || wu.email_verified === false) {
     return plainPage(403, "Email not verified", "Confirm your email address with the code we sent, then log in again.");
   }
 
   const email = normEmail(wu.email);
+  const workosSid = sessionIdOf(access_token);
   const name = [wu.first_name, wu.last_name].filter(Boolean).join(" ") || null;
 
   // The admin panel's own sign-in: admins only, nobody is added to the waitlist from here.
@@ -113,7 +117,7 @@ export async function loginCallback(c: Context<AppEnv>): Promise<Response> {
     }
     await upsertUser(env, email, name, { workosId: wu.id });
     const headers = new Headers({ location: returnTo, "cache-control": "no-store" });
-    headers.append("set-cookie", await createSession(env, email, new URL(c.req.url).hostname, { expiresAt: now() + ADMIN_SESSION_TTL_MS }));
+    headers.append("set-cookie", await createSession(env, email, new URL(c.req.url).hostname, { expiresAt: now() + ADMIN_SESSION_TTL_MS, workosSid }));
     headers.append("set-cookie", cookieHeader(STATE_COOKIE, "", 0));
     return new Response(null, { status: 302, headers });
   }
@@ -131,7 +135,7 @@ export async function loginCallback(c: Context<AppEnv>): Promise<Response> {
   }
 
   const headers = new Headers({ location: returnTo, "cache-control": "no-store" });
-  headers.append("set-cookie", await createSession(env, email, new URL(c.req.url).hostname));
+  headers.append("set-cookie", await createSession(env, email, new URL(c.req.url).hostname, { workosSid }));
   headers.append("set-cookie", cookieHeader(STATE_COOKIE, "", 0));
   return new Response(null, { status: 302, headers });
 }
@@ -141,16 +145,54 @@ async function isApproved(env: Env, email: string): Promise<boolean> {
   return !!row?.approved_at;
 }
 
-/** POST /auth/logout */
+/** The WorkOS session id (`sid`) in an AuthKit access token, or null. */
+function sessionIdOf(accessToken: string | undefined): string | null {
+  if (!accessToken) return null;
+  try {
+    const sid = decodeJwt(accessToken).sid;
+    return typeof sid === "string" && sid ? sid : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * POST /auth/logout: ends the Formelab sign-in everywhere, then the WorkOS session behind it, so
+ * the next "Log in" asks for a code or password again instead of signing straight back in.
+ *
+ * It answers with a page that moves on by itself rather than a redirect: the logout form is
+ * posted from pages whose CSP says `form-action 'self'`, which also covers redirects after the
+ * POST, so the browser would block a redirect to another host (formelab.ai, or WorkOS).
+ */
 export async function logout(c: Context<AppEnv>): Promise<Response> {
   const origin = c.req.header("origin");
   if (origin && origin !== new URL(c.req.url).origin) return plainPage(403, "Not allowed", "Log out from Formelab itself.");
   const id = c.get("sessionId");
-  if (id) await destroySession(c.env, id);
-  const to = onAdminHost(c) ? `${adminOrigin(c.env, c.req.url)}/login` : `${aiOrigin(c.env, c.req.url)}/`;
-  const headers = new Headers({ location: to, "cache-control": "no-store" });
-  headers.append("set-cookie", cookieHeader(SESSION_COOKIE, "", 0));
-  return new Response(null, { status: 302, headers });
+  const { workosSid } = id ? await destroySession(c.env, id) : { workosSid: null };
+  let to = onAdminHost(c) ? `${adminOrigin(c.env, c.req.url)}/login` : `${aiOrigin(c.env, c.req.url)}/`;
+  if (workosSid && workosEnabled(c.env)) {
+    const out = new URL(`${WORKOS_API}/user_management/sessions/logout`);
+    out.searchParams.set("session_id", workosSid);
+    out.searchParams.set("return_to", to);
+    to = out.toString();
+  }
+  const page = movingOnPage("Logged out", "You're logged out of Formelab.", to);
+  page.headers.append("set-cookie", cookieHeader(SESSION_COOKIE, "", 0));
+  return page;
+}
+
+/** A page that sends the browser on to `to` straight away, with a link in case it doesn't. */
+function movingOnPage(title: string, message: string, to: string): Response {
+  const href = escapeHtml(to);
+  const body = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="0;url=${href}"><title>${escapeHtml(title)}</title></head><body style="font-family:system-ui,sans-serif;max-width:40rem;margin:4rem auto;padding:0 1rem;color:#222"><h1>${escapeHtml(title)}</h1><p>${escapeHtml(message)} <a href="${href}">Continue</a></p></body></html>`;
+  return new Response(body, {
+    headers: {
+      "content-type": "text/html; charset=utf-8",
+      "cache-control": "no-store",
+      "x-content-type-options": "nosniff",
+      "referrer-policy": "no-referrer",
+    },
+  });
 }
 
 /**
@@ -216,4 +258,58 @@ export async function approveWaitlist(
     if (opts.waitUntil) opts.waitUntil(send);
     else await send;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Passwords
+// ---------------------------------------------------------------------------
+
+/** Setting a password needs a sign-in this recent, so a stolen or forgotten session can't do it. */
+export const PASSWORD_REAUTH_MS = 15 * 60_000;
+const MIN_PASSWORD_LENGTH = 10;
+const MAX_PASSWORD_LENGTH = 256;
+
+/** Whether the person behind this session signed in recently enough to set a password. */
+export async function canSetPassword(env: Env, sessionId: string | undefined): Promise<boolean> {
+  if (!sessionId) return false;
+  const at = await signedInAt(env, sessionId);
+  return at !== null && now() - at < PASSWORD_REAUTH_MS;
+}
+
+/**
+ * Sets (or replaces) the signed-in person's password at WorkOS, so they can log in with their
+ * email and password instead of a code. WorkOS applies its own password strength rules on top.
+ */
+export async function setPassword(env: Env, user: User, sessionId: string | undefined, password: unknown): Promise<void> {
+  if (!workosEnabled(env)) {
+    throw err(400, "passwords_off", "Passwords aren't available here.", "This Formelab signs people in through Cloudflare Access.");
+  }
+  if (typeof password !== "string" || password.length < MIN_PASSWORD_LENGTH) {
+    throw err(400, "weak_password", `Use at least ${MIN_PASSWORD_LENGTH} characters.`, "A short phrase of a few words is easy to remember and hard to guess.");
+  }
+  if (password.length > MAX_PASSWORD_LENGTH) {
+    throw err(400, "weak_password", `Use at most ${MAX_PASSWORD_LENGTH} characters.`, "Pick a shorter password.");
+  }
+  if (!(await canSetPassword(env, sessionId))) {
+    throw err(403, "reauth_required", "Log in again before setting a password.", "For your security, you need to have logged in within the last 15 minutes.");
+  }
+  const row = await env.DB.prepare("SELECT workos_id FROM users WHERE email = ?").bind(user.email).first<{ workos_id: string | null }>();
+  if (!row?.workos_id) {
+    throw err(403, "reauth_required", "Log in again before setting a password.", "Log out, then log in with your email.");
+  }
+  const res = await fetch(`${WORKOS_API}/user_management/users/${encodeURIComponent(row.workos_id)}`, {
+    method: "PUT",
+    headers: { authorization: `Bearer ${env.WORKOS_API_KEY}`, "content-type": "application/json" },
+    body: JSON.stringify({ password }),
+  });
+  if (!res.ok) {
+    const body = await res.json<{ message?: unknown; errors?: { message?: unknown }[] }>().catch(() => null);
+    const reason = [body?.errors?.[0]?.message, body?.message].find((m): m is string => typeof m === "string" && m.length > 0);
+    console.error("workos set password failed", res.status);
+    if (res.status === 400 || res.status === 422) {
+      throw err(400, "weak_password", reason ?? "That password wasn't accepted.", "Try a longer password that isn't easy to guess.");
+    }
+    throw err(502, "upstream", "Couldn't save your password.", "Try again in a minute.");
+  }
+  await audit(env, user.email, "password_set", user.email);
 }

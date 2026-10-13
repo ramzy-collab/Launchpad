@@ -35,13 +35,13 @@ export async function createSession(
   env: Env,
   email: string,
   host: string,
-  opts: { parentId?: string; expiresAt?: number } = {},
+  opts: { parentId?: string; expiresAt?: number; workosSid?: string | null } = {},
 ): Promise<string> {
   const token = newToken();
   const t = now();
   const expiresAt = opts.expiresAt ?? t + APEX_SESSION_TTL_MS;
-  await env.DB.prepare("INSERT INTO sessions (id, email, host, parent_id, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?)")
-    .bind(await sha256Hex(token), email, host.toLowerCase(), opts.parentId ?? null, expiresAt, t)
+  await env.DB.prepare("INSERT INTO sessions (id, email, host, parent_id, expires_at, created_at, workos_sid) VALUES (?, ?, ?, ?, ?, ?, ?)")
+    .bind(await sha256Hex(token), email, host.toLowerCase(), opts.parentId ?? null, expiresAt, t, opts.workosSid ?? null)
     .run();
   if (Math.random() < 0.02) {
     await env.DB.batch([
@@ -81,15 +81,28 @@ export async function sessionFromRequest(req: Request, env: Env): Promise<{ user
 
 /**
  * Ends a sign-in everywhere: the session, the sign-in it was handed over from (if any), and every
- * other session handed over from that sign-in.
+ * other session handed over from that sign-in. Returns the WorkOS session behind it, if known, so
+ * the caller can end that too.
  */
-export async function destroySession(env: Env, sessionId: string): Promise<void> {
+export async function destroySession(env: Env, sessionId: string): Promise<{ workosSid: string | null }> {
   const row = await env.DB.prepare("SELECT parent_id FROM sessions WHERE id = ?").bind(sessionId).first<{ parent_id: string | null }>();
   if (row?.parent_id) sessionId = row.parent_id;
+  const root = await env.DB.prepare("SELECT workos_sid FROM sessions WHERE id = ?").bind(sessionId).first<{ workos_sid: string | null }>();
   await env.DB.batch([
     env.DB.prepare("DELETE FROM sessions WHERE parent_id = ?").bind(sessionId),
     env.DB.prepare("DELETE FROM sessions WHERE id = ?").bind(sessionId),
   ]);
+  return { workosSid: root?.workos_sid ?? null };
+}
+
+/** When the person behind a session last signed in (the apex sign-in it was handed over from). */
+export async function signedInAt(env: Env, sessionId: string): Promise<number | null> {
+  const row = await env.DB.prepare(
+    "SELECT COALESCE(p.created_at, s.created_at) AS at FROM sessions s LEFT JOIN sessions p ON p.id = s.parent_id WHERE s.id = ?",
+  )
+    .bind(sessionId)
+    .first<{ at: number | null }>();
+  return row?.at ?? null;
 }
 
 /** A single-use code that lets `host` open its own session for the signed-in apex session. */
