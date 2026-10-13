@@ -84,7 +84,7 @@ describe("ChatGPT connector", () => {
     const token = await connectLikeChatGPT("none");
 
     const found = await tool(token, "search", { query: `budget ${ns}` });
-    expect(found.data.results).toEqual([{ id: expect.stringMatching(/^site:s_/), title: "Budget tracker", url: `https://${ns}.example.com/budget/` }]);
+    expect(found.data.results).toEqual([{ id: expect.stringMatching(/^site:s_/), title: "Budget tracker", url: `https://${ns}.example.app/budget/` }]);
 
     const all = await tool(token, "search", { query: "" });
     const ids = all.data.results.map((r: { id: string }) => r.id);
@@ -92,7 +92,7 @@ describe("ChatGPT connector", () => {
     expect(all.data.results.filter((r: { url: string }) => r.url.startsWith(`https://${ns}.`)).length).toBe(2);
 
     const site = await tool(token, "fetch", { id: found.data.results[0].id });
-    expect(site.data).toMatchObject({ id: found.data.results[0].id, title: "Budget tracker", url: `https://${ns}.example.com/budget/`, metadata: { namespace: ns, mountPath: "budget" } });
+    expect(site.data).toMatchObject({ id: found.data.results[0].id, title: "Budget tracker", url: `https://${ns}.example.app/budget/`, metadata: { namespace: ns, mountPath: "budget" } });
     expect(site.data.text).toContain("<h1>Budget tracker</h1>");
 
     const guide = await tool(token, "fetch", { id: "guide" });

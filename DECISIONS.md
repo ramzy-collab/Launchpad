@@ -133,7 +133,30 @@ Choices made while building v1, including where the build differs from the spec 
 - The CSP is stricter than the spec's minimum: `default-src 'self'; script-src 'self'; style-src
   'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none';
   form-action 'self'`. CSS is a served file too, since inline styles would need `unsafe-inline`.
-- Dashboard JS/CSS are served from `/_platform/dashboard.{js,css}` on the apex.
+- Page JS/CSS are served from `/_assets/*` on the apex, without sign-in (they hold nothing
+  private), so the public home page and the dashboard share one stylesheet, `formelab.css`.
+- The only third party is Google Fonts (Bricolage Grotesque, Inter, Permanent Marker), allowed by
+  `style-src https://fonts.googleapis.com` and `font-src https://fonts.gstatic.com`.
+
+## Home page, login and waitlist
+
+- The home and login pages follow the "wall" prototype (fl.formelab.ai/wall): a big hero, a
+  scrolling rail of example apps, the waitlist form and "How it works". They use their own
+  stylesheet, `home.css`, and are light only, like the prototype. The rail's second copy (for a
+  seamless loop) is rendered on the server and hidden from screen readers.
+- The signed-in pages (dashboard, consent) follow the earlier waitlist prototype
+  (fl.formelab.ai/waitlist) through `formelab.css`: warm dot-grid canvas, violet accent, pill
+  buttons, and light and dark themes. The theme follows the system until the toggle is used.
+- `/` is the public home page with the waitlist; `/login` is the login screen; the dashboard
+  moved from `/` to `/app`. A request to `/` that already carries a valid Access JWT redirects to
+  `/app`, so older Access setups that cover the whole apex keep working.
+- **Login stays with Cloudflare Access.** The prototype had email and password fields, but
+  Formelab has no passwords: the login screen's button goes to `/app`, where Access asks for a
+  one-time code or the configured identity provider. `/cdn-cgi/access/logout` logs out.
+- Waitlist sign-ups (`POST /_api/waitlist`, JSON `{ email }`) go to the `waitlist` table in D1.
+  Joining twice gives the same answer, so the endpoint never reveals who is on the list.
+  Cross-origin posts are refused, and sign-ups are limited to 10 per minute per IP
+  (`WAITLIST_LIMITER`, with the D1 counter as fallback). Admins see the list on the dashboard.
 - "Recent activity" shows audit rows where you are the actor, or the target is one of your
   namespaces or sites.
 
@@ -198,3 +221,223 @@ Choices made while building v1, including where the build differs from the spec 
   `{id, title, text, url, metadata}`). `search` covers the sites you can manage plus the guide;
   `fetch` applies the same rule as opening the app in a browser (`canViewSite`) and includes up to
   200 KB of `index.html`, so an assistant can read an app before republishing it.
+
+## Accounts and login (WorkOS AuthKit)
+
+- **WorkOS AuthKit, used server side only.** `/auth/login` redirects to AuthKit's hosted page;
+  `/auth/callback` exchanges the code with the API key and starts Formelab's own session. No
+  WorkOS JavaScript runs on Formelab pages, so the strict CSP stays as it is. WorkOS was chosen over
+  Clerk because the free tier covers 1M monthly users, it sends the sign-in emails, and its
+  organizations and SSO fit the later work/company accounts.
+- **Sessions live in D1** (`sessions`), keyed by the SHA-256 of a random cookie token. Cookies are
+  `__Host-` prefixed (host-only, Secure, HttpOnly, SameSite=Lax). The dashboard session lasts 30
+  days. Each namespace host gets a separate 12-hour session through a single-use, 60-second code
+  (`auth_codes`) minted by the apex; it ends when the dashboard session does.
+- **Cloudflare Access still works** alongside: a request is signed in by a session cookie first,
+  then by an Access JWT. That makes the switch-over safe; Access can be removed afterwards.
+- **Waitlist gate.** `users.status` is `active` or `waitlisted`. New sign-ins are waitlisted unless
+  their email was approved (`waitlist.approved_at`) or is `OWNER_EMAIL`. Waitlisted accounts can't
+  create namespaces (and so can't publish), but can open apps shared with them.
+- **Private by default.** New apps default to `visibility: "restricted"`, and migration 0004 moved
+  existing apps to it. "Shared with me" lists apps someone else owns where the person is named:
+  in `allowed_emails`, the app's `editors`, or the namespace's editors. `visibility: "all"` (anyone
+  signed in) still exists for apps the owner deliberately opens up, but those don't show up in
+  everyone's "Shared with me".
+- **Strangers get 404, not 403,** for private apps in the management API and MCP tools, so an app's
+  existence isn't revealed.
+- **User apps live on their own domain** (see "Hosts" below).
+
+- **Publishing a new version keeps an app's sharing.** `visibility`, `allowed_emails` and
+  `editors` on `publish` only apply to a new app; republishing ignores them and, when they differ
+  from what the app has, returns a `note` pointing to `update_site`. A blank title or an unticked
+  SPA box (as the dashboard form sends) also leaves those settings as they are.
+
+## Notification emails
+
+- **Cloudflare Email Service** (the `send_email` binding `EMAIL`), chosen over Resend for its
+  higher volume on the Workers plan we already pay for (3,000/month included, no daily cap),
+  and because it needs no extra account or API key. It was in beta when added. The binding only
+  allows the `EMAIL_FROM` address. Sends run in `waitUntil`, so a slow or failing email service
+  never slows down or fails the request; failures are logged with Cloudflare's error code.
+- **Sent once per event:** the waitlist confirmation only on the first insert (so the public form
+  can't be used to email someone repeatedly), "you're in" only when `approved_at` goes from empty
+  to set, and sharing emails only to addresses newly added to `allowed_emails`, `editors` or a
+  namespace's editors. The person making the change is never emailed.
+- User-supplied text (app titles, names) is HTML-escaped in the email body.
+
+
+## Deleting users
+
+- Admins delete a user from the dashboard's **Users** section (typing the email to confirm), or
+  with `DELETE /_api/admin/users/:email`. It removes the account and everything it owns: owned
+  namespaces with all their apps, the user's other apps (R2 files, KV, secrets), their entries
+  on other apps' and namespaces' share and editor lists, tokens, sessions, OAuth grants, the
+  waitlist row, and the WorkOS user (best effort). Audit rows are kept as history.
+- Admins can't delete themselves or the `OWNER_EMAIL` account. Someone who is deleted can sign in
+  again later; they start over on the waitlist.
+
+## Formelab admin area
+
+- Running Formelab lives on `admin.DOMAIN` (Overview, Users, Waitlist), apart from anyone's own
+  lab on `APP_DOMAIN`. Admins get an **Admin** link in their lab's nav; for everyone else the admin
+  pages are a 404.
+- Admins can make other people admins (which also lets them in from the waitlist) and remove
+  admin access. The `OWNER_EMAIL` account is always an admin, and nobody can remove their own
+  access, so Formelab can't be left without an admin.
+
+## Hosts
+
+- `DOMAIN` (formelab.ai) keeps everything public or protocol-facing: the home page and waitlist,
+  `/login` and the WorkOS callback, the MCP connector and its OAuth endpoints, and the deploy API.
+  The connector URL (`https://DOMAIN/mcp`) doesn't move, so connected AI apps keep working.
+- `APP_DOMAIN` (formelab.app) serves the web app at its root (`/`, `/shared`, `/connect`) and the
+  management API; `<ns>.APP_DOMAIN` serves published apps. Apps get a separate registrable domain
+  so browsers never count them as "same site" with the sign-in and admin hosts.
+- `admin.DOMAIN` serves the admin panel and the management API. `admin` is a reserved namespace
+  label, so no one can claim it as an old-style app host.
+- Old addresses redirect with 301, keeping path and query: `DOMAIN/app/*` to `APP_DOMAIN/*`,
+  `DOMAIN/admin/*` to `admin.DOMAIN/*`, and `<ns>.DOMAIN/*` to `<ns>.APP_DOMAIN/*`.
+- **One sign-in, a session per host.** `DOMAIN` talks to WorkOS for everything but the admin
+  panel. The web app and app hosts send
+  visitors without a session to `DOMAIN/auth/app`, which hands back a single-use code that the
+  host trades for its own host-only cookie (as app hosts already did). Child sessions never
+  outlive the `DOMAIN` session; logging out on any host deletes the `DOMAIN` session and all its
+  children. Session lengths: `DOMAIN` and the web app 30 days, app hosts 12 hours.
+- **The admin panel signs in separately.** `admin.DOMAIN` runs the WorkOS flow on its own host
+  (`/login`, `/auth/login`, `/auth/callback`, so WorkOS needs that redirect URI too) and never
+  accepts a session handed over from `DOMAIN`. Only admins (or `OWNER_EMAIL`) can finish it;
+  anyone else gets a 403 and isn't added to the users or the waitlist. Its session lasts 8 hours,
+  so a stolen admin cookie is useful for a working day at most, and logging in or out of the lab
+  doesn't touch it (or the other way round). The panel has no link back to the lab.
+- With Cloudflare Access instead of WorkOS there is no session to hand over, so `/auth/app`
+  answers with a sign-in page instead of looping; Access must then cover the other hosts itself.
+
+## Activity logs
+
+- There is no shared "Recent activity" list any more. Every row in the activity log (the `audit`
+  table) is either about one app or about Formelab itself:
+  - **App activity** (`audit.site_id` set, migration 0005): publishing, new versions, sharing and
+    settings changes, secrets saved or removed, and calls made with the app's secrets. It is on
+    the app's own page, `APP_DOMAIN/apps/<id>/activity`, linked as **Activity** from My apps (and
+    from Shared with me for editors). Only people who can manage the app see it; others get 404.
+  - **Formelab activity** (`site_id` NULL): people let in or invited, admin access granted or
+    removed, deleted accounts, namespaces, deleted apps (their own log goes with them) and AI apps
+    connected. It is the admin panel's **Activity** tab.
+- Each row is shown as a sentence describing the action that caused it ("Shared it with
+  a@example.com; made b@example.com an editor"), not as an action code and JSON.
+- Saving an app's settings only logs (and writes) the fields that actually changed, so saving
+  the settings form unchanged adds nothing to the log.
+
+## Web app layout
+
+- The web app has a left menu instead of tabs and one long page. A **+ New app** button sits on
+  top (the one primary action), then two groups: **Apps** (My apps, Shared with me, Spaces) and
+  **Connect** (Connect your AI, Connected apps, Access keys). The account menu at the foot of the
+  menu holds the light/dark switch, the admin panel link (admins only, new tab) and Log out. On
+  narrow screens the menu folds behind a menu button in a top bar.
+- **New app** offers asking your AI first (an example prompt to copy, and a link to connect one),
+  then uploading files you already have. Publishing from there returns to My apps.
+- Plain words on the surface: namespaces are called **Spaces** and deploy tokens **Access keys**.
+  The API, MCP tools and database keep the old names (`namespace`, `fl_` tokens).
+- People still on the waitlist only see Shared with me and Connect your AI.
+- **Later changes:** Access keys moved from the menu into the account menu (next to dark mode,
+  the admin panel and Log out). **Connected apps** is a "Soon" placeholder for connecting
+  services (Google Sheets, Stripe, Slack, email) that apps can use. AI app connections now live
+  on **Connect your AI**: a tile per AI app with a **Connected** badge when one of the person's
+  OAuth connections matches it by client name (Claude, ChatGPT, Gemini, Claude Code), and the
+  setup steps, connection details and Disconnect in a dialog. `/connect#claude` (or `#chatgpt`,
+  `#gemini`, `#claude-code`) opens that dialog directly. The logos are the official marks, inlined from LobeHub Icons (`@lobehub/icons-static-svg`, MIT) in `src/dashboard/logos.ts`.
+- **Claude Code shows as connected** even though it uses an access key rather than signing in:
+  when an MCP request made with a key is the `initialize` handshake, the client's name
+  (`clientInfo.name`, "claude-code" for Claude Code) is saved on the key (`tokens.client_name`,
+  migration 0006). Connect your AI matches it to a tile like a sign-in's client name, and offers
+  **Revoke key** there; Access keys shows it as "Used by".
+- **New app hands the idea to the person's own AI** (no AI runs on Formelab's side yet): a
+  prompt box with example ideas and **Make it with Claude** / **Make it with ChatGPT** buttons that
+  open `claude.ai/new?q=` or `chatgpt.com/?q=` in a new tab with the idea typed in (plus "publish
+  it to Formelab" when the idea doesn't mention Formelab), and **Copy for Claude Code**. Each
+  button shows Connected, or links to that app's setup on Connect your AI. Gemini has no reliable
+  prefill link, so it isn't offered here. A built-in builder (Formelab calling a model itself)
+  is the planned next step.
+
+## Browsing apps
+
+- My apps and Shared with me share one app browser (`src/dashboard/apps.ts`): **tiles grouped by
+  space** (the default) or a **list** whose column headers sort (click again to reverse), plus
+  search (name, address, space, owner), filters (space; who can open it on My apps, your access
+  on Shared with me) and a sort menu. The server renders every app in both views; `dashboard.js`
+  filters, sorts and switches views without reloading, and remembers the view in localStorage.
+- Clicking a tile opens the app in a new tab. The gear (only on apps you can manage) opens the
+  app's own page, `/apps/<id>`: its details (space, path, owner, who can open it, dates, size,
+  options), settings and sharing, publishing a new version, recent activity (with a link to the
+  full log) and Delete. Editors who aren't the owner don't see the editors field (only the owner
+  or the space's owner can change it) or Delete.
+- Thumbnails are a colored square with the app's first letter; the color comes from the app id
+  through one of eight classes, since the CSP allows no inline styles.
+- **App icons on tiles:** at publish, Formelab looks for the app's icon: what `index.html` links
+  as its icon (apple-touch-icon, then SVG, then any; a small `data:` URI counts), else a
+  well-known file at the app's root (`favicon.svg`, `favicon.ico`, `logo.png`, ...). External
+  URLs and paths outside the app are ignored. The answer is stored in `sites.icon_path`
+  (migration 0007; NULL for older apps, which listing them looks into in the background, up to
+  20 at a time, so their icons appear on the next visit). The web app serves
+  it at `/apps/<id>/icon` to people who can open the app, with a sandboxing CSP so an SVG opened
+  directly can't run script on the web app's host; apps without an icon keep their letter tile.
+  The build guide's checklist asks agents to include an icon.
+- **AI-made apps must have an icon:** the MCP `publish` tool refuses an app without one
+  (`icon_required`, with a hint showing the `<link rel="icon">` to add), so the AI adds one and
+  publishes again. Its description and the server's instructions say so up front, and the build
+  guide's starter app includes one. Uploads from the web app and the deploy API don't require it.
+
+## Connected apps: Google Gemini
+
+- The first connected app. A person adds their Gemini API key once (Connected apps → Google
+  Gemini); Formelab checks it with Google (a free model lookup) and stores it in `service_keys`
+  (migration 0008), encrypted with `SECRETS_KEK` like app secrets but bound to the person
+  (AAD `user:<email>:gemini`). Only the last four characters are kept in the clear, to show which
+  key it is. Deleting the account deletes it.
+- Apps call **Gemini 3.5 Flash-Lite** (`gemini-3.5-flash-lite`) through the SDK:
+  `formelab.gemini.generate(prompt, { system, schema, json, maxOutputTokens })` or Gemini's own
+  `contents`, and `formelab.gemini.available()`. The runtime API (`/_api/ai/gemini`) adds the
+  key on the server; it never reaches a browser or the app's files.
+- **The app owner's key is used**, also when people the app is shared with use it (they can
+  open the app, so they can use its features). Calls count toward the owner's Google usage, are
+  limited to 60 a minute per app (the proxy's limiter), and each one is in the app's activity log
+  with its token count. Connecting and disconnecting are in the admin activity log.
+- AIs learn about it from the build guide (a ground rule and an SDK section) and from `whoami`
+  (`connectedApps.gemini`), so they use it instead of asking for an API key.
+- **Behind a feature flag.** Connected apps (all of them, Gemini included) are behind the
+  `connected_apps` flag (migration 0009, `src/flags.ts`), set in the admin panel's **Features**
+  tab: **Off** (the default), **Admins only** or **Everyone**. Off, the Connected apps page still
+  shows, but only its "Coming soon" wall, with a **Soon** tag in the menu; the key API answers
+  404, apps' Gemini calls answer `not_available` (and `available()` says so), `whoami` leaves out
+  `connectedApps`, and the build guide drops its Gemini sections (marked
+  `<!-- flag:connected_apps -->` in `guide.md`). For apps the flag follows the app's owner,
+  since it's their key. Turning it off deletes nothing; changes are in the admin activity log.
+
+## Changelog
+
+- `CHANGELOG.md` lists every change in plain language, newest first, one `## YYYY-MM-DD` heading
+  per day and one `- ` item per change. It's bundled at build time and shown in the admin panel's
+  **Changelog** tab. Add an entry with every change.
+- **Vendors** (admin panel → Vendors) lists every outside service, the AI apps people connect,
+  the open-source libraries and artwork built in, and vendors retired or considered, with what
+  each is for, its plan and cost, and where it's set up. The list is `src/vendors.ts`; keep it
+  current when adding or dropping a vendor.
+
+## Connected apps: Google Sheets (OAuth)
+
+- The first connected app that uses sign-in instead of a key. **Connect with Google** goes to
+  `/services/google-sheets/connect` on the web app host, which sends the person to Google with
+  state and PKCE in a host-only cookie, asking for `openid email` and the `spreadsheets` scope
+  with offline access. The callback trades the code for tokens (with Formelab's client secret)
+  and stores them encrypted in `service_keys` (`google_sheets`), with the Google account's email
+  as the hint. Access tokens are refreshed when they're within a minute of expiring.
+- Apps call it through the SDK (`formelab.sheets.read/append/update/create/request`), which
+  posts to `/_api/sheets`; Formelab adds the owner's token and calls
+  `https://sheets.googleapis.com/v4/<path>`. The path must start with `spreadsheets` and stay
+  inside the Sheets API (encoded dots are refused). Same rules as Gemini: the owner's account,
+  60 calls a minute per app, every call in the app's activity log, behind `connected_apps`.
+- Why `spreadsheets` and not the narrower `drive.file`: people want their apps to use the
+  spreadsheets they already have. It's a sensitive scope, so Google's consent screen stays in
+  **Testing** (named test users, 7-day connections) until it passes Google's verification.
+- Disconnecting revokes the token at Google (best effort) and deletes it.

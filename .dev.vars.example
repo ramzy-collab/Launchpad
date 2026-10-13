@@ -6,3 +6,6 @@ OWNER_EMAIL=you@example.com
 SECRETS_KEK=REPLACE_WITH_BASE64_32_BYTES
 ACCESS_TEAM_DOMAIN=unused-in-dev.cloudflareaccess.com
 ACCESS_AUD=unused-in-dev
+# Optional: test Formelab's own login locally (WorkOS staging keys). Remove DEV_USER to use it.
+# WORKOS_CLIENT_ID=client_...
+# WORKOS_API_KEY=sk_test_...

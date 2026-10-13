@@ -1,19 +1,22 @@
 import {
   AuthorizationError,
   CimdFetchError,
+  getOAuthApi,
   OAuthProvider,
+  type OAuthProviderOptions,
   type ConsentDescription,
   type OAuthHelpers,
 } from "@cloudflare/workers-oauth-provider";
 import type { Context } from "hono";
-import { getUser, userForDeployToken } from "./auth";
+import { getUser, noteTokenClient, resolveDeployToken } from "./auth";
 import { audit } from "./audit";
 import type { AppEnv, Env } from "./env";
-import { isDev } from "./env";
 import { notFound } from "./errors";
 import { handleMcp } from "./mcp";
 import { plainPage } from "./serve";
 import { escapeHtml as e } from "./util";
+import { aiOrigin } from "./hosts";
+import { FONT_CSP, head, nav } from "./dashboard/layout";
 
 /**
  * OAuth 2.1 for the MCP endpoint, so hosted clients such as Claude chat (claude.ai custom
@@ -36,11 +39,29 @@ export const MCP_SCOPE = "mcp";
 interface McpProps {
   email: string;
   via: "oauth" | "token";
+  /** The access key, for connections made with one (via "token"). */
+  tokenId?: string;
+}
+
+/** The client name in an MCP initialize message (a single message or a batch), if this is one. */
+async function initializeClientName(req: Request): Promise<string | null> {
+  if (req.method !== "POST") return null;
+  try {
+    const body = await req.clone().json();
+    for (const m of Array.isArray(body) ? body : [body]) {
+      const name = m?.method === "initialize" ? m?.params?.clientInfo?.name : undefined;
+      if (typeof name === "string" && name.trim()) return name.trim().slice(0, 100);
+    }
+  } catch {
+    /* not JSON: the MCP transport will answer it */
+  }
+  return null;
 }
 
 /** The apex origin: https://DOMAIN in production, the request's own origin in dev (http://localhost:8787). */
+/** The origin of DOMAIN, where the connector, OAuth and sign-in live. */
 export function apexOrigin(env: Env, requestUrl: string): string {
-  return isDev(env) ? new URL(requestUrl).origin : `https://${env.DOMAIN.toLowerCase()}`;
+  return aiOrigin(env, requestUrl);
 }
 
 const mcpApiHandler = {
@@ -53,6 +74,12 @@ const mcpApiHandler = {
         { status: 401 },
       );
     }
+    // Access keys carry no app name, so learn it from the MCP handshake (Claude Code says
+    // "claude-code"); Connect your AI uses it to show which AI app is connected.
+    if (ctx.props?.via === "token" && ctx.props.tokenId) {
+      const client = await initializeClientName(req);
+      if (client) ctx.waitUntil(noteTokenClient(env, ctx.props.tokenId, client).catch(() => {}));
+    }
     return handleMcp(req, env, user, ctx);
   },
 };
@@ -62,39 +89,51 @@ type ApexHandler = { fetch: (req: Request, env: Env, ctx: ExecutionContext) => R
 const providers = new Map<string, OAuthProvider<Env>>();
 
 /** One provider per apex origin (the resource URL is fixed at construction). */
+function providerOptions(origin: string, defaultHandler: ApexHandler): OAuthProviderOptions<Env> {
+  const resource = `${origin}/mcp`;
+  return {
+    apiRoute: "/mcp",
+    apiHandler: mcpApiHandler as never,
+    defaultHandler: defaultHandler as never,
+    authorizeEndpoint: AUTHORIZE_PATH,
+    tokenEndpoint: TOKEN_PATH,
+    clientRegistrationEndpoint: REGISTER_PATH,
+    clientIdMetadataDocumentEnabled: true,
+    scopesSupported: [MCP_SCOPE, "offline_access"],
+    requiredScopes: [MCP_SCOPE],
+    resourceMetadata: { resource, authorization_servers: [origin], resource_name: "Formelab" },
+    resolveExternalToken: async ({ token, env }) => {
+      if (!token.startsWith("fl_")) return null;
+      const found = await resolveDeployToken(env, token);
+      return found ? { props: { email: found.user.email, via: "token", tokenId: found.tokenId } satisfies McpProps, audience: resource } : null;
+    },
+    onError: ({ code, internal }) => {
+      console.warn("oauth error", code, internal?.category, internal?.reason);
+    },
+  };
+}
+
 export function oauthProvider(origin: string, defaultHandler: ApexHandler): OAuthProvider<Env> {
   let provider = providers.get(origin);
   if (!provider) {
-    const resource = `${origin}/mcp`;
-    provider = new OAuthProvider<Env>({
-      apiRoute: "/mcp",
-      apiHandler: mcpApiHandler as never,
-      defaultHandler: defaultHandler as never,
-      authorizeEndpoint: AUTHORIZE_PATH,
-      tokenEndpoint: TOKEN_PATH,
-      clientRegistrationEndpoint: REGISTER_PATH,
-      clientIdMetadataDocumentEnabled: true,
-      scopesSupported: [MCP_SCOPE, "offline_access"],
-      requiredScopes: [MCP_SCOPE],
-      resourceMetadata: { resource, authorization_servers: [origin], resource_name: "Formelab" },
-      resolveExternalToken: async ({ token, env }) => {
-        if (!token.startsWith("fl_")) return null;
-        const user = await userForDeployToken(env, token);
-        return user ? { props: { email: user.email, via: "token" } satisfies McpProps, audience: resource } : null;
-      },
-      onError: ({ code, internal }) => {
-        console.warn("oauth error", code, internal?.category, internal?.reason);
-      },
-    });
+    provider = new OAuthProvider<Env>(providerOptions(origin, defaultHandler));
     providers.set(origin, provider);
   }
   return provider;
 }
 
-function helpers(env: Env): OAuthHelpers {
-  if (!env.OAUTH_PROVIDER) throw new Error("OAuth helpers are only available on the apex host");
-  return env.OAUTH_PROVIDER;
+const notServed = { fetch: () => new Response(null, { status: 404 }) } as unknown as ApexHandler;
+
+/**
+ * The provider's helpers (grants, clients). Requests on DOMAIN get them from the provider
+ * wrapping the request; the web app and admin hosts aren't wrapped, so build them here. They
+ * read and write the same OAUTH_KV, so connections are the same on every host.
+ */
+export function oauthHelpers(env: Env): OAuthHelpers {
+  return env.OAUTH_PROVIDER ?? getOAuthApi(providerOptions(aiOrigin(env), notServed), env);
 }
+
+const helpers = oauthHelpers;
 
 // ---------------------------------------------------------------------------
 // /authorize: consent page (behind Cloudflare Access)
@@ -110,15 +149,13 @@ function consentPage(user: string, d: ConsentDescription, handle: string): strin
   return `<!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Connect ${e(d.clientName)} to Formelab</title>
-<link rel="stylesheet" href="/_platform/dashboard.css">
-<script src="/_platform/consent.js" defer></script>
+${head(`Connect ${d.clientName} to Formelab`, ["consent.js"])}
 </head>
 <body>
-<main class="consent">
-<section>
+<div class="wrap">
+${nav("/app")}
+<main class="center">
+<section class="card wide consent">
   <h1>Connect ${e(d.clientName)} to Formelab?</h1>
   <p>${who} Access will be sent to <strong>${e(d.redirectHost)}</strong>.</p>
   ${local}
@@ -131,6 +168,7 @@ function consentPage(user: string, d: ConsentDescription, handle: string): strin
   </form>
 </section>
 </main>
+</div>
 </body>
 </html>`;
 }
@@ -141,7 +179,7 @@ const consentCsp = (redirectUri: string) => {
     target = " " + new URL(redirectUri).origin;
   } catch {}
   // form-action also governs the redirect after the POST, so it must allow the client's origin.
-  return `default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'${target}`;
+  return `default-src 'self'; script-src 'self'; ${FONT_CSP}; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'${target}`;
 };
 
 /**
@@ -227,8 +265,7 @@ export interface ConnectionView {
 }
 
 export async function listConnections(env: Env, email: string): Promise<ConnectionView[]> {
-  if (!env.OAUTH_PROVIDER) return [];
-  const { items } = await env.OAUTH_PROVIDER.listUserGrants(email, { limit: 100 });
+  const { items } = await oauthHelpers(env).listUserGrants(email, { limit: 100 });
   return items
     .map((g) => ({
       id: g.id,

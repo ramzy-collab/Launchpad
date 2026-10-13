@@ -1,6 +1,10 @@
+import { createExecutionContext } from "cloudflare:test";
+import { env } from "cloudflare:workers";
+import worker from "../src/index";
+import type { Env } from "../src/env";
 import { describe, expect, it } from "vitest";
 import { afterEach } from "vitest";
-import { accessJwt, call, onOutbound, OWNER, uniq } from "./helpers";
+import { accessJwt, call, ICON, onOutbound, OWNER, uniq } from "./helpers";
 
 const ORIGIN = "https://example.com";
 const RESOURCE = `${ORIGIN}/mcp`;
@@ -135,7 +139,7 @@ describe("OAuth for MCP (Claude chat connector)", () => {
   });
 
   it("does not expose OAuth endpoints on namespace hosts", async () => {
-    const res = await call(`https://${uniq()}.example.com/.well-known/oauth-authorization-server`, { as: OWNER });
+    const res = await call(`https://${uniq()}.example.app/.well-known/oauth-authorization-server`, { as: OWNER });
     expect(res.status).toBe(404);
   });
 
@@ -152,13 +156,13 @@ describe("OAuth for MCP (Claude chat connector)", () => {
   it("acts as the person who approved, with their permissions", async () => {
     const ns = uniq();
     const owner = await connect(OWNER);
-    const pub = await mcpCall(owner.tokens.access_token, "publish", { html: "<!doctype html><html><head></head><body>x</body></html>", namespace: ns, mount_path: "" });
+    const pub = await mcpCall(owner.tokens.access_token, "publish", { html: `<!doctype html><html><head>${ICON}</head><body>x</body></html>`, namespace: ns, mount_path: "" });
     expect(((await pub.json()) as { result: { isError?: boolean } }).result.isError).toBeFalsy();
     const other = await connect("someone@example.com");
     const del = await mcpCall(other.tokens.access_token, "delete_site", { namespace: ns, mount_path: "" });
     const result = ((await del.json()) as { result: { isError?: boolean; content: { text: string }[] } }).result;
     expect(result.isError).toBe(true);
-    expect(result.content[0]!.text).toContain("forbidden");
+    expect(result.content[0]!.text).toContain("not_found"); // private apps don't exist for others
   });
 
   it("requires an Access sign-in on /authorize", async () => {
@@ -201,7 +205,7 @@ describe("OAuth for MCP (Claude chat connector)", () => {
     const { verifier, challenge } = await pkce();
     const page = await call(authorizeUrl(clientId, challenge).url, { as: OWNER });
     const html = await page.text();
-    expect(html).toContain('<script src="/_platform/consent.js" defer></script>');
+    expect(html).toMatch(/<script src="\/_assets\/consent\.js\?v=[0-9a-f]{10}" defer><\/script>/);
     const handle = /name="handle" value="([^"]+)"/.exec(html)![1]!;
     const submit = () =>
       call(`${ORIGIN}/authorize`, {
@@ -221,7 +225,7 @@ describe("OAuth for MCP (Claude chat connector)", () => {
   });
 
   it("serves the consent script, allowed by the page's CSP", async () => {
-    const js = await call(`${ORIGIN}/_platform/consent.js`, { as: OWNER });
+    const js = await call(`${ORIGIN}/_assets/consent.js`);
     expect(js.status).toBe(200);
     expect(js.headers.get("content-type")).toContain("javascript");
     const clientId = await register();
@@ -270,9 +274,22 @@ describe("OAuth for MCP (Claude chat connector)", () => {
     const { tokens } = await connect(email);
     const list = await (await call("/_api/admin/connections", { as: email })).json<{ id: string; clientName: string }[]>();
     expect(list.map((c) => c.clientName)).toEqual(["Claude"]);
-    const html = await (await call("/", { as: email })).text();
-    expect(html).toContain("Connected apps");
-    expect(html).toContain(">Claude<");
+    const html = await (await call("/app/connect", { as: email })).text();
+    // The Claude tile says it's connected, and its dialog offers Disconnect.
+    const tile = html.slice(html.indexOf('data-dialog="dlg-claude"'), html.indexOf("</button>", html.indexOf('data-dialog="dlg-claude"')));
+    expect(tile).toContain("Connected</span>");
+    const chatgptTile = html.slice(html.indexOf('data-dialog="dlg-chatgpt"'), html.indexOf("</button>", html.indexOf('data-dialog="dlg-chatgpt"')));
+    expect(chatgptTile).not.toContain("Connected</span>");
+    const dialog = html.slice(html.indexOf('<dialog id="dlg-claude"'), html.indexOf("</dialog>", html.indexOf('<dialog id="dlg-claude"')));
+    expect(dialog).toContain(`data-action="connection-revoke" data-id="${list[0]!.id}"`);
+
+    // The web app host isn't wrapped by the OAuth provider, so it must not depend on the helpers
+    // the provider puts on env for DOMAIN requests (in production env starts without them).
+    const bare = { ...(env as unknown as Env), OAUTH_PROVIDER: undefined } as Env;
+    const req = new Request("https://example.app/connect", { headers: { "cf-access-jwt-assertion": await accessJwt(email) } });
+    const fresh = await (await worker.fetch(req, bare, createExecutionContext())).text();
+    const freshTile = fresh.slice(fresh.indexOf('data-dialog="dlg-claude"'), fresh.indexOf("</button>", fresh.indexOf('data-dialog="dlg-claude"')));
+    expect(freshTile).toContain("Connected</span>");
 
     // Someone else can't disconnect it.
     expect((await call(`/_api/admin/connections/${list[0]!.id}`, { as: "mallory@example.com", method: "DELETE" })).status).toBe(404);
@@ -302,5 +319,49 @@ describe("OAuth for MCP (Claude chat connector)", () => {
     const jwt = await accessJwt(OWNER);
     const res = await call(`${ORIGIN}/mcp`, { method: "POST", headers: { authorization: `Bearer ${jwt}` }, json: { jsonrpc: "2.0", id: 1, method: "tools/list" } });
     expect(res.status).toBe(401);
+  });
+});
+
+describe("OAuth for MCP: Gemini-style clients", () => {
+  // Gemini CLI registers dynamically with a loopback redirect and may leave out scope and resource.
+  const LOOPBACK = "http://localhost:7777/oauth/callback";
+
+  it("registers, signs in and calls tools without scope or resource parameters", async () => {
+    const reg = await call(`${ORIGIN}/oauth/register`, {
+      method: "POST",
+      json: { client_name: "Gemini CLI MCP Client", redirect_uris: [LOOPBACK], token_endpoint_auth_method: "none", grant_types: ["authorization_code", "refresh_token"], response_types: ["code"] },
+    });
+    expect(reg.status, await reg.clone().text()).toBe(201);
+    const clientId = (await reg.json<{ client_id: string }>()).client_id;
+
+    const { verifier, challenge } = await pkce();
+    const u = new URL(`${ORIGIN}/authorize`);
+    u.search = new URLSearchParams({ response_type: "code", client_id: clientId, redirect_uri: LOOPBACK, code_challenge: challenge, code_challenge_method: "S256", state: "gem" }).toString();
+    const page = await call(u.toString(), { as: OWNER });
+    expect(page.status, await page.clone().text()).toBe(200);
+    const html = await page.text();
+    expect(html).toContain("Gemini CLI MCP Client");
+    expect(html).toContain("an app on your computer"); // loopback warning
+    const handle = /name="handle" value="([^"]+)"/.exec(html)![1]!;
+    const approved = await call(`${ORIGIN}/authorize`, {
+      as: OWNER,
+      method: "POST",
+      headers: { cookie: cookiesFrom(page), "content-type": "application/x-www-form-urlencoded", origin: ORIGIN },
+      body: new URLSearchParams({ handle, decision: "approve" }).toString(),
+    });
+    expect(approved.status, await approved.clone().text()).toBe(302);
+    const back = new URL(approved.headers.get("location")!);
+    expect(back.origin + back.pathname).toBe(LOOPBACK);
+
+    const tok = await call(`${ORIGIN}/oauth/token`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ grant_type: "authorization_code", code: back.searchParams.get("code")!, redirect_uri: LOOPBACK, client_id: clientId, code_verifier: verifier }).toString(),
+    });
+    expect(tok.status, await tok.clone().text()).toBe(200);
+    const { access_token } = await tok.json<{ access_token: string }>();
+    const who = await mcpCall(access_token, "whoami");
+    expect(who.status).toBe(200);
+    expect(await who.text()).toContain(OWNER);
   });
 });

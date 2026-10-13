@@ -1,11 +1,32 @@
 import { audit } from "./audit";
+import { findIcon, iconPathFor } from "./icons";
 import { canManageSite, canPublishTo, canViewSite, isNamespaceEditor, isNamespaceOwner, ownerOnly } from "./auth";
 import type { Env, User } from "./env";
-import { isDev, now } from "./env";
+import { now } from "./env";
 import { badRequest, err, forbidden, notFound } from "./errors";
 import { contentTypeFor } from "./mime";
 import type { FileMap } from "./upload";
 import { isEmail, normEmail, parseJsonArray, randomId, sortableId } from "./util";
+import { appSharedEmail, namespaceSharedEmail, sendEach } from "./email";
+import { appOrigin, nsOrigin } from "./hosts";
+
+/** Addresses in `next` that weren't in `prev` (both normalized). */
+const added = (next: string[], prev: string[]) => {
+  const before = new Set(prev.map(normEmail));
+  return next.map(normEmail).filter((e) => !before.has(e));
+};
+
+/** Emails the people newly given access to an app. */
+function notifyShared(ctx: Ctx, site: SiteRow, viewers: string[], editors: string[]) {
+  if (!viewers.length && !editors.length) return;
+  const origin = appOrigin(ctx.env, ctx.requestUrl);
+  const by = ctx.user.name || ctx.user.email;
+  const title = site.title || `${site.namespace}/${site.mount_path}`;
+  const url = siteUrl(ctx.env, site.namespace, site.mount_path, ctx.requestUrl);
+  const editorSet = new Set(editors);
+  const everyone = [...new Set([...editors, ...viewers])];
+  ctx.waitUntil(sendEach(ctx.env, everyone, ctx.user.email, (to) => appSharedEmail(origin, to, { by, title, url, canEdit: editorSet.has(to) })));
+}
 
 export interface NamespaceRow {
   label: string;
@@ -30,6 +51,8 @@ export interface SiteRow {
   total_bytes: number;
   created_at: number;
   updated_at: number;
+  /** See src/icons.ts: NULL = not looked for yet, "" = none. */
+  icon_path?: string | null;
 }
 
 /** Everything a service call needs: bindings, the acting user, and a way to defer work. */
@@ -104,7 +127,7 @@ const safeJson = (s: string): unknown => {
 export function parseVisibility(raw: unknown): "all" | "restricted" | undefined {
   if (raw === undefined || raw === null || raw === "") return undefined;
   if (raw === "all" || raw === "restricted") return raw;
-  throw badRequest(`visibility must be "all" or "restricted".`, "\"all\" lets anyone signed in see the app; \"restricted\" limits it to the allow-list.");
+  throw badRequest(`visibility must be "all" or "restricted".`, "\"restricted\" (the default) limits the app to its owner, editors and allowed_emails; \"all\" lets anyone signed in to Formelab open it.");
 }
 
 export function parseBool(raw: unknown): boolean | undefined {
@@ -127,13 +150,7 @@ export function parseTitle(raw: unknown): string | null | undefined {
 // URLs
 // ---------------------------------------------------------------------------
 
-export function nsOrigin(env: Env, ns: string, requestUrl?: string): string {
-  if (isDev(env) && requestUrl) {
-    const u = new URL(requestUrl);
-    return `${u.protocol}//${ns}.${env.DOMAIN}${u.port ? ":" + u.port : ""}`;
-  }
-  return `https://${ns}.${env.DOMAIN}`;
-}
+export { nsOrigin };
 
 export const siteUrl = (env: Env, ns: string, mount: string, requestUrl?: string) =>
   `${nsOrigin(env, ns, requestUrl)}/${mount ? mount + "/" : ""}`;
@@ -154,6 +171,8 @@ export interface SiteView {
   totalBytes: number;
   createdAt: number;
   updatedAt: number;
+  /** Where the web app shows the app's icon; null when the app has none (show its letter). */
+  iconUrl: string | null;
 }
 
 export const siteView = (env: Env, s: SiteRow, requestUrl?: string): SiteView => ({
@@ -172,6 +191,7 @@ export const siteView = (env: Env, s: SiteRow, requestUrl?: string): SiteView =>
   totalBytes: s.total_bytes,
   createdAt: s.created_at,
   updatedAt: s.updated_at,
+  iconUrl: s.icon_path ? `/apps/${encodeURIComponent(s.id)}/icon?v=${s.current_version}` : null,
 });
 
 export const namespaceView = (n: NamespaceRow, user: User, env: Env, requestUrl?: string) => ({
@@ -235,6 +255,7 @@ export async function listNamespaces(ctx: Ctx) {
 }
 
 export async function createNamespace(ctx: Ctx, rawLabel: unknown) {
+  if (!ctx.user.active) throw waitlisted();
   const label = validateLabel(rawLabel);
   const existing = await getNamespace(ctx.env, label);
   if (existing) {
@@ -258,6 +279,13 @@ export async function updateNamespaceEditors(ctx: Ctx, rawLabel: string, rawEdit
   const editors = emailList(rawEditors, "editors");
   await ctx.env.DB.prepare("UPDATE namespaces SET editors = ? WHERE label = ?").bind(JSON.stringify(editors), ns.label).run();
   await audit(ctx.env, ctx.user.email, "namespace_editors", ns.label, { editors });
+  const newEditors = added(editors, parseJsonArray(ns.editors));
+  if (newEditors.length) {
+    const origin = appOrigin(ctx.env, ctx.requestUrl);
+    const by = ctx.user.name || ctx.user.email;
+    const url = nsOrigin(ctx.env, ns.label, ctx.requestUrl) + "/";
+    ctx.waitUntil(sendEach(ctx.env, newEditors, ctx.user.email, (to) => namespaceSharedEmail(origin, to, { by, namespace: ns.label, url })));
+  }
   return namespaceView({ ...ns, editors: JSON.stringify(editors) }, ctx.user, ctx.env, ctx.requestUrl);
 }
 
@@ -274,6 +302,63 @@ export async function deleteNamespace(ctx: Ctx, rawLabel: string) {
 // ---------------------------------------------------------------------------
 // Sites
 // ---------------------------------------------------------------------------
+
+export const waitlisted = () =>
+  err(403, "waitlisted", "Your account is still on the waitlist.", "You can open apps people share with you. We'll email you when you can create your own.");
+
+const listed = (list: string, email: string) => parseJsonArray(list).map(normEmail).includes(email);
+
+/** Is this the person's own app: they own it, or own its namespace. */
+const ownsSite = (u: User, s: SiteRow, ns: NamespaceRow) => s.owner_email === u.email || isNamespaceOwner(u, ns);
+
+/**
+ * Apps someone else owns that were shared with this person by name: as a viewer (allowed_emails),
+ * an editor of the app, or an editor of its namespace. Apps open to everyone signed in don't count.
+ */
+export async function listSharedSites(ctx: Ctx) {
+  const { env, user } = ctx;
+  const [namespaces, sites] = await Promise.all([
+    env.DB.prepare("SELECT * FROM namespaces").all<NamespaceRow>(),
+    env.DB.prepare("SELECT * FROM sites ORDER BY updated_at DESC").all<SiteRow>(),
+  ]);
+  const nsByLabel = new Map(namespaces.results.map((n) => [n.label, n]));
+  const out = sites.results
+    .filter((s) => {
+      const ns = nsByLabel.get(s.namespace);
+      if (!ns || ownsSite(user, s, ns)) return false;
+      return listed(s.allowed_emails, user.email) || listed(s.editors, user.email) || listed(ns.editors, user.email);
+    })
+    .map((s) => ({ ...siteView(env, s, ctx.requestUrl), canManage: canManageSite(user, s, nsByLabel.get(s.namespace)!) }));
+  const shown = new Set(out.map((v) => v.id));
+  findMissingIcons(ctx, sites.results.filter((r) => shown.has(r.id)));
+  return out;
+}
+
+/** Apps published before icons existed haven't been looked at yet: do a few in the background,
+ * so their icons show from the next visit on. */
+function findMissingIcons(ctx: Ctx, sites: SiteRow[]) {
+  const todo = sites.filter((s) => s.icon_path === null || s.icon_path === undefined).slice(0, 20);
+  if (todo.length) ctx.waitUntil(Promise.all(todo.map((s) => iconPathFor(ctx.env, s).catch(() => ""))));
+}
+
+/** The person's own apps (see ownsSite), for the dashboard's "My apps". */
+export async function listOwnSites(ctx: Ctx) {
+  const { env, user } = ctx;
+  const [namespaces, sites] = await Promise.all([
+    env.DB.prepare("SELECT * FROM namespaces").all<NamespaceRow>(),
+    env.DB.prepare("SELECT * FROM sites ORDER BY namespace, mount_path").all<SiteRow>(),
+  ]);
+  const nsByLabel = new Map(namespaces.results.map((n) => [n.label, n]));
+  const out = sites.results
+    .filter((s) => {
+      const ns = nsByLabel.get(s.namespace);
+      return !!ns && ownsSite(user, s, ns);
+    })
+    .map((s) => ({ ...siteView(env, s, ctx.requestUrl), canManage: true }));
+  const shown = new Set(out.map((v) => v.id));
+  findMissingIcons(ctx, sites.results.filter((r) => shown.has(r.id)));
+  return out;
+}
 
 export async function listSites(ctx: Ctx, rawNamespace?: string | null) {
   const { env, user } = ctx;
@@ -309,7 +394,14 @@ export interface PublishInput {
   visibility?: unknown;
   allowedEmails?: unknown;
   editors?: unknown;
+  /** Refuse an app without an icon (the MCP publish tool, so AI-made apps always have one). */
+  requireIcon?: boolean;
 }
+
+/** Shown to AI apps whose publish was refused for lack of an icon. */
+export const ICON_HINT =
+  "Add a small SVG icon that fits the app: put <link rel=\"icon\" href=\"data:image/svg+xml,<url-encoded svg>\"> in index.html's <head>, " +
+  "or include icon.svg in a zip and link it with <link rel=\"icon\" href=\"icon.svg\">. Then publish again.";
 
 const R2_CONCURRENCY = 8;
 
@@ -345,6 +437,9 @@ export async function publishSite(ctx: Ctx, input: PublishInput) {
   const allowed = input.allowedEmails === undefined ? undefined : emailList(input.allowedEmails, "allowed_emails");
   const editors = input.editors === undefined ? undefined : emailList(input.editors, "editors");
   if (!input.files.has("index.html")) throw badRequest("The upload has no index.html.", "Include an index.html at the root.");
+  // The app's icon for the web app's tiles (see icons.ts).
+  const icon = findIcon(input.files.keys(), new TextDecoder().decode(input.files.get("index.html")!.subarray(0, 64 * 1024)), mount);
+  if (input.requireIcon && !icon) throw err(400, "icon_required", "This app has no icon (favicon). Formelab shows it on the app's tile.", ICON_HINT);
 
   let ns = await getNamespace(env, label);
   if (!ns) {
@@ -359,9 +454,11 @@ export async function publishSite(ctx: Ctx, input: PublishInput) {
   } else if (!canPublishTo(user, ns)) {
     throw err(409, "namespace_taken", `The namespace "${label}" belongs to someone else.`, `Publish to your own namespace instead, or ask ${ns.owner_email} to add you as an editor.`);
   }
-  if (editors !== undefined && existing && existing.owner_email !== user.email && !isNamespaceOwner(user, ns)) {
-    throw ownerOnly();
-  }
+  // Publishing a new version never changes who can open or edit the app; that only happens
+  // through update_site / the app's settings. Say so when the caller asked for something else.
+  const sharingNote = existing && sharingDiffers(existing, visibility, allowed, editors)
+    ? "Kept this app's sharing settings (who can open and edit it). Publishing a new version doesn't change them; use update_site or the app's Settings to change who it's shared with."
+    : undefined;
 
   const version = sortableId();
   const id = existing?.id ?? randomId("s_");
@@ -380,10 +477,11 @@ export async function publishSite(ctx: Ctx, input: PublishInput) {
   let row: SiteRow;
   try {
     if (existing) {
+      // A new version keeps the app's settings unless a new title or spa value is given; an empty
+      // title (as a blank form field sends) keeps the current one.
       const res = await env.DB.prepare(
         `UPDATE sites SET current_version = ?, file_count = ?, total_bytes = ?, updated_at = ?,
-           title = COALESCE(?, title), spa = COALESCE(?, spa), visibility = COALESCE(?, visibility),
-           allowed_emails = COALESCE(?, allowed_emails), editors = COALESCE(?, editors)
+           title = COALESCE(?, title), spa = COALESCE(?, spa)
          WHERE id = ? AND current_version = ?`,
       )
         .bind(
@@ -391,18 +489,13 @@ export async function publishSite(ctx: Ctx, input: PublishInput) {
           input.files.size,
           totalBytes,
           t,
-          title === undefined ? null : title,
+          title ?? null,
           spa === undefined ? null : spa ? 1 : 0,
-          visibility ?? null,
-          allowed ? JSON.stringify(allowed) : null,
-          editors ? JSON.stringify(editors) : null,
           id,
           existing.current_version,
         )
         .run();
       if (!res.meta.changes) throw err(409, "conflict", "Someone else replaced this site at the same moment.", "Publish again.");
-      // A title explicitly cleared to "" should clear it.
-      if (title === null && input.title !== undefined) await env.DB.prepare("UPDATE sites SET title = NULL WHERE id = ?").bind(id).run();
     } else {
       await env.DB.prepare(
         `INSERT INTO sites (id, namespace, mount_path, title, owner_email, editors, visibility, allowed_emails,
@@ -416,7 +509,7 @@ export async function publishSite(ctx: Ctx, input: PublishInput) {
           title ?? null,
           user.email,
           JSON.stringify(editors ?? []),
-          visibility ?? "all",
+          visibility ?? "restricted",
           JSON.stringify(allowed ?? []),
           spa ? 1 : 0,
           version,
@@ -437,14 +530,24 @@ export async function publishSite(ctx: Ctx, input: PublishInput) {
     throw e;
   }
   if (existing) ctx.waitUntil(deletePrefix(env.BUCKET, `sites/${id}/${existing.current_version}/`).catch(() => {}));
+  await env.DB.prepare("UPDATE sites SET icon_path = ? WHERE id = ? AND current_version = ?").bind(icon, id, version).run();
+  row.icon_path = icon;
   await audit(env, user.email, existing ? "replace" : "publish", `${label}/${mount}`, {
     siteId: id,
     version,
     files: input.files.size,
     bytes: totalBytes,
   });
+  if (!existing) notifyShared(ctx, row, allowed ?? [], editors ?? []);
   const site = siteView(env, row, ctx.requestUrl);
-  return { url: site.url, site, replaced: !!existing };
+  return { url: site.url, site, replaced: !!existing, ...(sharingNote ? { note: sharingNote } : {}) };
+}
+
+/** Whether publish input asked for sharing different from what the app has. */
+function sharingDiffers(s: SiteRow, visibility?: string, allowed?: string[], editors?: string[]): boolean {
+  const sameList = (list: string[] | undefined, stored: string) =>
+    list === undefined || [...list].sort().join(",") === parseJsonArray(stored).map(normEmail).sort().join(",");
+  return (visibility !== undefined && visibility !== s.visibility) || !sameList(allowed, s.allowed_emails) || !sameList(editors, s.editors);
 }
 
 export interface SitePatch {
@@ -461,34 +564,72 @@ export async function updateSite(ctx: Ctx, id: string, patch: SitePatch) {
   const sets: string[] = [];
   const binds: unknown[] = [];
   const changed: string[] = [];
+  const detail: Record<string, unknown> = { siteId: id };
+  // Only what actually changes is written and logged (the dashboard form sends every field).
   const set = (col: string, v: unknown) => {
+    if (String((site as unknown as Record<string, unknown>)[col] ?? "") === String(v ?? "")) return;
     sets.push(`${col} = ?`);
     binds.push(v);
     changed.push(col);
   };
   const title = parseTitle(patch.title);
-  if (title !== undefined) set("title", title);
+  if (title !== undefined) {
+    set("title", title);
+    if (changed.includes("title")) detail.title = title ?? "";
+  }
   const hidden = parseBool(patch.hidden);
   if (hidden !== undefined) set("hidden", hidden ? 1 : 0);
   const spa = parseBool(patch.spa);
   if (spa !== undefined) set("spa", spa ? 1 : 0);
   const visibility = parseVisibility(patch.visibility);
-  if (visibility) set("visibility", visibility);
-  if (patch.allowed_emails !== undefined) set("allowed_emails", JSON.stringify(emailList(patch.allowed_emails, "allowed_emails")));
+  if (visibility) {
+    set("visibility", visibility);
+    if (changed.includes("visibility")) detail.visibility = visibility;
+  }
+  let newViewers: string[] = [];
+  let newEditors: string[] = [];
+  if (patch.allowed_emails !== undefined) {
+    const list = emailList(patch.allowed_emails, "allowed_emails");
+    const before = parseJsonArray(site.allowed_emails);
+    newViewers = added(list, before);
+    const gone = added(before, list);
+    if (newViewers.length || gone.length) {
+      set("allowed_emails", JSON.stringify(list));
+      detail.sharedWith = newViewers;
+      detail.unsharedWith = gone;
+    }
+  }
   if (patch.editors !== undefined) {
     if (site.owner_email !== ctx.user.email && !isNamespaceOwner(ctx.user, ns)) throw ownerOnly();
-    set("editors", JSON.stringify(emailList(patch.editors, "editors")));
+    const list = emailList(patch.editors, "editors");
+    const before = parseJsonArray(site.editors);
+    newEditors = added(list, before);
+    const gone = added(before, list);
+    if (newEditors.length || gone.length) {
+      set("editors", JSON.stringify(list));
+      detail.editorsAdded = newEditors;
+      detail.editorsRemoved = gone;
+    }
   }
   if (sets.length) {
+    const fields = [...changed];
     set("updated_at", now());
     await ctx.env.DB.prepare(`UPDATE sites SET ${sets.join(", ")} WHERE id = ?`).bind(...binds, id).run();
-    await audit(ctx.env, ctx.user.email, "update_site", `${site.namespace}/${site.mount_path}`, { siteId: id, fields: changed.slice(0, -1) });
+    await audit(ctx.env, ctx.user.email, "update_site", `${site.namespace}/${site.mount_path}`, { ...detail, fields });
   }
-  return siteView(ctx.env, (await getSiteById(ctx.env, id))!, ctx.requestUrl);
+  const updated = (await getSiteById(ctx.env, id))!;
+  notifyShared(ctx, updated, newViewers, newEditors);
+  return siteView(ctx.env, updated, ctx.requestUrl);
+}
+
+/** A site the signed-in person may manage (owner, editor or namespace owner); 404 for others. */
+export async function getManageableSite(ctx: Ctx, id: string): Promise<SiteView & { canEditEditors: boolean }> {
+  const { site, ns } = await requireManageableSite(ctx, id);
+  return { ...siteView(ctx.env, site, ctx.requestUrl), canEditEditors: site.owner_email === ctx.user.email || isNamespaceOwner(ctx.user, ns) };
 }
 
 /** Removes a site's files, KV rows, secret rows and the site row itself. */
-async function removeSite(env: Env, site: SiteRow) {
+export async function removeSite(env: Env, site: SiteRow) {
   await env.DB.batch([
     env.DB.prepare("DELETE FROM kv WHERE site_id = ?").bind(site.id),
     env.DB.prepare("DELETE FROM secrets WHERE site_id = ?").bind(site.id),
@@ -501,7 +642,7 @@ async function removeSite(env: Env, site: SiteRow) {
 export async function deleteSite(ctx: Ctx, id: string) {
   const { site } = await requireManageableSite(ctx, id);
   await removeSite(ctx.env, site);
-  await audit(ctx.env, ctx.user.email, "delete_site", `${site.namespace}/${site.mount_path}`, { siteId: id });
+  await audit(ctx.env, ctx.user.email, "delete_site", `${site.namespace}/${site.mount_path}`, { deletedSiteId: id });
   return { ok: true };
 }
 

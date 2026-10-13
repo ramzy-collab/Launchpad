@@ -9,7 +9,7 @@ Formelab hosts small, self-contained web apps: plain HTML, CSS and JavaScript, w
 and no backend of your own. Each app gets a URL:
 
 ```
-https://<namespace>.<DOMAIN>/<mount-path>/
+https://<namespace>.<APP_DOMAIN>/<mount-path>/
 ```
 
 - A **namespace** is a subdomain, such as `ramzy`. Its owner and editors can publish into it.
@@ -49,6 +49,17 @@ Apps get platform features through a small browser SDK, `window.formelab`:
    mount path. KV and secrets are always scoped to one app.
 8. KV is visible to **everyone who can view the app**. Don't store private data there unless the
    app is `restricted` to the right people.
+<!-- flag:connected_apps -->
+9. **For AI features, use `formelab.gemini`** (Google Gemini 3.5 Flash-Lite through the owner's
+   connected key). Don't ask the user for an AI API key or put one in a secret: they connect
+   Gemini once in Formelab (Connected apps → Google Gemini), and every app they own can use it.
+   The `whoami` tool says whether it's connected (`connectedApps.gemini`); if it isn't, tell the
+   user to connect it, and build the app to say so too (see `formelab.gemini.available()`).
+10. **To read or write a spreadsheet, use `formelab.sheets`** (Google Sheets through the owner's
+   connected Google account). Never ask for Google credentials. `whoami` says whether it's
+   connected (`connectedApps.googleSheets`); if not, tell the user to connect it in Formelab
+   (Connected apps → Google Sheets).
+<!-- /flag:connected_apps -->
 
 ## 3. SDK reference
 
@@ -125,6 +136,59 @@ to 5 MB (`truncated: true` if cut); redirects are not followed (you get the 3xx 
 60 calls per minute per app; an unknown placeholder is an error. If the API echoes the secret back,
 the platform replaces it with `[redacted]`.
 
+<!-- flag:connected_apps -->
+### `formelab.gemini`: AI in your app
+
+Calls Google **Gemini 3.5 Flash-Lite** (`gemini-3.5-flash-lite`) with the app owner's Gemini key,
+which they connected once in Formelab. The key never reaches the browser. Anyone who can open the
+app can use it, on the owner's key; calls are limited to 60 a minute per app and show up in the
+app's activity log.
+
+```js
+const { connected } = await formelab.gemini.available();   // false: the owner hasn't connected Gemini
+const r = await formelab.gemini.generate("Summarize this in one sentence: " + text);
+r.text;            // the answer
+r.usage;           // { inputTokens, outputTokens, totalTokens }
+
+// Options: a system instruction, JSON output (optionally with a JSON Schema), an answer length cap.
+const tags = await formelab.gemini.generate("Suggest 3 tags for: " + note, {
+  system: "You label notes. Answer only with JSON.",
+  schema: { type: "array", items: { type: "string" } },
+  maxOutputTokens: 200,
+});
+tags.json();       // ["work", "ideas", "q3"]
+
+// Full control: Gemini's own `contents` format (several turns, inline images as base64).
+await formelab.gemini.generate({ contents: [{ role: "user", parts: [{ text: "Hi" }] }] });
+```
+
+Errors: `gemini_not_connected` (409: show "Connect Google Gemini in Formelab to use this"),
+`gemini_key_rejected`, `gemini_quota` (429 from Google), `rate_limited`, `gemini_unreachable`.
+Show `e.message` and `e.hint`. Temperature and top-P/K aren't supported by this model.
+
+### `formelab.sheets`: Google Sheets in your app
+
+Reads and writes the app owner's Google Sheets with the Google account they connected once in
+Formelab. Anyone who can open the app can use it, as the owner; calls are limited to 60 a minute
+per app and show up in the app's activity log. A spreadsheet's id is the long part of its URL:
+`docs.google.com/spreadsheets/d/<id>/edit`.
+
+```js
+const { connected } = await formelab.sheets.available();   // false: the owner hasn't connected it
+const rows = await formelab.sheets.read(id, "Sheet1!A1:C50");              // [["Name","Email"], ...]
+await formelab.sheets.append(id, "Sheet1!A:C", [["Ada", "ada@example.com", new Date().toISOString()]]);
+await formelab.sheets.update(id, "Sheet1!B2", [["done"]]);
+const sheet = await formelab.sheets.create("Lunch sign-ups");             // { id, url }: a new spreadsheet
+// Anything else in the Sheets API v4 (path relative to https://sheets.googleapis.com/v4/):
+await formelab.sheets.request("POST", `spreadsheets/${id}:batchUpdate`, { body: { requests: [...] } });
+```
+
+Values are entered as if typed (`USER_ENTERED`), so numbers, dates and formulas work. Store the
+spreadsheet id in KV (or ask the owner for it in a settings form) rather than hard-coding it.
+Errors: `sheets_not_connected` (409), `sheets_reconnect` (the owner must reconnect),
+`sheets_forbidden`, `sheets_not_found`, `rate_limited`. Show `e.message` and `e.hint`.
+
+<!-- /flag:connected_apps -->
 ## 4. Patterns
 
 ### Dashboard over an external API
@@ -173,6 +237,7 @@ visits, lets an editor store a key, and calls `https://httpbin.org/anything` thr
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Starter</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%235B4CF5'/%3E%3Cpath d='M20 34l8 8 16-18' stroke='white' stroke-width='6' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
   <style>
     body { font: 16px/1.5 system-ui, sans-serif; max-width: 40rem; margin: 2rem auto; padding: 0 1rem; }
     pre { background: #f4f4f4; padding: .75rem; overflow: auto; }
@@ -247,7 +312,9 @@ edited version to the same `namespace` and `mount_path`:
    `mount_path`. Optional: `title`, `spa`, `visibility`, `allowed_emails`.
 3. Give the user the returned `url`.
 
-Publishing to an existing path replaces the app atomically; its KV data and secrets are kept.
+Publishing to an existing path replaces the app atomically; its KV data, secrets and sharing
+settings (who can open and edit it) are kept. `visibility` and `allowed_emails` only apply when
+an app is first published; change them later with `update_site`.
 `update_site` changes settings without re-uploading; `delete_site` is permanent.
 
 ### With `scripts/publish.sh` and a deploy token
@@ -273,5 +340,6 @@ The script calls `POST https://<DOMAIN>/_api/deploy/sites` (multipart: `file`, `
 - [ ] Every SDK call is wrapped in `try/catch`, and errors show `e.message` and `e.hint` to the user.
 - [ ] KV keys are namespaced (`"vote:" + email`), values stay well under 64 KB.
 - [ ] Works on a phone (responsive layout, `<meta name="viewport">`).
-- [ ] `visibility: "restricted"` with `allowed_emails` if the data is private.
+- [ ] **Has an icon (required):** a small SVG that fits the app, linked in `<head>` as `<link rel="icon" href="data:image/svg+xml,...">` (URL-encoded SVG), or as `<link rel="icon" href="icon.svg">` with `icon.svg` in the zip. Formelab shows it on the app's tile, and the `publish` tool refuses apps without one (`icon_required`).
+- [ ] Apps are private by default (only the owner and editors). Add `allowed_emails` for the people who should open it; they see it under "Shared with me".
 - [ ] Published with the right `namespace` and `mount_path`; the URL was shared with the user.

@@ -1,4 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { geminiStatus } from "./gemini";
+import { sheetsStatus } from "./sheets";
+import { enabledFlags, flagOn, withFlags } from "./flags";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { CfWorkerJsonSchemaValidator } from "@modelcontextprotocol/sdk/validation/cfworker";
 import { z } from "zod";
@@ -46,20 +49,33 @@ export function buildServer(ctx: Ctx): McpServer {
       jsonSchemaValidator: new CfWorkerJsonSchemaValidator(),
       instructions:
         "Formelab hosts small self-contained web apps at https://<namespace>." +
-        ctx.env.DOMAIN +
-        "/<mount_path>/. Call get_guide before building an app for the first time, then publish with the publish tool.",
+        ctx.env.APP_DOMAIN +
+        "/<mount_path>/. Call get_guide before building an app for the first time, then publish with the publish tool. " +
+        "Every app needs an icon (a small SVG favicon linked from index.html); publish refuses apps without one.",
     },
   );
 
   server.registerTool(
     "whoami",
-    { description: "Show the account this token acts as.", annotations: { readOnlyHint: true } },
-    () => run(async () => ({ email: ctx.user.email, name: ctx.user.name, isAdmin: ctx.user.isAdmin })),
+    { description: "Show the account this token acts as, and which connected apps (like Google Gemini) its apps can use.", annotations: { readOnlyHint: true } },
+    () =>
+      run(async () => ({
+        email: ctx.user.email,
+        name: ctx.user.name,
+        isAdmin: ctx.user.isAdmin,
+        // Connected apps this person's apps can use through the SDK (see the guide), once the feature is on.
+        ...((await flagOn(ctx.env, "connected_apps", ctx.user)) ? {
+              connectedApps: {
+                gemini: (await geminiStatus(ctx.env, ctx.user.email)).connected,
+                googleSheets: (await sheetsStatus(ctx.env, ctx.user.email)).connected,
+              },
+            } : {}),
+      })),
   );
 
   server.registerTool(
     "list_namespaces",
-    { description: "List the namespaces you own or can edit. Each namespace is a subdomain: https://<namespace>." + ctx.env.DOMAIN + "/", annotations: { readOnlyHint: true } },
+    { description: "List the namespaces you own or can edit. Each namespace is a subdomain: https://<namespace>." + ctx.env.APP_DOMAIN + "/", annotations: { readOnlyHint: true } },
     () => run(() => listNamespaces(ctx)),
   );
 
@@ -78,8 +94,10 @@ export function buildServer(ctx: Ctx): McpServer {
     {
       description:
         "Publish (create or replace) an app and return its URL. Provide exactly one of `html` (a complete single-file HTML document) " +
-        "or `zip_base64` (a base64 zip with index.html at its root). Replacing keeps the app's KV data and secrets. " +
-        "Creates the namespace if it does not exist yet.",
+        "or `zip_base64` (a base64 zip with index.html at its root). Replacing an existing app keeps its KV data, secrets and " +
+        "sharing settings: visibility and allowed_emails only apply to a new app; change sharing with update_site. " +
+        "Creates the namespace if it does not exist yet. The app MUST have an icon: a small SVG that fits the app, linked from " +
+        "index.html's <head> as <link rel=\"icon\" href=\"data:image/svg+xml,...\"> (or an icon.svg file in the zip); without one, publish fails with icon_required.",
       inputSchema: {
         html: z.string().optional().describe("Complete HTML document for a single-file app"),
         zip_base64: z.string().optional().describe("Base64-encoded .zip with index.html at its root"),
@@ -87,7 +105,7 @@ export function buildServer(ctx: Ctx): McpServer {
         mount_path: z.string().describe("Path under the namespace, e.g. \"budget\" or \"tools/budget\"; \"\" for the root"),
         title: z.string().optional(),
         spa: z.boolean().optional().describe("Serve index.html for unknown extensionless paths (client-side routing)"),
-        visibility: z.enum(["all", "restricted"]).optional().describe("\"restricted\" limits viewers to allowed_emails plus editors"),
+        visibility: z.enum(["all", "restricted"]).optional().describe("Default \"restricted\": only the owner, editors and allowed_emails can open it. \"all\": anyone signed in to Formelab"),
         allowed_emails: emails,
       },
     },
@@ -102,8 +120,9 @@ export function buildServer(ctx: Ctx): McpServer {
           spa: args.spa,
           visibility: args.visibility,
           allowedEmails: args.allowed_emails,
+          requireIcon: true,
         });
-        return { url: r.url, replaced: r.replaced, site: r.site };
+        return { url: r.url, replaced: r.replaced, site: r.site, ...(r.note ? { note: r.note } : {}) };
       }),
   );
 
@@ -141,7 +160,7 @@ export function buildServer(ctx: Ctx): McpServer {
   server.registerTool(
     "get_guide",
     { description: "Return the Formelab app-building guide (markdown): URL model, SDK reference, patterns, starter app, checklist.", annotations: { readOnlyHint: true } },
-    () => run(async () => GUIDE_MD),
+    () => run(async () => withFlags(GUIDE_MD, await enabledFlags(ctx.env, ctx.user))),
   );
 
   // `search` and `fetch` follow the shape ChatGPT expects from connectors (outside Developer Mode
@@ -195,7 +214,7 @@ async function fetchItem(ctx: Ctx, id: string) {
     return {
       id,
       title: GUIDE_TITLE,
-      text: GUIDE_MD,
+      text: withFlags(GUIDE_MD, await enabledFlags(ctx.env, ctx.user)),
       url: `${apexOrigin(ctx.env, ctx.requestUrl ?? "https://" + ctx.env.DOMAIN)}/_platform/guide.md`,
       metadata: { type: "guide" },
     };

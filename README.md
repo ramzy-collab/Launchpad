@@ -4,7 +4,7 @@ A small, personal app host on Cloudflare. You (and a few people you invite) publ
 web apps and get a live URL for each:
 
 ```
-https://<namespace>.<DOMAIN>/<mount-path>/
+https://<namespace>.<APP_DOMAIN>/<mount-path>/
 ```
 
 Apps are plain HTML/CSS/JS (a single `.html` file or a `.zip` with `index.html` at its root). They
@@ -12,7 +12,20 @@ get identity, per-app key/value storage, and secrets with a server-side proxy th
 browser SDK (`window.formelab`). Claude Code publishes apps through Formelab's MCP server; there
 is also a web dashboard.
 
-- One Worker (`src/index.ts`) serves the dashboard, APIs, MCP server, SDK and app files.
+- One Worker (`src/index.ts`) serves every host (see [`src/hosts.ts`](src/hosts.ts)):
+
+  | Host | What it serves |
+  | --- | --- |
+  | `DOMAIN` (formelab.ai) | Home page with the waitlist, `/login`, sign-in, the MCP connector (`/mcp`), OAuth, deploy API |
+  | `admin.DOMAIN` | The admin panel, with its own admins-only sign-in (8-hour sessions) |
+  | `APP_DOMAIN` (formelab.app) | The web app: My lab, Shared with me, Connect your AI |
+  | `<namespace>.APP_DOMAIN` | Published apps |
+  | `<namespace>.DOMAIN` | Old app addresses; redirected (301) to `<namespace>.APP_DOMAIN` |
+
+  Apps sit on their own registrable domain, the way GitHub serves pages from `github.io`, so
+  browsers never treat an app as "same site" with Formelab's sign-in. You sign in once on
+  `DOMAIN`; the web app and each app host get their own session from it, and logging out anywhere
+  ends all of them. The admin panel is the exception: admins sign in to it separately.
 - D1 holds structured data; R2 holds app files; Cloudflare Access handles all sign-in.
 - Agent build guide: [`src/guide.md`](src/guide.md), served at `/_platform/guide.md`.
 - Design choices and deviations from the spec: [`DECISIONS.md`](DECISIONS.md).
@@ -23,10 +36,12 @@ is also a web dashboard.
 
 Do these once. Replace `example.com` everywhere with your domain.
 
-### 1.1 A dedicated domain on Cloudflare DNS
+### 1.1 Two domains on Cloudflare DNS
 
-Use a domain just for Formelab (for example `myformelab.dev`) so namespaces sit **one level
-down**: `ramzy.myformelab.dev`.
+Formelab uses two domains: `DOMAIN` for the home page, sign-in and admin, and `APP_DOMAIN` for the
+web app and published apps, with namespaces **one level down**: `ramzy.myformelab.app`. Add both
+to Cloudflare, and in each zone create two **proxied** DNS records (the Worker answers them, so the
+address is a placeholder): `AAAA @ 100::` and `AAAA * 100::`.
 
 > **Important:** Cloudflare's free Universal SSL certificate covers `DOMAIN` and `*.DOMAIN`, but
 > **not** `*.sub.DOMAIN`. If you nest Formelab under a subdomain (`ramzy.apps.example.com`) you
@@ -59,27 +74,35 @@ npx wrangler d1 create launchpad      # copy the database_id it prints
 Edit `wrangler.toml`:
 
 - Set `database_id` (top-level `[[d1_databases]]`) to the id printed above.
-- Replace `example.com` in `routes` and in `[vars] DOMAIN` with your domain.
+- Replace `formelab.ai` in `routes` and `[vars] DOMAIN`, and `formelab.app` in `routes` and
+  `[vars] APP_DOMAIN`, with your two domains.
 
-The routes `DOMAIN/*` and `*.DOMAIN/*` are created on deploy from `wrangler.toml`.
+The routes `DOMAIN/*`, `*.DOMAIN/*`, `APP_DOMAIN/*` and `*.APP_DOMAIN/*` are created on deploy
+from `wrangler.toml`.
 
 ### 1.5 Cloudflare Zero Trust (free for up to 50 users)
 
 In the [Zero Trust dashboard](https://one.dash.cloudflare.com/):
 
 1. **Settings → Authentication**: add an identity provider: Google, or **One-time PIN** (email codes, zero setup).
-2. **Access → Applications → Add an application → Self-hosted**, the **main app**:
-   - Application domains: `example.com` and `*.example.com` (add both).
+2. **Access → Applications → Add an application → Self-hosted**, the **main app**. It covers
+   only the signed-in parts of the apex, so the home page (`/`), the login screen (`/login`) and
+   the waitlist sign-up stay public:
+   - Application domains (add each one): `*.example.com`, `example.com/app`,
+     `example.com/authorize`, `example.com/_api/admin` and `example.com/_platform`.
    - Policy: **Allow**, include **Emails**: your email plus any invitees.
    - After saving, open the app's **Overview** and copy the **Application Audience (AUD) Tag**.
-3. Add a second **Self-hosted** application, the **bypass app**, for the paths the Worker
-   authenticates itself (deploy tokens, MCP, and the OAuth protocol endpoints):
-   - Application domains: `example.com/_api/deploy/*`, `example.com/mcp`,
-     `example.com/oauth/*` and `example.com/.well-known/*`.
-   - Policy: action **Bypass**, include **Everyone**.
-   (Access matches the most specific path, so these paths skip the login while everything else
-   still requires it. Do **not** bypass `/authorize`: that consent page relies on the Access
-   login to know who is approving.)
+
+   Don't cover all of `example.com`: Access would then put its login in front of the home page.
+   Paths outside Access are still safe, because the Worker rejects any request without a valid
+   Access JWT except the public pages, their `/_assets/*` files and `/_api/waitlist`. The deploy
+   API, `/mcp`, `/oauth/*` and `/.well-known/*` authenticate with tokens and must stay outside
+   Access, as they do here.
+3. **Upgrading an older setup:** if your main app covers all of `example.com` and you have a
+   **bypass** app for `/_api/deploy/*`, `/mcp`, `/oauth/*` and `/.well-known/*`, change the main
+   app's domains to the list above. The bypass app is then unnecessary (keeping it is harmless).
+   Until you change it, the home page sits behind the login, and signed-in visitors to `/` are
+   sent straight to their dashboard.
 4. Note your **team domain** (Settings → Custom Pages, or the URL of your login page):
    `<team>.cloudflareaccess.com`.
 
@@ -96,6 +119,89 @@ Keep a copy of `SECRETS_KEK` somewhere safe. If it is lost or changed, stored ap
 longer be decrypted (apps would have to set them again).
 
 ---
+
+### 1.7 Formelab login (WorkOS AuthKit)
+
+People sign in with an email code, Google, or any other method you turn on in WorkOS. AuthKit is
+free up to 1 million monthly active users and sends the sign-in emails itself. Until these
+secrets are set, Formelab keeps using Cloudflare Access (1.5), so you can deploy first and switch
+when ready.
+
+1. Create a WorkOS account at <https://workos.com>, then open **Authentication**:
+   - Turn on **Email + Magic Auth** (one-time email codes) and **Google OAuth**. In production,
+     Google needs your own OAuth client: create one in Google Cloud Console and paste its client
+     ID and secret into WorkOS (WorkOS's setup page links the steps).
+2. **Redirects**: add `https://example.com/auth/callback` and make it the default, and add
+   `https://admin.example.com/auth/callback` for the admin panel's own sign-in. For local
+   development, also add `http://localhost:8787/auth/callback` and
+   `http://admin.localhost:8787/auth/callback` in the staging environment.
+3. Copy the **Client ID** and **API key** from **API Keys**, then:
+   ```bash
+   npx wrangler secret put WORKOS_CLIENT_ID
+   npx wrangler secret put WORKOS_API_KEY
+   ```
+4. Apply migrations and deploy (section 2), then log in at `https://example.com/login`.
+5. **Retire Cloudflare Access**: in Zero Trust, delete the Formelab Access applications (or remove
+   all their domains). While Access still covers `/app` or `*.example.com`, its login page shows up
+   before Formelab's. The Worker checks every request itself, so nothing becomes public.
+
+How accounts work:
+- Anyone can sign in. New people land on the **waitlist**: they can open apps shared with them but
+  can't create namespaces or publish. You let them in from the dashboard's **Waitlist** section
+  (**Let in**), or invite an address ahead of time with **Invite**. The `OWNER_EMAIL` account, and
+  everyone who used Formelab through Access before, are active.
+- Apps are **private by default**: only the owner, the app's editors, and namespace editors can
+  open them. Add emails under **Share with** to let others open an app; it then appears on their
+  **Shared with me** page.
+- Each namespace host (`<ns>.example.com`) gets its own session cookie, handed over from the
+  dashboard's through a single-use code, so an app's JavaScript can't touch the dashboard login.
+
+### 1.8 Notification emails (Cloudflare Email Service)
+
+Formelab emails people when they join the waitlist, when they're let in, when an app is shared
+with them, and when they're made a namespace editor. It also emails you (`OWNER_EMAIL`, or `ADMIN_EMAIL` if
+you set that var) about each new waitlist sign-up. Sign-in emails come from WorkOS (1.7).
+Emails go through Cloudflare Email Service via the `EMAIL` binding in `wrangler.toml`: it's part
+of the Workers Paid plan (3,000 emails a month included, then $0.35 per 1,000) and, at the time
+of writing, in beta.
+
+1. In the Cloudflare dashboard, open **Email Service** (search "Email Service" if it isn't in the
+   sidebar) and **onboard** `example.com` for sending. Because the domain is already on
+   Cloudflare, it adds the SPF, DKIM and DMARC records for you. Wait until the domain shows as
+   verified.
+2. Check the sender in `wrangler.toml`: `[vars] EMAIL_FROM` (default `Formelab <hello@example.com>`)
+   and the matching `allowed_sender_addresses` on the `[[send_email]]` binding.
+3. Deploy. Nothing else to set: no API key.
+
+Until the domain is onboarded, sends fail; Formelab logs the failure (`email failed …` in
+`wrangler tail`) and carries on. In `npm run dev`, wrangler logs emails instead of sending them.
+
+Each message goes out once: a repeated waitlist sign-up, approving someone twice, or publishing a
+new version of a shared app doesn't send it again. Only people newly added to an app's
+**Share with** or **Editors** list (or a namespace's editors) are emailed, never the person
+making the change.
+
+### 1.9 Google Sheets connected app (Google OAuth client)
+
+Lets people connect Google Sheets under Connected apps (behind the `connected_apps` feature
+flag). Formelab needs its own Google sign-in client:
+
+1. In [Google Cloud Console](https://console.cloud.google.com/), pick or create a project.
+2. **APIs & Services → Library**: enable the **Google Sheets API**.
+3. **Google Auth Platform → Branding** (the OAuth consent screen): app name **Formelab**, your
+   support email. **Audience**: External, and while it's in **Testing**, add each person who
+   should be able to connect (up to 100) under **Test users**. **Data access**: add the scope
+   `.../auth/spreadsheets`.
+4. **Clients → Create client → Web application**. Authorized redirect URI:
+   `https://formelab.app/services/google-sheets/callback`.
+5. Copy the client ID and secret, then:
+   ```bash
+   npx wrangler secret put GOOGLE_CLIENT_ID
+   npx wrangler secret put GOOGLE_CLIENT_SECRET
+   ```
+
+While the app is in Testing, Google ends each connection after 7 days (people reconnect). To
+open it to everyone, publish the app and pass Google's verification for the spreadsheets scope.
 
 ## 2. Production deploy runbook
 
@@ -148,6 +254,13 @@ write a new forward migration if you need to undo a schema change.
 
 ---
 
+### 2.5 Before a wider launch
+
+- [x] Move user apps to their own domain (`APP_DOMAIN`, see the top of this file).
+- [ ] Use your own Google OAuth client in WorkOS (1.7) so the consent screen shows Formelab.
+- [ ] Set up notification emails (1.8) so people hear when they're let in and when apps are
+  shared with them.
+
 ## 3. Local development
 
 ```bash
@@ -157,11 +270,13 @@ npm run db:migrate:local
 npm run dev                             # wrangler dev --env dev on http://localhost:8787
 ```
 
-- `[env.dev]` in `wrangler.toml` sets `ENVIRONMENT=dev` and `DOMAIN=localhost`, and has no routes,
-  so wrangler keeps the real Host header.
+- `[env.dev]` in `wrangler.toml` sets `ENVIRONMENT=dev`, `DOMAIN=localhost` and
+  `APP_DOMAIN=app.localhost`, and has no routes, so wrangler keeps the real Host header.
 - In dev, `DEV_USER` from `.dev.vars` is the signed-in user (no Access). This bypass only works when
   `ENVIRONMENT` is exactly `dev`; production uses `ENVIRONMENT=production`.
-- Dashboard: <http://localhost:8787/>. Apps: `http://<ns>.localhost:8787/<path>/` (browsers resolve
+- Home page: <http://localhost:8787/>. Login: <http://localhost:8787/login>. Web app:
+  <http://app.localhost:8787/>. Admin: <http://admin.localhost:8787/>. Apps:
+  `http://<ns>.app.localhost:8787/<path>/` (browsers resolve
   `*.localhost` to your machine; for curl use `--resolve` or rely on curl's own `*.localhost` handling).
 - In dev the secret proxy also allows `http://` URLs (still never private addresses).
 
@@ -205,6 +320,23 @@ both, read-only: `search` finds your apps (and the build guide), and `fetch` ret
 details and its `index.html` source. ChatGPT connections are listed and revoked under
 **Connected apps** like Claude's.
 
+### Gemini
+
+In the Gemini app, custom connectors are only available on Gemini Enterprise and up: an admin adds
+Formelab as a custom MCP server with the URL `https://example.com/mcp`. Everyone else can use
+Gemini CLI.
+
+Gemini CLI (and Antigravity CLI): add the server to `~/.gemini/settings.json`, then run
+`/mcp auth formelab` inside `gemini` to sign in:
+
+```json
+{ "mcpServers": { "formelab": { "httpUrl": "https://example.com/mcp" } } }
+```
+
+Gemini clients register themselves with OAuth dynamic client registration, like Claude and
+ChatGPT; Gemini CLI uses a `localhost` redirect, so the consent page shows the "app on your
+computer" warning.
+
 ### Claude Code
 
 1. In the dashboard, create a deploy token (30 days is fine for personal use). It is shown once.
@@ -244,7 +376,7 @@ The script never prints the token (it passes it to curl on stdin). For local dev
 
 All errors are JSON: `{ "error": { "code", "message", "hint" } }`.
 
-**Management API**: `https://DOMAIN/_api/admin/*` (Access session; writes need the
+**Management API**: `https://APP_DOMAIN/_api/admin/*` (signed-in session; writes need the
 `x-formelab-request: 1` header, which the dashboard sends) and `https://DOMAIN/_api/deploy/*`
 (`Authorization: Bearer fl_...`; same endpoints except `/tokens`).
 
@@ -262,7 +394,7 @@ All errors are JSON: `{ "error": { "code", "message", "hint" } }`.
 | `POST /tokens` `{ name, ttlHours }` | `/_api/admin` only: returns the token once (1–720 hours, default 24) |
 | `GET /tokens`, `DELETE /tokens/:id` | `/_api/admin` only: list / revoke your tokens |
 
-**Runtime API**: `https://<ns>.DOMAIN/_api/*`, used by the SDK (see the guide):
+**Runtime API**: `https://<ns>.APP_DOMAIN/_api/*`, used by the SDK (see the guide):
 `GET /me`, `GET /kv?prefix=`, `GET|PUT|DELETE /kv/:key`, `GET /secrets`,
 `PUT|DELETE /secrets/:name`, `POST /secrets/:name/proxy`.
 

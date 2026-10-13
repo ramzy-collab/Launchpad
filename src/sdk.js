@@ -70,6 +70,41 @@
           return r;
         });
       }
+    },
+    // Google Sheets through the app owner's connected Google account (Formelab: Connected apps).
+    sheets: {
+      available: function () { return call("GET", "sheets"); },
+      request: function (method, path, options) {
+        options = options || {};
+        return call("POST", "sheets", { method: method, path: path, query: options.query, body: options.body }).then(function (r) { return r.data; });
+      },
+      read: function (spreadsheetId, range) {
+        return formelab.sheets.request("GET", "spreadsheets/" + enc(spreadsheetId) + "/values/" + enc(range)).then(function (d) { return (d && d.values) || []; });
+      },
+      append: function (spreadsheetId, range, rows) {
+        return formelab.sheets.request("POST", "spreadsheets/" + enc(spreadsheetId) + "/values/" + enc(range) + ":append",
+          { query: { valueInputOption: "USER_ENTERED", insertDataOption: "INSERT_ROWS" }, body: { values: rows } });
+      },
+      update: function (spreadsheetId, range, rows) {
+        return formelab.sheets.request("PUT", "spreadsheets/" + enc(spreadsheetId) + "/values/" + enc(range),
+          { query: { valueInputOption: "USER_ENTERED" }, body: { values: rows } });
+      },
+      create: function (title) {
+        return formelab.sheets.request("POST", "spreadsheets", { body: { properties: { title: title } } }).then(function (d) {
+          return { id: d.spreadsheetId, url: d.spreadsheetUrl };
+        });
+      }
+    },
+    // Google Gemini through the app owner's connected key (Formelab: Connected apps).
+    gemini: {
+      available: function () { return call("GET", "ai/gemini"); },
+      generate: function (prompt, options) {
+        var req = typeof prompt === "string" ? Object.assign({}, options || {}, { prompt: prompt }) : (prompt || {});
+        return call("POST", "ai/gemini", req).then(function (r) {
+          r.json = function () { return JSON.parse(r.text); };
+          return r;
+        });
+      }
     }
   };
 

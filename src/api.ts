@@ -15,7 +15,12 @@ import {
 } from "./sites";
 import { filesFromHtml, filesFromUpload, filesFromZip, MAX_UPLOAD_BYTES, type FileMap } from "./upload";
 import { listConnections, revokeConnection } from "./oauth";
-import { b64decode } from "./util";
+import { approveWaitlist } from "./login";
+import { connectGemini, disconnectGemini, geminiStatus } from "./gemini";
+import { flagOn, setFlag } from "./flags";
+import { sheetsDisconnect, sheetsStatus } from "./sheets";
+import { deleteUser, listUsers, setAdmin } from "./users";
+import { b64decode, isEmail } from "./util";
 
 export const ctxOf = (c: Context<AppEnv>): Ctx => ({
   env: c.env,
@@ -115,6 +120,30 @@ export function managementApi(kind: "admin" | "deploy") {
       await revokeToken(c.env, c.get("user"), c.req.param("id"));
       return c.json({ ok: true });
     });
+    api.post("/waitlist/approve", async (c) => {
+      if (!c.get("user").isAdmin) throw err(403, "admin_only", "Only an admin can let people in.", "Ask the Formelab owner.");
+      const email = String((await jsonBody(c)).email ?? "").trim();
+      if (!isEmail(email)) throw badRequest("That email address is not valid.", "Check the address and try again.");
+      await approveWaitlist(c.env, email, { actor: c.get("user").email, requestUrl: c.req.url, waitUntil: (p) => c.executionCtx.waitUntil(p) });
+      return c.json({ ok: true });
+    });
+    api.get("/users", async (c) => {
+      if (!c.get("user").isAdmin) throw err(403, "admin_only", "Only an admin can list users.", "Ask the Formelab owner.");
+      return c.json(await listUsers(c.env));
+    });
+    api.post("/users/:email/admin", async (c) => c.json(await setAdmin(c.env, c.get("user"), c.req.param("email"), (await jsonBody(c)).admin)));
+    api.delete("/users/:email", async (c) => c.json(await deleteUser(c.env, c.get("user"), c.req.param("email"))));
+    // Connected apps are behind a feature flag (admin panel → Features).
+    api.use("/services/*", async (c, next) => {
+      if (!(await flagOn(c.env, "connected_apps", c.get("user")))) throw err(404, "not_found", "Connected apps aren't available yet.", "Check back soon.");
+      await next();
+    });
+    api.get("/services/gemini", async (c) => c.json(await geminiStatus(c.env, c.get("user").email)));
+    api.put("/services/gemini", async (c) => c.json(await connectGemini(c.env, c.get("user"), (await jsonBody(c)).apiKey)));
+    api.delete("/services/gemini", async (c) => c.json(await disconnectGemini(c.env, c.get("user"))));
+    api.get("/services/google-sheets", async (c) => c.json(await sheetsStatus(c.env, c.get("user").email)));
+    api.delete("/services/google-sheets", async (c) => c.json(await sheetsDisconnect(c.env, c.get("user"))));
+    api.put("/features/:name", async (c) => c.json(await setFlag(c.env, c.get("user"), c.req.param("name"), (await jsonBody(c)).state)));
     api.get("/connections", async (c) => c.json(await listConnections(c.env, c.get("user").email)));
     api.delete("/connections/:id", async (c) => {
       await revokeConnection(c.env, c.get("user").email, c.req.param("id"));
