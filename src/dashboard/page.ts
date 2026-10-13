@@ -517,7 +517,7 @@ export async function accountPage(c: Context<AppEnv>): Promise<Response> {
     <label>Confirm password <input type="password" name="confirm" autocomplete="new-password" minlength="10" maxlength="256" required></label>
     <button>Save password</button>
   </form>
-  <p class="muted">Use at least 10 characters. Next time, choose <strong>Continue with email</strong> and enter ${e(user.email)}; you can use this password or a one-time code. If you forget it, use <strong>Forgot password</strong> on the login screen.</p>
+  <p class="muted">Use at least 10 characters that are hard to guess: a few unrelated words works well. Next time, choose <strong>Continue with email</strong> and enter ${e(user.email)}; you can use this password or a one-time code. If you forget it, use <strong>Forgot password</strong> on the login screen.</p>
 </section>`
     : `<section>
   <h2>Confirm it's you</h2>
