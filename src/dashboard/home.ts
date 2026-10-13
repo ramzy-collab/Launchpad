@@ -9,11 +9,12 @@ export const homeHead = (title: string, scripts: string[] = []) => head(title, s
 const CHECK = (stroke: string, width = 3.5) =>
   `<svg viewBox="0 0 24 24" fill="none" stroke="${stroke}" stroke-width="${width}"><path d="M20 6 9 17l-5-5"/></svg>`;
 
-export function topNav(admin = false): string {
+/** The top bar. `actions` adds Log in and Join the waitlist (the home page only, not the login pages). */
+export function topNav(admin = false, actions = !admin): string {
   return `<div class="container">
   <nav>
     <a class="logo" href="/" aria-label="Formelab home"><span class="mark" aria-hidden="true">F</span>Formelab${admin ? " admin" : ""}</a>
-    ${admin ? "" : `<div class="nav-r">
+    ${!actions ? "" : `<div class="nav-r">
       <a class="nbtn" href="/login">Log in</a>
       <a class="cta" href="/#signup" data-join><span class="long">Join the waitlist</span><span class="short">Join</span></a>
     </div>`}
@@ -216,7 +217,7 @@ export function loginPage(opts: { returnTo: string; admin?: boolean }): Response
 ${homeHead(opts.admin ? "Formelab admin" : "Log in to Formelab")}
 </head>
 <body>
-${topNav(opts.admin)}
+${topNav(opts.admin, false)}
 
 <main>
   <div class="container center">

@@ -100,6 +100,8 @@ describe("login page and WorkOS redirect", () => {
     expect(html).toContain('<form method="post" action="/login"');
     expect(html).toContain('name="return" value="/app/shared"');
     expect(html).toContain("Continue with email");
+    // No Log in / Join the waitlist buttons in the top bar during sign-in.
+    expect(html).not.toContain('class="nav-r"');
     expect(html).not.toContain('type="password"');
     expect(html).not.toContain("Last used");
     expect(res.headers.get("content-security-policy")).toContain("form-action 'self' https://example.app https://*.example.app;".slice(0, -1));

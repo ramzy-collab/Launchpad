@@ -127,7 +127,7 @@ function frame(v: View, title: string, intro: string, body: string, status = 200
 ${homeHead(v.admin ? "Formelab admin" : "Log in to Formelab", ["signin.js"])}
 </head>
 <body>
-${topNav(v.admin)}
+${topNav(v.admin, false)}
 
 <main>
   <div class="container center">
