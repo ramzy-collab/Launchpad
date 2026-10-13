@@ -26,6 +26,7 @@ function cookieFrom(res: Response, name: string): string | null {
 }
 
 let authenticated: unknown[] = [];
+let revoked: { auth: string | null; body: unknown }[] = [];
 let passwordsSet: { url: string; auth: string | null; body: unknown }[] = [];
 /** An AuthKit-style access token; only its `sid` claim is read, so it needn't be signed. */
 const accessToken = (sid: string) =>
@@ -44,6 +45,10 @@ function mockWorkos(email: string, verified = true, passwordStatus = 200) {
       return passwordStatus === 200
         ? Response.json({ id: "u" })
         : Response.json({ code: "password_strength_error", message: "Password does not meet strength requirements." }, { status: passwordStatus });
+    }
+    if (req.url === "https://api.workos.com/user_management/sessions/revoke") {
+      revoked.push({ auth: req.headers.get("authorization"), body: await req.json() });
+      return new Response(null, { status: 204 });
     }
     return new Response("unexpected", { status: 599 });
   });
@@ -89,6 +94,7 @@ afterEach(() => {
   onOutbound(undefined);
   authenticated = [];
   passwordsSet = [];
+  revoked = [];
 });
 
 describe("login page and WorkOS redirect", () => {
@@ -282,9 +288,10 @@ describe("the admin panel's own sign-in", () => {
     expect((await w(`${APP}/`, { headers: { cookie: admin.cookie } })).status).toBe(302);
     const lab = await signIn(OWNER);
     const out = await w(`${ADMIN}/auth/logout`, { method: "POST", headers: { cookie: admin.cookie, origin: ADMIN } });
-    const to = new URL(refreshTarget(await out.text()));
-    expect(to.origin + to.pathname).toBe("https://api.workos.com/user_management/sessions/logout");
-    expect(to.searchParams.get("return_to")).toBe(`${ADMIN}/login`);
+    // Straight back to the admin login page, never through WorkOS (whose logout page would only
+    // return to addresses listed in its settings, and otherwise to formelab.ai, i.e. the lab).
+    expect(refreshTarget(await out.text())).toBe(`${ADMIN}/login`);
+    expect(revoked).toEqual([{ auth: "Bearer sk_test", body: { session_id: `session_${OWNER}` } }]);
     expect((await w(`${ADMIN}/`, { headers: { cookie: admin.cookie } })).status).toBe(302);
     expect((await onApp("/", lab.cookie)).status).toBe(200);
   });
@@ -319,10 +326,8 @@ describe("accounts and the waitlist, continued", () => {
     // Not a redirect: the web app's CSP (form-action 'self') would block one to another host.
     expect(res.status).toBe(200);
     expect(res.headers.get("location")).toBeNull();
-    const to = new URL(refreshTarget(await res.text()));
-    expect(to.origin + to.pathname).toBe("https://api.workos.com/user_management/sessions/logout");
-    expect(to.searchParams.get("session_id")).toBe(`session_${email}`);
-    expect(to.searchParams.get("return_to")).toBe("https://example.com/login");
+    expect(refreshTarget(await res.text())).toBe("https://example.com/login");
+    expect(revoked).toEqual([{ auth: "Bearer sk_test", body: { session_id: `session_${email}` } }]);
     expect((await w(`${APP}/`, { headers: { cookie: appCookie } })).status).toBe(302);
     expect((await w("/auth/app?return=" + encodeURIComponent(APP + "/"), { headers: { cookie } })).headers.get("location")).toMatch(/^\/login/);
   });
@@ -334,7 +339,16 @@ describe("accounts and the waitlist, continued", () => {
     expect(res.headers.get("content-type")).toContain("application/json");
     expect(res.headers.getSetCookie().join("\n")).toContain("Max-Age=0");
     const { to } = (await res.json()) as { to: string };
-    expect(new URL(to).searchParams.get("session_id")).toBe(`session_${email}`);
+    expect(to).toBe("https://example.com/login");
+    expect(revoked).toHaveLength(1);
+  });
+
+  it("logging out still works when WorkOS doesn't answer", async () => {
+    const { cookie } = await signIn(`down-${uniq()}@example.com`);
+    onOutbound(async () => new Response("down", { status: 503 }));
+    const res = await w("/auth/logout", { method: "POST", headers: { cookie, origin: "https://example.com", "x-formelab-request": "1" } });
+    expect(((await res.json()) as { to: string }).to).toBe("https://example.com/login");
+    expect(res.headers.getSetCookie().join("\n")).toContain("Max-Age=0");
   });
 
   it("logging out a session from before WorkOS sessions were recorded still works", async () => {
@@ -342,6 +356,7 @@ describe("accounts and the waitlist, continued", () => {
     await env.DB.prepare("UPDATE sessions SET workos_sid = NULL").run();
     const res = await w("/auth/logout", { method: "POST", headers: { cookie, origin: "https://example.com" } });
     expect(refreshTarget(await res.text())).toBe("https://example.com/login");
+    expect(revoked).toHaveLength(0);
   });
 
   it("refuses a logout posted from another site", async () => {

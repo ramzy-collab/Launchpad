@@ -4,6 +4,7 @@ Everything that has changed in Formelab, newest first. Shown in the admin panel 
 
 ## 2026-10-13
 
+- Fixed: logging out of the admin panel could land you in your lab instead of on the admin login page. Logging out now ends your WorkOS sign-in directly and goes straight to the login page you came from.
 - **Sign in on Formelab itself.** The login page at formelab.ai/login asks for your email first, then for your password, with "Email me a code instead" if you'd rather (codes are only sent when you ask), with Continue with Google underneath and a "Last used" label on the way you logged in last time. No trip to WorkOS's page; Forgot password and the reset link stay on Formelab too.
 - **Set your own password.** A new Password page in the account menu lets people set or change a password, then log in with their email and password instead of waiting for a code. It asks you to log in again first if your last sign-in was more than 15 minutes ago.
 - **Logging out really logs you out.** Logging out now also ends your sign-in at WorkOS, so the next Log in asks for a code or password again instead of signing you straight back in.
