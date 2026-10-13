@@ -4,6 +4,7 @@ Everything that has changed in Formelab, newest first. Shown in the admin panel 
 
 ## 2026-10-13
 
+- **One sign-in page.** Log in now goes straight to the sign-in page with Google, email code and password together, instead of a Formelab page with buttons in front of it.
 - **Set your own password.** A new Password page in the account menu lets people set or change a password, then log in with their email and password instead of waiting for a code. It asks you to log in again first if your last sign-in was more than 15 minutes ago.
 - **Logging out really logs you out.** Logging out now also ends your sign-in at WorkOS, so the next Log in asks for a code or password again instead of signing you straight back in.
 - Fixed: logging out of the web app showed a browser error page instead of the home page.

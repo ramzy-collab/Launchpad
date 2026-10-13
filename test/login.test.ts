@@ -92,11 +92,15 @@ afterEach(() => {
 });
 
 describe("login page and WorkOS redirect", () => {
-  it("offers Google and email, keeping where to return", async () => {
-    const html = await (await w("/login?return=%2Fapp%2Fshared")).text();
-    expect(html).toContain('href="/auth/login?provider=google&amp;return=%2Fapp%2Fshared"');
-    expect(html).toContain('href="/auth/login?provider=email&amp;return=%2Fapp%2Fshared"');
-    expect(html).not.toMatch(/\son[a-z]+=/i);
+  it("goes straight to WorkOS's sign-in page, keeping where to return", async () => {
+    const res = await w("/login?return=%2Fapp%2Fshared");
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toBe("/auth/login?return=%2Fapp%2Fshared");
+    expect((await w("/login")).headers.get("location")).toBe("/auth/login");
+    expect((await w("/login?return=https%3A%2F%2Fevil.test%2F")).headers.get("location")).toBe("/auth/login");
+    // WorkOS's page offers every sign-in method turned on there.
+    const start = new URL((await w("/auth/login")).headers.get("location")!);
+    expect(start.searchParams.get("provider")).toBe("authkit");
   });
 
   it("without WorkOS keys, keeps the Cloudflare Access button", async () => {
@@ -251,11 +255,10 @@ describe("the admin panel's own sign-in", () => {
     expect(first.headers.get("location")).toBe("/login?return=%2Fusers");
     expect((await w(`/auth/app?return=${encodeURIComponent(ADMIN + "/")}`, { headers: { cookie } })).status).toBe(400);
     expect((await w(`${ADMIN}/_auth/callback?code=abcdefghijklmnopqrstuvwxyz`)).status).toBe(302);
-    // The admin login screen has no waitlist and no way into the lab.
-    const login = await (await w(`${ADMIN}/login?return=%2Fusers`)).text();
-    expect(login).toContain("Formelab admin");
-    expect(login).toContain('href="/auth/login?provider=google&amp;return=%2Fusers"');
-    expect(login).not.toContain("waitlist");
+    // The admin login goes to WorkOS from the admin host, so it comes back there.
+    const login = await w(`${ADMIN}/login?return=%2Fusers`);
+    expect(login.headers.get("location")).toBe("/auth/login?return=%2Fusers");
+    expect((await w(`${ADMIN}/login`)).headers.get("location")).toBe("/auth/login");
   });
 
   it("signs admins in on the admin host for 8 hours, apart from their lab", async () => {

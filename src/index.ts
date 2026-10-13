@@ -14,7 +14,7 @@ import { forbidden, jsonError, onError, unauthorized } from "./errors";
 import { CONSENT_JS, DASHBOARD_JS, FORMELAB_CSS, GUIDE_MD, HOME_CSS, SDK_JS, SITE_JS, THEME_JS } from "./generated/assets";
 import { apexOrigin, AUTHORIZE_PATH, authorizeGet, authorizePost, oauthProvider } from "./oauth";
 import { runtimeApi } from "./runtime";
-import { appCallback, appHandoff, loginCallback, loginStart, logout, safeReturn, workosEnabled } from "./login";
+import { appCallback, appHandoff, loginCallback, loginStart, loginStartPath, logout, safeReturn, workosEnabled } from "./login";
 import { plainPage, serveAppFile } from "./serve";
 import { readCookie, SESSION_COOKIE } from "./session";
 import { adminOrigin, aiOrigin, appOrigin, hostKind, legacyNamespaceOf, namespaceOf, nsOrigin } from "./hosts";
@@ -73,7 +73,8 @@ apex.get("/", async (c) => {
 apex.get("/login", async (c) => {
   const returnTo = safeReturn(c.req.query("return"));
   if (hasSignIn(c.req.raw) && (await identifyBrowser(c.req.raw, c.env))) return c.redirect(returnTo, 302);
-  return loginPage({ workos: workosEnabled(c.env), returnTo });
+  if (workosEnabled(c.env)) return c.redirect(loginStartPath(returnTo, "/app"), 302);
+  return loginPage({ returnTo });
 });
 apex.get("/auth/login", loginStart);
 apex.get("/auth/callback", loginCallback);
@@ -205,7 +206,8 @@ const adminApp = signedInHost(requireAdminSignIn, (app) => {
   app.get("/login", async (c) => {
     const returnTo = safeReturn(c.req.query("return"), "/");
     if (hasSignIn(c.req.raw) && (await identifyBrowser(c.req.raw, c.env))) return c.redirect(returnTo, 302);
-    return loginPage({ workos: workosEnabled(c.env), returnTo, admin: true });
+    if (workosEnabled(c.env)) return c.redirect(loginStartPath(returnTo, "/"), 302);
+    return loginPage({ returnTo, admin: true });
   });
   app.get("/auth/login", loginStart);
   app.get("/auth/callback", loginCallback);

@@ -45,6 +45,13 @@ export function safeReturn(raw: string | null | undefined, fallback = "/app"): s
 const onAdminHost = (c: Context<AppEnv>) => hostKind(new URL(c.req.url).hostname, c.env) === "admin";
 const homePath = (c: Context<AppEnv>) => (onAdminHost(c) ? "/" : "/app");
 
+/**
+ * /login with WorkOS on: straight to WorkOS's sign-in page, which offers every method turned on
+ * there (Google, email code, password), rather than a Formelab page with buttons in front of it.
+ */
+export const loginStartPath = (returnTo: string, home: string) =>
+  returnTo === home ? "/auth/login" : `/auth/login?return=${encodeURIComponent(returnTo)}`;
+
 const PROVIDERS: Record<string, string> = { google: "GoogleOAuth", email: "authkit" };
 
 /** GET /auth/login?provider=google|email&return=/path */
