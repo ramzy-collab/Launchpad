@@ -15,7 +15,11 @@ describe("dashboard", () => {
     expect(html).toContain(`Signed in as <strong>${OWNER}</strong>`);
     expect(html).toContain(`<script src="/_assets/dashboard.js?v=${ASSET_VERSION}" defer></script>`);
     // Versioned URLs still serve the file, so a deploy reaches browsers right away.
-    expect((await call(`/_assets/dashboard.js?v=${ASSET_VERSION}`)).status).toBe(200);
+    const versioned = await call(`/_assets/dashboard.js?v=${ASSET_VERSION}`);
+    expect(versioned.status).toBe(200);
+    expect(versioned.headers.get("cache-control")).toBe("public, max-age=300");
+    // Another build's version (mid-deploy) is served but never cached under that address.
+    expect((await call("/_assets/home.css?v=0123456789")).headers.get("cache-control")).toBe("no-store");
     expect(ASSET_VERSION).toMatch(/^[0-9a-f]{10}$/);
     expect(html).not.toMatch(/<script>(?!<\/script>)/);
     expect(html).not.toMatch(/\son[a-z]+=/i); // no inline event handlers

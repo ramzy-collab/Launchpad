@@ -12,7 +12,7 @@ import { homePage } from "./dashboard/home";
 import { forgotGet, forgotPost, resetGet, resetPost, signInCode, signInGet, signInPost } from "./signin";
 import type { AppEnv, Env } from "./env";
 import { forbidden, jsonError, onError, unauthorized } from "./errors";
-import { CONSENT_JS, DASHBOARD_JS, FORMELAB_CSS, GUIDE_MD, HOME_CSS, SDK_JS, SITE_JS, THEME_JS } from "./generated/assets";
+import { ASSET_VERSION, CONSENT_JS, DASHBOARD_JS, FORMELAB_CSS, GUIDE_MD, HOME_CSS, SDK_JS, SITE_JS, THEME_JS } from "./generated/assets";
 import { apexOrigin, AUTHORIZE_PATH, authorizeGet, authorizePost, oauthProvider } from "./oauth";
 import { runtimeApi } from "./runtime";
 import { appCallback, appHandoff, loginCallback, loginStart, logout, safeReturn, workosEnabled } from "./login";
@@ -31,8 +31,14 @@ const guide = async (c: Context<AppEnv>) => text(withFlags(GUIDE_MD, await enabl
 const unauthorizedPage = () => plainPage(401, "Sign-in required", "Log in to Formelab, then reload this page.");
 
 /** Whether the request carries any sign-in at all (a session cookie or an Access JWT). */
-const asset = (body: string, type: string) => () => text(body, type, "public, max-age=300");
-const assetRoutes: [string, () => Response][] = [
+/**
+ * Pages link assets with ?v=<hash of this build's assets>. A request for another build's version
+ * (during a deploy, a new page can reach an old copy of the Worker) is answered but not cached, so
+ * the browser doesn't keep a stale stylesheet under the new address.
+ */
+const asset = (body: string, type: string) => (c: Context<AppEnv>) =>
+  text(body, type, c.req.query("v") === ASSET_VERSION ? "public, max-age=300" : "no-store");
+const assetRoutes: [string, (c: Context<AppEnv>) => Response][] = [
   ["/_assets/formelab.css", asset(FORMELAB_CSS, "text/css; charset=utf-8")],
   ["/_assets/home.css", asset(HOME_CSS, "text/css; charset=utf-8")],
   ["/_assets/theme.js", asset(THEME_JS, "text/javascript; charset=utf-8")],
