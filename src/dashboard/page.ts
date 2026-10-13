@@ -6,7 +6,8 @@ import { getManageableSite, listNamespaces, listOwnSites, listSharedSites } from
 import { escapeHtml as e } from "../util";
 import { ApiError } from "../errors";
 import { plainPage } from "../serve";
-import { adminOrigin } from "../hosts";
+import { adminOrigin, aiOrigin, appOrigin } from "../hosts";
+import { canSetPassword, workosEnabled } from "../login";
 import { ctxOf } from "../api";
 import { head, htmlResponse } from "./layout";
 import { SERVICE_ICONS, SPRITE_URL } from "./services";
@@ -31,7 +32,7 @@ export function logoutControl(c: Context<AppEnv>): string {
     : `<a class="link" href="/cdn-cgi/access/logout">Log out</a>`;
 }
 
-export type Page = "apps" | "new" | "shared" | "spaces" | "connect" | "connected" | "keys";
+export type Page = "apps" | "new" | "shared" | "spaces" | "connect" | "connected" | "keys" | "account";
 
 const PAGES: Record<Page, { title: string; intro: string }> = {
   apps: { title: "My apps", intro: "Everything you've made, live on Formelab." },
@@ -41,6 +42,7 @@ const PAGES: Record<Page, { title: string; intro: string }> = {
   connect: { title: "Connect your AI", intro: "Make and publish apps by asking Claude, ChatGPT or Gemini." },
   connected: { title: "Connected apps", intro: "Services your apps can use through Formelab, without putting keys in them." },
   keys: { title: "Access keys", intro: "For tools that publish without signing in, like Claude Code or a script. Treat a key like a password." },
+  account: { title: "Password", intro: "Set a password to log in with your email and password instead of waiting for a code." },
 };
 
 export const MENU_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>`;
@@ -79,9 +81,10 @@ ${head(title ? `${title} · Formelab` : `${head_.title} · Formelab`, ["dashboar
 <aside class="sidebar" id="sidebar">
   <a class="brand" href="/" aria-label="Formelab home"><span class="mark"></span>Formelab</a>
   ${menu}
-  <details class="account"${page === "keys" ? " open" : ""}>
+  <details class="account"${page === "keys" || page === "account" ? " open" : ""}>
     <summary><span class="avatar" aria-hidden="true">${e(user.email.slice(0, 1).toUpperCase())}</span><span class="who">Signed in as <strong>${e(user.email)}</strong></span></summary>
     <div class="account-menu">
+      ${c.get("sessionId") ? `<a class="link" href="/account"${current("account")}>Password</a>` : ""}
       <a class="link" href="/keys"${current("keys")}>Access keys</a>
       <button type="button" class="link theme-item" data-theme-toggle><span class="to-dark">Dark mode</span><span class="to-light">Light mode</span></button>
       ${user.isAdmin ? `<a class="link" href="${e(adminOrigin(c.env, c.req.url))}/" target="_blank" rel="noopener">Admin panel ↗</a>` : ""}
@@ -494,4 +497,38 @@ ${
     : ""
 }`;
   return shell(c, ctx.user, "keys", body);
+}
+
+/**
+ * Password: set or change the password used to log in with WorkOS. Only right after a sign-in
+ * (see PASSWORD_REAUTH_MS); otherwise the page asks the person to log in again first.
+ */
+export async function accountPage(c: Context<AppEnv>): Promise<Response> {
+  const user = c.get("user");
+  if (!workosEnabled(c.env) || !c.get("sessionId")) {
+    return shell(c, user, "account", `<section><p class="muted">Your organization handles sign-in for this Formelab, so there's no Formelab password to set.</p></section>`);
+  }
+  const body = (await canSetPassword(c.env, c.get("sessionId")))
+    ? `<section>
+  <h2>New password</h2>
+  <form class="stack" data-action="password-set">
+    <input type="email" name="username" autocomplete="username" value="${e(user.email)}" readonly hidden>
+    <label>Password <input type="password" name="password" autocomplete="new-password" minlength="10" maxlength="256" required></label>
+    <label>Confirm password <input type="password" name="confirm" autocomplete="new-password" minlength="10" maxlength="256" required></label>
+    <button>Save password</button>
+  </form>
+  <p class="muted">Use at least 10 characters that are hard to guess: a few unrelated words works well. Next time, choose <strong>Continue with email</strong> and enter ${e(user.email)}; you can use this password or a one-time code. If you forget it, use <strong>Forgot password</strong> on the login screen.</p>
+</section>`
+    : `<section>
+  <h2>Confirm it's you</h2>
+  <p>For your security, log in again before you set or change your password. You'll come straight back here.</p>
+  <p><a class="btn" href="${e(reauthUrl(c))}">Log in again</a></p>
+</section>`;
+  return shell(c, user, "account", body);
+}
+
+/** The login flow on DOMAIN, ending with a fresh session handed back to this page. */
+function reauthUrl(c: Context<AppEnv>): string {
+  const back = `/auth/app?return=${encodeURIComponent(`${appOrigin(c.env, c.req.url)}/account`)}`;
+  return `${aiOrigin(c.env, c.req.url)}/auth/login?provider=email&return=${encodeURIComponent(back)}`;
 }

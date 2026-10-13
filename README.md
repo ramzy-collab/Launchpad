@@ -128,13 +128,18 @@ secrets are set, Formelab keeps using Cloudflare Access (1.5), so you can deploy
 when ready.
 
 1. Create a WorkOS account at <https://workos.com>, then open **Authentication**:
-   - Turn on **Email + Magic Auth** (one-time email codes) and **Google OAuth**. In production,
+   - Turn on **Email + Magic Auth** (one-time email codes), **Email + Password** (people set
+     theirs under Password in the web app's account menu, or with Forgot password on the login
+     screen) and **Google OAuth**. In production,
      Google needs your own OAuth client: create one in Google Cloud Console and paste its client
      ID and secret into WorkOS (WorkOS's setup page links the steps).
 2. **Redirects**: add `https://example.com/auth/callback` and make it the default, and add
    `https://admin.example.com/auth/callback` for the admin panel's own sign-in. For local
    development, also add `http://localhost:8787/auth/callback` and
    `http://admin.localhost:8787/auth/callback` in the staging environment.
+   Under **Sign-out redirects** (sometimes labelled logout redirects), add `https://example.com/`
+   and `https://admin.example.com/login`. Logging out of Formelab ends the WorkOS session too and
+   then returns there; without them WorkOS shows an error after logout.
 3. Copy the **Client ID** and **API key** from **API Keys**, then:
    ```bash
    npx wrangler secret put WORKOS_CLIENT_ID

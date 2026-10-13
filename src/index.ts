@@ -7,7 +7,7 @@ import { SERVICES_SPRITE } from "./dashboard/services";
 import { appIcon } from "./icons";
 import { sheetsCallback, sheetsConnect } from "./sheets";
 import { enabledFlags, withFlags } from "./flags";
-import { appActivityPage, appSettingsPage, connectedPage, dashboardPage, keysPage, newAppPage, sharedPage, spacesPage } from "./dashboard/page";
+import { accountPage, appActivityPage, appSettingsPage, connectedPage, dashboardPage, keysPage, newAppPage, sharedPage, spacesPage } from "./dashboard/page";
 import { homePage, loginPage } from "./dashboard/home";
 import type { AppEnv, Env } from "./env";
 import { forbidden, jsonError, onError, unauthorized } from "./errors";
@@ -194,6 +194,7 @@ webApp.use("/services/*", async (c, next) => {
 webApp.get("/services/google-sheets/connect", sheetsConnect);
 webApp.get("/services/google-sheets/callback", sheetsCallback);
 webApp.get("/keys", (c) => keysPage(c));
+webApp.get("/account", (c) => accountPage(c));
 webApp.get("/apps/:id", (c) => appSettingsPage(c, c.req.param("id")));
 webApp.get("/apps/:id/icon", (c) => appIcon(ctxOf(c), c.req.param("id")));
 webApp.get("/apps/:id/activity", (c) => appActivityPage(c, c.req.param("id")));

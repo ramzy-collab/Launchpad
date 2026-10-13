@@ -137,6 +137,8 @@ export function describeActivity(row: AuditRow): string {
       return `Removed admin access from ${t}`;
     case "waitlist_approve":
       return d.invited ? `Invited ${t}` : `Let ${t} in from the waitlist`;
+    case "password_set":
+      return "Set their password";
     case "oauth_connect":
       return `Connected ${d.client ?? "an AI app"}`;
     case "oauth_disconnect":
