@@ -285,6 +285,13 @@
     }
     q.addEventListener("input", apply);
     filters.forEach(function (f) { f.addEventListener("change", apply); });
+    // A space's link (?space=<name>) opens the list filtered to that space.
+    var wanted = new URLSearchParams(location.search).get("space");
+    var spaceSel = root.querySelector('[data-filter="space"]');
+    if (wanted && spaceSel && [].some.call(spaceSel.options, function (o) { return o.value === wanted; })) {
+      spaceSel.value = wanted;
+      apply();
+    }
     sortSel.addEventListener("change", function () {
       var parts = sortSel.value.split(":");
       state.key = parts[0]; state.dir = parts[1];

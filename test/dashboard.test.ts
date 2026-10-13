@@ -1,7 +1,7 @@
 import { env } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
 import { ASSET_VERSION } from "../src/generated/assets";
-import { call, OWNER, PAGE, publishHtml, uniq } from "./helpers";
+import { call, OWNER, PAGE, publishHtml, uniq, appAt } from "./helpers";
 
 describe("dashboard", () => {
   it("renders with a strict CSP and no inline script", async () => {
@@ -47,8 +47,8 @@ describe("dashboard", () => {
     await publishHtml(OWNER, ns, "listed", PAGE("x"), { title: "Listed app" });
     await call("/_api/admin/tokens", { as: OWNER, method: "POST", json: { name: "laptop-token" } });
     const html = await (await call("/app", { as: OWNER })).text();
-    expect(html).toContain(`https://${ns}.example.app/listed/`);
-    expect(html).toContain(`<a class="tile-link" href="https://${ns}.example.app/listed/" target="_blank" rel="noopener">`); // a tile opens the app in a new tab
+    expect(html).toContain(`${await appAt(ns, "listed")}/`);
+    expect(html).toContain(`<a class="tile-link" href="${await appAt(ns, "listed")}/" target="_blank" rel="noopener">`); // a tile opens the app in a new tab
     expect(html).toContain("Listed app");
     expect(html).not.toContain("Recent activity");
     expect(html).toMatch(/<a class="gear" href="\/apps\/[^"]+" aria-label="Settings for Listed app"/);
@@ -118,8 +118,10 @@ describe("dashboard", () => {
     expect((await call("/app/connect")).status).toBe(302); // signed out: to the login screen
   });
 
-  it("serves the guide on the apex and namespace hosts", async () => {
-    for (const url of ["https://example.com/_platform/guide.md", `https://${uniq()}.example.app/_platform/guide.md`]) {
+  it("serves the guide on the apex and on app hosts", async () => {
+    const ns = uniq();
+    await publishHtml(OWNER, ns, "g", PAGE("g"));
+    for (const url of ["https://example.com/_platform/guide.md", `${await appAt(ns, "g")}/_platform/guide.md`]) {
       const res = await call(url, { as: OWNER });
       expect(res.status).toBe(200);
       expect(res.headers.get("content-type")).toContain("text/markdown");
@@ -128,7 +130,9 @@ describe("dashboard", () => {
   });
 
   it("serves the SDK under 6 KB, defining formelab and archie", async () => {
-    const res = await call(`https://${uniq()}.example.app/_platform/sdk.js`, { as: OWNER });
+    const ns = uniq();
+    await publishHtml(OWNER, ns, "s", PAGE("s"));
+    const res = await call(`${await appAt(ns, "s")}/_platform/sdk.js`, { as: OWNER });
     const js = await res.text();
     expect(res.headers.get("content-type")).toContain("javascript");
     expect(new TextEncoder().encode(js).length).toBeLessThan(6 * 1024);
@@ -156,7 +160,7 @@ describe("app activity logs", () => {
     expect((await patch({ visibility: "all", title: "Renamed app" })).status).toBe(200);
     // Saving the settings form unchanged logs nothing.
     expect((await patch({ visibility: "all", title: "Renamed app", allowed_emails: [viewer], editors: [editor] })).status).toBe(200);
-    await call(`https://${ns}.example.app/_api/secrets/api-key`, { as: OWNER, mount: "/log/", method: "PUT", json: { hosts: ["api.test"], value: "shh" } });
+    await call(`${await appAt(ns, "log")}/_api/secrets/api-key`, { as: OWNER, mount: "/", method: "PUT", json: { hosts: ["api.test"], value: "shh" } });
 
     const res = await call(url, { as: OWNER });
     expect(res.status).toBe(200);

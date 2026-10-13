@@ -4,7 +4,7 @@
 // sent to a browser, and only used for apps that person owns.
 //
 // Formelab's Google OAuth client: GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET (README 1.9), with the
-// redirect https://APP_DOMAIN/services/google-sheets/callback.
+// redirect https://app.DOMAIN/services/google-sheets/callback (the web app).
 import type { Context } from "hono";
 import { audit } from "./audit";
 import type { AppEnv, Env, User } from "./env";

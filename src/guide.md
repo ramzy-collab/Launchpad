@@ -6,19 +6,24 @@ once before you build your first app.
 ## 1. What Formelab is
 
 Formelab hosts small, self-contained web apps: plain HTML, CSS and JavaScript, with no build step
-and no backend of your own. Each app gets a URL:
+and no backend of your own. Each app gets its own address, its name plus a short code:
 
 ```
-https://<namespace>.<APP_DOMAIN>/<mount-path>/
+https://<name>-<code>.<APP_DOMAIN>/        e.g. https://budget-7kq2.formelab.app/
 ```
 
-- A **namespace** is a subdomain, such as `ramzy`. Its owner and editors can publish into it.
-- A **mount path** is where the app lives inside the namespace, such as `budget` or `tools/budget`.
-  The empty mount path `""` is the namespace root. Lowercase letters, digits and hyphens only.
-- Every page sits behind single sign-on (Cloudflare Access). Every viewer is signed in, so you
-  always know who is looking.
-- An app can be `all` (anyone who can sign in) or `restricted` (only its owner, editors and the
-  emails on its allow-list).
+`publish` returns it; always give the user that URL.
+
+- You publish an app to a **namespace** (a "space") and a **mount path** (its name in the space),
+  such as space `ramzy`, mount path `budget` or `tools/budget` (`""` is the space's main app).
+  Lowercase letters, digits and hyphens. Together they identify the app when you publish or
+  update it; the app's address is made from the mount path and never changes.
+- A space groups apps and the people who can publish into it (its owner and editors). It isn't an
+  address of its own.
+- Every app is served from the root of its own address, so `location.pathname` starts at `/`.
+- Every page needs a sign-in to Formelab, so you always know who is looking.
+- An app is `restricted` by default (only its owner, editors and the emails on its allow-list) or
+  `all` (every Formelab member).
 
 Apps get platform features through a small browser SDK, `window.formelab`:
 
@@ -47,9 +52,9 @@ Apps get platform features through a small browser SDK, `window.formelab`:
    results (in KV or `localStorage`) so the page paints fast.
 6. **Keep uploads small**: at most 25 MB compressed, 100 MB uncompressed, 2,000 files. A single
    HTML file is the best default. Load big libraries from a CDN.
-7. **Apps in one namespace share a browser origin**, so they are only cooperatively isolated from
-   each other: they share `localStorage` and cookies. Prefix your `localStorage` keys with your
-   mount path. KV and secrets are always scoped to one app.
+7. **Every app is its own website** (its own browser origin), so `localStorage`, cookies and
+   IndexedDB belong to that app alone; no other app can read them. KV and secrets are scoped to
+   one app too.
 8. Shared KV (`formelab.kv`) is visible to **everyone who can view the app**, and by default only
    the owner and editors can change it. If viewers must write to it (votes, sign-ups, shared
    counters), publish with `data_writes: "everyone"`. Each person's own data (preferences, drafts,
@@ -171,7 +176,7 @@ Every app can be installed like a native app: **Add to Home Screen** on iPhone a
 **Install** in Chrome and Edge on a computer, **Add to Dock** in Safari on a Mac. It then opens
 in its own window with its own icon, starting at the app. You don't need to do anything for this:
 Formelab adds a `<link rel="manifest">` to your pages, with the app's title, its icon and its
-mount path as the scope. (If your app ships its own `<link rel="manifest">`, Formelab leaves it
+own address as the scope. (If your app ships its own `<link rel="manifest">`, Formelab leaves it
 alone.)
 
 To look good once installed:
@@ -422,7 +427,7 @@ edited version to the same `namespace` and `mount_path`:
 2. `publish` with `html` (a complete document as a string) or `zip_base64`, plus `namespace` and
    `mount_path`. Optional: `title`, `spa`, `visibility`, `allowed_emails`, `data_writes`
    (`"everyone"` if viewers write to shared KV; the default `"editors"` otherwise).
-3. Give the user the returned `url`.
+3. Give the user the returned `url` (the app's own address, like `https://budget-7kq2.<APP_DOMAIN>/`).
 
 Publishing to an existing path replaces the app atomically; its KV data, secrets and sharing
 settings (who can open and edit it, who can change its data) are kept. `visibility`,

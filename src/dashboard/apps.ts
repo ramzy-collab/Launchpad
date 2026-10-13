@@ -83,7 +83,7 @@ const sortHead = (key: string, label: string, current = false) =>
   `<th aria-sort="${current ? "descending" : "none"}"><button type="button" class="sort" data-sort="${key}">${label}<span class="arrow" aria-hidden="true"></span></button></th>`;
 
 /** The full browser for a list of apps. `shared` adds the owner and your access (Shared with me). */
-export function appBrowser(apps: BrowserApp[], opts: { shared: boolean; appDomain: string }): string {
+export function appBrowser(apps: BrowserApp[], opts: { shared: boolean }): string {
   const { shared } = opts;
   const now = Date.now();
   const spaces = [...new Set(apps.map((s) => s.namespace))].sort();
@@ -91,7 +91,7 @@ export function appBrowser(apps: BrowserApp[], opts: { shared: boolean; appDomai
     .map((ns) => {
       const inSpace = apps.filter((s) => s.namespace === ns);
       return `<div class="group" data-group="${e(ns)}">
-  <h3>${e(ns)} <span class="muted">${e(ns)}.${e(opts.appDomain)}</span></h3>
+  <h3>${e(ns)}</h3>
   <div class="tiles">${inSpace.map((s) => tile(s, shared, now)).join("")}</div>
 </div>`;
     })

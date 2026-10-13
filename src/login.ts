@@ -281,7 +281,7 @@ export async function appHandoff(c: Context<AppEnv>): Promise<Response> {
   }
   const here = new URL(c.req.url);
   const kind = hostKind(target.hostname, c.env);
-  if (target.protocol !== here.protocol || (kind !== "app" && kind !== "ns")) {
+  if (target.protocol !== here.protocol || (kind !== "app" && kind !== "apps")) {
     return plainPage(400, "Bad request", "Formelab only signs you in to its own apps.");
   }
   const sessionId = c.get("sessionId");
@@ -295,11 +295,11 @@ export async function appHandoff(c: Context<AppEnv>): Promise<Response> {
   return new Response(null, { status: 302, headers: { location: back.toString(), "cache-control": "no-store" } });
 }
 
-/** GET /_auth/callback?code=...&return=/path (namespace host) */
+/** GET /_auth/callback?code=...&return=/path (the web app or an app's own host) */
 export async function appCallback(c: Context<AppEnv>): Promise<Response> {
   const host = new URL(c.req.url).hostname;
   const kind = hostKind(host, c.env);
-  if (kind !== "app" && kind !== "ns") return plainPage(404, "Not found", "There is nothing here.");
+  if (kind !== "app" && kind !== "apps") return plainPage(404, "Not found", "There is nothing here.");
   const ttl = kind === "app" ? APEX_SESSION_TTL_MS : APP_SESSION_TTL_MS;
   const cookie = await redeemAppCode(c.env, c.req.query("code") ?? "", host, ttl);
   if (!cookie) return plainPage(400, "Sign-in expired", "This link was already used or took too long. Open the app again.");

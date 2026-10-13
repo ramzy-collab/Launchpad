@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { call, OWNER, PAGE, publishHtml, uniq } from "./helpers";
+import { call, OWNER, PAGE, publishHtml, uniq, appAt } from "./helpers";
 
 const ORIGIN = "https://example.com";
 const REDIRECT = "https://chatgpt.com/connector_platform_oauth_redirect";
@@ -84,15 +84,16 @@ describe("ChatGPT connector", () => {
     const token = await connectLikeChatGPT("none");
 
     const found = await tool(token, "search", { query: `budget ${ns}` });
-    expect(found.data.results).toEqual([{ id: expect.stringMatching(/^site:s_/), title: "Budget tracker", url: `https://${ns}.example.app/budget/` }]);
+    expect(found.data.results).toEqual([{ id: expect.stringMatching(/^site:s_/), title: "Budget tracker", url: `${await appAt(ns, "budget")}/` }]);
 
     const all = await tool(token, "search", { query: "" });
     const ids = all.data.results.map((r: { id: string }) => r.id);
     expect(ids).toContain("guide");
-    expect(all.data.results.filter((r: { url: string }) => r.url.startsWith(`https://${ns}.`)).length).toBe(2);
+    const mine = [`${await appAt(ns, "budget")}/`, `${await appAt(ns, "notes")}/`];
+    expect(all.data.results.filter((r: { url: string }) => mine.includes(r.url)).length).toBe(2);
 
     const site = await tool(token, "fetch", { id: found.data.results[0].id });
-    expect(site.data).toMatchObject({ id: found.data.results[0].id, title: "Budget tracker", url: `https://${ns}.example.app/budget/`, metadata: { namespace: ns, mountPath: "budget" } });
+    expect(site.data).toMatchObject({ id: found.data.results[0].id, title: "Budget tracker", url: `${await appAt(ns, "budget")}/`, metadata: { namespace: ns, mountPath: "budget" } });
     expect(site.data.text).toContain("<h1>Budget tracker</h1>");
 
     const guide = await tool(token, "fetch", { id: "guide" });

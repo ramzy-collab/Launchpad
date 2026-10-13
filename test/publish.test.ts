@@ -1,6 +1,6 @@
 import { env } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
-import { call, OWNER, PAGE, publishHtml, publishZip, r2Keys, uniq } from "./helpers";
+import { call, OWNER, PAGE, publishHtml, publishZip, r2Keys, uniq, appAt } from "./helpers";
 
 const HOSTS = ["api.test"];
 
@@ -12,7 +12,9 @@ describe("publish and serve", () => {
     const res = await publishHtml(OWNER, ns, "hello", PAGE("<p>hi</p>"), { title: "Hello" });
     expect(res.status).toBe(201);
     const body = await res.json<Published>();
-    expect(body.url).toBe(`https://${ns}.example.app/hello/`);
+    // Its own host: the name plus a 4-character code.
+    expect(body.url).toMatch(/^https:\/\/hello-[a-z2-9]{4}\.example\.app\/$/);
+    expect(body.url).toBe(`${await appAt(ns, "hello")}/`);
 
     const page = await call(body.url, { as: OWNER });
     expect(page.status).toBe(200);
@@ -22,7 +24,7 @@ describe("publish and serve", () => {
     expect(page.headers.get("referrer-policy")).toBe("strict-origin-when-cross-origin");
     const html = await page.text();
     // The base comes first, then the tags that let the app be installed (pwa.test.ts).
-    expect(html).toContain('<head><base href="/hello/"><link rel="manifest" href="/_platform/manifest.webmanifest?mount=hello" crossorigin="use-credentials">');
+    expect(html).toContain('<head><base href="/"><link rel="manifest" href="/_platform/manifest.webmanifest" crossorigin="use-credentials">');
     expect(html).toContain("<p>hi</p>");
     // The SDK is never injected automatically.
     expect(html).not.toContain("sdk.js");
@@ -31,9 +33,9 @@ describe("publish and serve", () => {
   it("injects <base href='/'> for root mounts and synthesizes <head> when missing", async () => {
     const ns = uniq();
     await publishHtml(OWNER, ns, "", "<!doctype html><html><body>bare</body></html>");
-    const html = await (await call(`https://${ns}.example.app/`, { as: OWNER })).text();
+    const html = await (await call(`${await appAt(ns, "")}/`, { as: OWNER })).text();
     expect(html).toBe(
-      `<!doctype html><html><head><base href="/"><link rel="manifest" href="/_platform/manifest.webmanifest?mount=" crossorigin="use-credentials"><meta name="apple-mobile-web-app-title" content="${ns}"></head><body>bare</body></html>`,
+      `<!doctype html><html><head><base href="/"><link rel="manifest" href="/_platform/manifest.webmanifest" crossorigin="use-credentials"><meta name="apple-mobile-web-app-title" content="${ns}"></head><body>bare</body></html>`,
     );
   });
 
@@ -50,7 +52,7 @@ describe("publish and serve", () => {
     expect(res.status).toBe(201);
     const { site } = await res.json<Published>();
     expect(site.fileCount).toBe(6);
-    const base = `https://${ns}.example.app/docs`;
+    const base = await appAt(ns, "docs");
 
     const css = await call(`${base}/css/site.css`, { as: OWNER });
     expect(css.status).toBe(200);
@@ -70,34 +72,49 @@ describe("publish and serve", () => {
     expect((await call(`${base}/missing.png`, { as: OWNER })).status).toBe(404);
   });
 
-  it("redirects a mount path without its trailing slash", async () => {
+  it("redirects old addresses (<space>.APP_DOMAIN/<path>/ and <space>.DOMAIN/...) to the app's own host", async () => {
     const ns = uniq();
     await publishHtml(OWNER, ns, "tools/budget", PAGE("b"));
-    const res = await call(`https://${ns}.example.app/tools/budget?x=1`, { as: OWNER });
-    expect(res.status).toBe(301);
-    expect(res.headers.get("location")).toBe("/tools/budget/?x=1");
+    const app = await appAt(ns, "tools/budget");
+    expect(new URL(app).hostname).toMatch(/^tools-budget-[a-z2-9]{4}\.example\.app$/);
+    const go = async (url: string) => {
+      const res = await call(url);
+      expect(res.status, url).toBe(301);
+      return res.headers.get("location");
+    };
+    expect(await go(`https://${ns}.example.app/tools/budget?x=1`)).toBe(`${app}/?x=1`);
+    expect(await go(`https://${ns}.example.app/tools/budget/`)).toBe(`${app}/`);
+    expect(await go(`https://${ns}.example.app/tools/budget/css/a%20b.css?v=2`)).toBe(`${app}/css/a%20b.css?v=2`);
+    expect(await go(`https://${ns}.example.com/tools/budget/page`)).toBe(`${app}/page`);
+    // Nothing is served on the old hosts any more.
+    expect((await call(`https://${ns}.example.app/nothing/`)).status).toBe(404);
+    expect((await call(`https://${ns}.example.app/_api/me`, { as: OWNER, mount: "/tools/budget/" })).status).toBe(404);
+    expect((await call(`https://nobody-${ns}.example.app/`)).status).toBe(404);
   });
 
-  it("resolves the longest matching mount path", async () => {
+  it("old addresses still pick the longest matching mount path", async () => {
     const ns = uniq();
     await publishHtml(OWNER, ns, "", PAGE("root"));
     await publishHtml(OWNER, ns, "a", PAGE("a"));
     await publishHtml(OWNER, ns, "a/b", PAGE("ab"));
-    const get = async (p: string) => (await call(`https://${ns}.example.app${p}`, { as: OWNER })).text();
-    expect(await get("/")).toContain(">root<");
-    expect(await get("/a/")).toContain(">a<");
-    expect(await get("/a/b/")).toContain(">ab<");
-    expect(await get("/ab/")).toContain("Not found"); // "ab" is not under "a"; root has no ab/
-    expect(await get("/a/bc")).toContain("Not found");
+    const to = async (p: string) => (await call(`https://${ns}.example.app${p}`)).headers.get("location");
+    expect(await to("/")).toBe(`${await appAt(ns, "")}/`);
+    expect(await to("/a/")).toBe(`${await appAt(ns, "a")}/`);
+    expect(await to("/a/b/")).toBe(`${await appAt(ns, "a/b")}/`);
+    expect(await to("/ab/")).toBe(`${await appAt(ns, "")}/ab/`); // "ab" is not under "a": the root app's ab/
+    // Each app's own host serves only that app.
+    expect(await (await call(`${await appAt(ns, "a")}/`, { as: OWNER })).text()).toContain(">a<");
+    expect((await call(`${await appAt(ns, "a")}/b/`, { as: OWNER })).status).toBe(404);
   });
 
   it("SPA mode serves index.html for unknown extensionless paths only", async () => {
     const ns = uniq();
     await publishHtml(OWNER, ns, "app", PAGE("spa"), { spa: "true" });
-    const deep = await call(`https://${ns}.example.app/app/users/42`, { as: OWNER });
+    const app = await appAt(ns, "app");
+    const deep = await call(`${app}/users/42`, { as: OWNER });
     expect(deep.status).toBe(200);
     expect(await deep.text()).toContain("spa");
-    expect((await call(`https://${ns}.example.app/app/logo.png`, { as: OWNER })).status).toBe(404);
+    expect((await call(`${app}/logo.png`, { as: OWNER })).status).toBe(404);
   });
 
   it("replaces a site atomically and keeps KV and secrets", async () => {
@@ -110,14 +127,16 @@ describe("publish and serve", () => {
     // A failed replacement (bad zip) leaves the old version live and untouched.
     const bad = await publishZip(OWNER, ns, "r", { "nope.html": "x" });
     expect(bad.status).toBe(400);
-    expect(await (await call(`https://${ns}.example.app/r/`, { as: OWNER })).text()).toContain("v1");
+    const app = await appAt(ns, "r");
+    expect(await (await call(`${app}/`, { as: OWNER })).text()).toContain("v1");
 
     const second = await publishHtml(OWNER, ns, "r", PAGE("v2"));
     expect(second.status).toBe(200);
     const body = await second.json<Published & { replaced: boolean }>();
     expect(body.replaced).toBe(true);
     expect(body.site.id).toBe(id);
-    expect(await (await call(`https://${ns}.example.app/r/`, { as: OWNER })).text()).toContain("v2");
+    expect(await (await call(`${app}/`, { as: OWNER })).text()).toContain("v2");
+    expect(body.url).toBe(`${app}/`); // a new version keeps the app's address
     const v2 = (await env.DB.prepare("SELECT current_version FROM sites WHERE id = ?").bind(id).first<{ current_version: string }>())!.current_version;
     expect(v2).not.toBe(v1); // a new version, in its own folder (ids start with the time, but two publishes can share a millisecond)
     expect(await env.DB.prepare("SELECT value FROM kv WHERE site_id = ?").bind(id).first()).toEqual({ value: "1" });
@@ -194,7 +213,7 @@ describe("publish and serve", () => {
     expect(b4.site).toMatchObject({ title: "Renamed" });
 
     // The friend can still open the new version; update_site (PATCH) is how sharing changes.
-    const page = await call(`https://${ns}.example.app/kept/`, { as: "friend@example.com" });
+    const page = await call(`${await appAt(ns, "kept")}/`, { as: "friend@example.com" });
     expect(await page.text()).toContain("v4");
     const patched = await call(`/_api/admin/sites/${body.site.id}`, { as: OWNER, method: "PATCH", json: { allowed_emails: "new@example.com" } });
     expect((await patched.json<{ allowedEmails: string[] }>()).allowedEmails).toEqual(["new@example.com"]);
@@ -221,24 +240,24 @@ describe("security 3: restricted sites", () => {
     const ns = uniq();
     const res = await publishHtml(OWNER, ns, "secret", PAGE("private"), { visibility: "restricted", allowed_emails: "friend@example.com" });
     expect(res.status).toBe(201);
-    const url = `https://${ns}.example.app/secret/`;
+    const url = `${await appAt(ns, "secret")}/`;
 
     const denied = await call(url, { as: "stranger@example.com" });
     expect(denied.status).toBe(403);
     expect(await denied.text()).not.toContain("private");
     expect((await call(url + "index.html", { as: "stranger@example.com" })).status).toBe(403);
     for (const path of ["me", "kv", "kv/x", "secrets"]) {
-      const r = await call(`https://${ns}.example.app/_api/${path}`, { as: "stranger@example.com", mount: "/secret/" });
+      const r = await call(`${await appAt(ns, "secret")}/_api/${path}`, { as: "stranger@example.com", mount: "/" });
       expect(r.status, path).toBe(403);
     }
-    const proxy = await call(`https://${ns}.example.app/_api/secrets/x/proxy`, { as: "stranger@example.com", mount: "/secret/", method: "POST", json: { url: "https://api.test/" } });
+    const proxy = await call(`${await appAt(ns, "secret")}/_api/secrets/x/proxy`, { as: "stranger@example.com", mount: "/", method: "POST", json: { url: "https://api.test/" } });
     expect(proxy.status).toBe(403);
-    const put = await call(`https://${ns}.example.app/_api/kv/x`, { as: "stranger@example.com", mount: "/secret/", method: "PUT", body: "1" });
+    const put = await call(`${await appAt(ns, "secret")}/_api/kv/x`, { as: "stranger@example.com", mount: "/", method: "PUT", body: "1" });
     expect(put.status).toBe(403);
 
     for (const who of [OWNER, "friend@example.com"]) {
       expect((await call(url, { as: who })).status, who).toBe(200);
-      expect((await call(`https://${ns}.example.app/_api/me`, { as: who, mount: "/secret/" })).status, who).toBe(200);
+      expect((await call(`${await appAt(ns, "secret")}/_api/me`, { as: who, mount: "/" })).status, who).toBe(200);
     }
   });
 
@@ -247,7 +266,7 @@ describe("security 3: restricted sites", () => {
     await publishHtml(OWNER, ns, "", PAGE("private"), { visibility: "restricted", editors: "siteed@example.com" });
     await call(`/_api/admin/namespaces/${ns}`, { as: OWNER, method: "PATCH", json: { editors: "nsed@example.com" } });
     for (const who of ["siteed@example.com", "nsed@example.com"]) {
-      expect((await call(`https://${ns}.example.app/`, { as: who })).status, who).toBe(200);
+      expect((await call(`${await appAt(ns, "")}/`, { as: who })).status, who).toBe(200);
     }
   });
 
@@ -263,8 +282,9 @@ describe("security 12: deleting a site", () => {
   it("removes its R2 objects, KV rows and secret rows", async () => {
     const ns = uniq();
     const { site } = await (await publishZip(OWNER, ns, "gone", { "index.html": PAGE("x"), "a.js": "1", "b/c.css": "2" })).json<Published>();
-    await call(`https://${ns}.example.app/_api/kv/k`, { as: OWNER, mount: "/gone/", method: "PUT", body: '"v"' });
-    await call(`https://${ns}.example.app/_api/secrets/s`, { as: OWNER, mount: "/gone/", method: "PUT", json: { hosts: HOSTS, value: "shh-secret" } });
+    const appUrl = await appAt(ns, "gone");
+    await call(`${await appAt(ns, "gone")}/_api/kv/k`, { as: OWNER, mount: "/", method: "PUT", body: '"v"' });
+    await call(`${await appAt(ns, "gone")}/_api/secrets/s`, { as: OWNER, mount: "/", method: "PUT", json: { hosts: HOSTS, value: "shh-secret" } });
     expect((await r2Keys(`sites/${site.id}/`)).length).toBe(3);
     expect((await env.DB.prepare("SELECT COUNT(*) AS n FROM kv WHERE site_id = ?").bind(site.id).first<{ n: number }>())!.n).toBe(1);
     expect((await env.DB.prepare("SELECT COUNT(*) AS n FROM secrets WHERE site_id = ?").bind(site.id).first<{ n: number }>())!.n).toBe(1);
@@ -277,7 +297,7 @@ describe("security 12: deleting a site", () => {
     expect((await env.DB.prepare("SELECT COUNT(*) AS n FROM kv WHERE site_id = ?").bind(site.id).first<{ n: number }>())!.n).toBe(0);
     expect((await env.DB.prepare("SELECT COUNT(*) AS n FROM secrets WHERE site_id = ?").bind(site.id).first<{ n: number }>())!.n).toBe(0);
     expect(await env.DB.prepare("SELECT id FROM sites WHERE id = ?").bind(site.id).first()).toBeNull();
-    expect((await call(`https://${ns}.example.app/gone/`, { as: OWNER })).status).toBe(404);
+    expect((await call(`${appUrl}/`, { as: OWNER })).status).toBe(404);
   });
 
   it("deleting a namespace removes every site in it", async () => {
@@ -288,5 +308,22 @@ describe("security 12: deleting a site", () => {
     expect(await del.json()).toEqual({ ok: true, deletedSites: 2 });
     for (const id of [a.site.id, b.site.id]) expect(await r2Keys(`sites/${id}/`)).toEqual([]);
     expect(await env.DB.prepare("SELECT label FROM namespaces WHERE label = ?").bind(ns).first()).toBeNull();
+  });
+});
+
+describe("migration 0016: every existing app gets its own host", () => {
+  it("names each app from its mount path (or its space) plus a 4-character code", async () => {
+    const ns = uniq();
+    await publishHtml(OWNER, ns, "", PAGE("root"));
+    await publishHtml(OWNER, ns, "tools/budget", PAGE("b"));
+    // Apps from before the migration have no host label yet.
+    await env.DB.prepare("UPDATE sites SET host_label = NULL WHERE namespace = ?").bind(ns).run();
+    const migration = (env as unknown as { TEST_MIGRATIONS: { name: string; queries: string[] }[] }).TEST_MIGRATIONS.find((m) => m.name.startsWith("0016_"))!;
+    const update = migration.queries.find((q) => /^\s*UPDATE sites SET host_label/.test(q))!;
+    await env.DB.prepare(update).run();
+    expect(new URL(await appAt(ns, "")).hostname).toMatch(new RegExp(`^${ns}-[a-z2-9]{4}\\.example\\.app$`));
+    expect(new URL(await appAt(ns, "tools/budget")).hostname).toMatch(/^tools-budget-[a-z2-9]{4}\.example\.app$/);
+    // ...and the app opens there.
+    expect(await (await call(`${await appAt(ns, "tools/budget")}/`, { as: OWNER })).text()).toContain(">b<");
   });
 });
