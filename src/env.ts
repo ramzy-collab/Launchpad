@@ -20,6 +20,9 @@ export interface Env {
   OWNER_EMAIL: string;
   /** WorkOS AuthKit (Formelab's own login). When both are set, sign-in goes through WorkOS. */
   WORKOS_CLIENT_ID?: string;
+  /** Formelab's Google OAuth client, for the Google Sheets connected app (README 1.9). */
+  GOOGLE_CLIENT_ID?: string;
+  GOOGLE_CLIENT_SECRET?: string;
   WORKOS_API_KEY?: string;
   /** Notification emails: Cloudflare Email Service's send_email binding, and the sender, e.g. "Formelab <hello@formelab.ai>". */
   EMAIL?: SendEmail;

@@ -181,6 +181,28 @@ new version of a shared app doesn't send it again. Only people newly added to an
 **Share with** or **Editors** list (or a namespace's editors) are emailed, never the person
 making the change.
 
+### 1.9 Google Sheets connected app (Google OAuth client)
+
+Lets people connect Google Sheets under Connected apps (behind the `connected_apps` feature
+flag). Formelab needs its own Google sign-in client:
+
+1. In [Google Cloud Console](https://console.cloud.google.com/), pick or create a project.
+2. **APIs & Services → Library**: enable the **Google Sheets API**.
+3. **Google Auth Platform → Branding** (the OAuth consent screen): app name **Formelab**, your
+   support email. **Audience**: External, and while it's in **Testing**, add each person who
+   should be able to connect (up to 100) under **Test users**. **Data access**: add the scope
+   `.../auth/spreadsheets`.
+4. **Clients → Create client → Web application**. Authorized redirect URI:
+   `https://formelab.app/services/google-sheets/callback`.
+5. Copy the client ID and secret, then:
+   ```bash
+   npx wrangler secret put GOOGLE_CLIENT_ID
+   npx wrangler secret put GOOGLE_CLIENT_SECRET
+   ```
+
+While the app is in Testing, Google ends each connection after 7 days (people reconnect). To
+open it to everyone, publish the app and pass Google's verification for the spreadsheets scope.
+
 ## 2. Production deploy runbook
 
 First deploy, and every deploy after:

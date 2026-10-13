@@ -55,6 +55,10 @@ Apps get platform features through a small browser SDK, `window.formelab`:
    Gemini once in Formelab (Connected apps → Google Gemini), and every app they own can use it.
    The `whoami` tool says whether it's connected (`connectedApps.gemini`); if it isn't, tell the
    user to connect it, and build the app to say so too (see `formelab.gemini.available()`).
+10. **To read or write a spreadsheet, use `formelab.sheets`** (Google Sheets through the owner's
+   connected Google account). Never ask for Google credentials. `whoami` says whether it's
+   connected (`connectedApps.googleSheets`); if not, tell the user to connect it in Formelab
+   (Connected apps → Google Sheets).
 <!-- /flag:connected_apps -->
 
 ## 3. SDK reference
@@ -161,6 +165,28 @@ await formelab.gemini.generate({ contents: [{ role: "user", parts: [{ text: "Hi"
 Errors: `gemini_not_connected` (409: show "Connect Google Gemini in Formelab to use this"),
 `gemini_key_rejected`, `gemini_quota` (429 from Google), `rate_limited`, `gemini_unreachable`.
 Show `e.message` and `e.hint`. Temperature and top-P/K aren't supported by this model.
+
+### `formelab.sheets`: Google Sheets in your app
+
+Reads and writes the app owner's Google Sheets with the Google account they connected once in
+Formelab. Anyone who can open the app can use it, as the owner; calls are limited to 60 a minute
+per app and show up in the app's activity log. A spreadsheet's id is the long part of its URL:
+`docs.google.com/spreadsheets/d/<id>/edit`.
+
+```js
+const { connected } = await formelab.sheets.available();   // false: the owner hasn't connected it
+const rows = await formelab.sheets.read(id, "Sheet1!A1:C50");              // [["Name","Email"], ...]
+await formelab.sheets.append(id, "Sheet1!A:C", [["Ada", "ada@example.com", new Date().toISOString()]]);
+await formelab.sheets.update(id, "Sheet1!B2", [["done"]]);
+const sheet = await formelab.sheets.create("Lunch sign-ups");             // { id, url }: a new spreadsheet
+// Anything else in the Sheets API v4 (path relative to https://sheets.googleapis.com/v4/):
+await formelab.sheets.request("POST", `spreadsheets/${id}:batchUpdate`, { body: { requests: [...] } });
+```
+
+Values are entered as if typed (`USER_ENTERED`), so numbers, dates and formulas work. Store the
+spreadsheet id in KV (or ask the owner for it in a settings form) rather than hard-coding it.
+Errors: `sheets_not_connected` (409), `sheets_reconnect` (the owner must reconnect),
+`sheets_forbidden`, `sheets_not_found`, `rate_limited`. Show `e.message` and `e.hint`.
 
 <!-- /flag:connected_apps -->
 ## 4. Patterns

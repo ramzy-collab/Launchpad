@@ -5,6 +5,7 @@ import { adminPage } from "./dashboard/admin";
 import { connectPage } from "./dashboard/connect";
 import { SERVICES_SPRITE } from "./dashboard/services";
 import { appIcon } from "./icons";
+import { sheetsCallback, sheetsConnect } from "./sheets";
 import { enabledFlags, withFlags } from "./flags";
 import { appActivityPage, appSettingsPage, connectedPage, dashboardPage, keysPage, newAppPage, sharedPage, spacesPage } from "./dashboard/page";
 import { homePage, loginPage } from "./dashboard/home";
@@ -185,6 +186,13 @@ webApp.get("/new", (c) => newAppPage(c));
 webApp.get("/spaces", (c) => spacesPage(c));
 webApp.get("/connect", (c) => connectPage(c));
 webApp.get("/connected", (c) => connectedPage(c));
+// Google Sheets sign-in (connected apps; behind the connected_apps flag).
+webApp.use("/services/*", async (c, next) => {
+  if (!c.get("features").has("connected_apps")) return plainPage(404, "Not found", "There is nothing here.");
+  await next();
+});
+webApp.get("/services/google-sheets/connect", sheetsConnect);
+webApp.get("/services/google-sheets/callback", sheetsCallback);
 webApp.get("/keys", (c) => keysPage(c));
 webApp.get("/apps/:id", (c) => appSettingsPage(c, c.req.param("id")));
 webApp.get("/apps/:id/icon", (c) => appIcon(ctxOf(c), c.req.param("id")));

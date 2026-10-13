@@ -116,6 +116,15 @@ export const VENDORS: Vendor[] = [
     url: "https://ai.google.dev/gemini-api/docs",
   },
   {
+    name: "Google Sheets API (Google sign-in)",
+    group: "service",
+    purpose: "The Google Sheets connected app: people sign in with Google and their apps read and write their spreadsheets.",
+    plan: "Free. In Google's Testing mode: up to 100 test users, connections last 7 days; going public needs Google's verification of the spreadsheets scope.",
+    setup: "Google Cloud project with the Sheets API and an OAuth client; secrets GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET; redirect formelab.app/services/google-sheets/callback.",
+    since: "2026-10-13",
+    url: "https://developers.google.com/sheets/api",
+  },
+  {
     name: "Google Fonts",
     group: "service",
     purpose: "The typefaces: Bricolage Grotesque, Inter, Inter Tight and Permanent Marker.",

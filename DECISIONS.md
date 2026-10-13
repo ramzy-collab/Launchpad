@@ -423,3 +423,21 @@ Choices made while building v1, including where the build differs from the spec 
   the open-source libraries and artwork built in, and vendors retired or considered, with what
   each is for, its plan and cost, and where it's set up. The list is `src/vendors.ts`; keep it
   current when adding or dropping a vendor.
+
+## Connected apps: Google Sheets (OAuth)
+
+- The first connected app that uses sign-in instead of a key. **Connect with Google** goes to
+  `/services/google-sheets/connect` on the web app host, which sends the person to Google with
+  state and PKCE in a host-only cookie, asking for `openid email` and the `spreadsheets` scope
+  with offline access. The callback trades the code for tokens (with Formelab's client secret)
+  and stores them encrypted in `service_keys` (`google_sheets`), with the Google account's email
+  as the hint. Access tokens are refreshed when they're within a minute of expiring.
+- Apps call it through the SDK (`formelab.sheets.read/append/update/create/request`), which
+  posts to `/_api/sheets`; Formelab adds the owner's token and calls
+  `https://sheets.googleapis.com/v4/<path>`. The path must start with `spreadsheets` and stay
+  inside the Sheets API (encoded dots are refused). Same rules as Gemini: the owner's account,
+  60 calls a minute per app, every call in the app's activity log, behind `connected_apps`.
+- Why `spreadsheets` and not the narrower `drive.file`: people want their apps to use the
+  spreadsheets they already have. It's a sensitive scope, so Google's consent screen stays in
+  **Testing** (named test users, 7-day connections) until it passes Google's verification.
+- Disconnecting revokes the token at Google (best effort) and deletes it.

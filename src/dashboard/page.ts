@@ -11,6 +11,7 @@ import { ctxOf } from "../api";
 import { head, htmlResponse } from "./layout";
 import { SERVICE_ICONS, SPRITE_URL } from "./services";
 import { GEMINI_MODEL_NAME, geminiStatus } from "../gemini";
+import { sheetsConfigured, sheetsStatus } from "../sheets";
 import { ago, appBrowser, appName, fmtBytes, thumb } from "./apps";
 import { connectedAiApps, type AiApp } from "./aiapps";
 import { AI_LOGOS } from "./logos";
@@ -343,6 +344,20 @@ export async function connectedPage(c: Context<AppEnv>): Promise<Response> {
   // Behind the connected_apps flag (admin panel → Features): off, the page lists no apps yet.
   const on = !!c.get("features")?.has("connected_apps");
   const gemini = on ? await geminiStatus(c.env, user.email) : { connected: false };
+  const sheets = on ? await sheetsStatus(c.env, user.email) : { connected: false };
+  const sheetsReady = sheetsConfigured(c.env);
+  const SHEETS_OUTCOME: Record<string, [boolean, string]> = {
+    connected: [true, "Connected. Your apps can use your Google Sheets now."],
+    denied: [false, "You didn't allow access in Google, so nothing was connected."],
+    expired: [false, "That sign-in took too long or was already used. Try Connect again."],
+    failed: [false, "Google didn't complete the sign-in. Try Connect again."],
+    scope: [false, "Google didn't give access to spreadsheets. Try again and leave the spreadsheets box ticked."],
+  };
+  const outcome = SHEETS_OUTCOME[c.req.query("sheets") ?? ""];
+  const sheetsLogo = (() => {
+    const icon = SERVICE_ICONS.find(([name]) => name === "Google Sheets")!;
+    return `<svg viewBox="0 0 48 48" aria-hidden="true"><rect width="48" height="48" rx="12" fill="${icon[1]}"/><path transform="translate(12 12)" fill="${icon[2]}" d="${icon[3]}"/></svg>`;
+  })();
   // The coming-soon wall: each logo drawn once in a cached sprite and reused.
   const tiles = Array.from({ length: Math.max(150, SERVICE_ICONS.length) }, (_, n) => {
     const i = n % SERVICE_ICONS.length;
@@ -358,8 +373,35 @@ export async function connectedPage(c: Context<AppEnv>): Promise<Response> {
       <span class="ai-where">${e(GEMINI_MODEL_NAME)}: AI answers, summaries, writing</span>
       ${gemini.connected ? `<span class="badge on"><span class="dot" aria-hidden="true"></span>Connected</span>` : `<span class="badge">Connect</span>`}
     </button>
+    <button type="button" class="ai-tile" data-dialog="dlg-google-sheets" aria-haspopup="dialog">
+      <span class="ai-logo">${sheetsLogo}</span>
+      <span class="ai-name">Google Sheets</span>
+      <span class="ai-where">Read and add rows to your spreadsheets</span>
+      ${sheets.connected ? `<span class="badge on"><span class="dot" aria-hidden="true"></span>Connected</span>` : `<span class="badge">${sheetsReady ? "Connect" : "Not set up yet"}</span>`}
+    </button>
   </div>
 </section>
+
+<dialog id="dlg-google-sheets" class="howto-dialog" aria-labelledby="dlg-google-sheets-title">
+  <form method="dialog" class="dialog-close"><button aria-label="Close">×</button></form>
+  <div class="howto">
+    <div class="dialog-head"><span class="ai-logo">${sheetsLogo}</span><h2 id="dlg-google-sheets-title">Google Sheets</h2></div>
+    ${outcome ? `<div class="dialog-flash ${outcome[0] ? "ok" : "error"}" role="status">${e(outcome[1])}</div>` : ""}
+    <p>Let your apps read and add to your spreadsheets: a sign-up form that saves into a sheet, a dashboard over your numbers, a tracker everyone on your team can use. Sign in with Google once; no keys to copy.</p>
+    ${
+      !sheetsReady
+        ? `<p class="note">Google Sheets isn't set up on this Formelab yet: the admin needs to add a Google sign-in client first.</p>`
+        : sheets.connected
+          ? `<div class="conn-status"><p><span class="dot" aria-hidden="true"></span><strong>Connected</strong> as ${e(sheets.account ?? "")}.</p>
+      <p class="muted">Added ${e(fmtTime(sheets.createdAt ?? null))} · last used ${e(fmtTime(sheets.lastUsedAt ?? null))}</p></div>
+    <p><a class="cta" href="/services/google-sheets/connect">Reconnect with Google</a></p>
+    <p><button class="danger" data-action="service-disconnect" data-service="google-sheets">Disconnect Google Sheets</button></p>`
+          : `<p><a class="cta" href="/services/google-sheets/connect">Connect with Google</a></p>
+    <p class="muted">Google asks you to pick an account and allow access to your spreadsheets.</p>`
+    }
+    <p class="muted">Apps use your Google account, also when people you share them with use them. Your sign-in is encrypted and never shown to apps or people. Ask your AI for an app "that saves to Google Sheets" and it will use this.</p>
+  </div>
+</dialog>
 
 <dialog id="dlg-gemini-service" class="howto-dialog" aria-labelledby="dlg-gemini-service-title">
   <form method="dialog" class="dialog-close"><button aria-label="Close">×</button></form>
@@ -396,7 +438,7 @@ export async function connectedPage(c: Context<AppEnv>): Promise<Response> {
     <h2>Plug your apps into the tools you already use</h2>
     <p>${
       on
-        ? "Next up: Google Sheets, Stripe, Gmail, Notion and more. Connect them here once, and any of your apps can use them."
+        ? "Next up: Stripe, Gmail, Notion and more. Connect them here once, and any of your apps can use them."
         : "Soon you'll connect services like Google Sheets, Stripe, Gmail and Notion here, once, and any of your apps can use them. No keys to copy, no code to write."
     }</p>
     <p class="muted">Looking for Claude, ChatGPT or Gemini chat? They're under <a href="/connect">Connect your AI</a>.</p>

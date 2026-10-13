@@ -23,6 +23,8 @@ export default defineConfig(async () => {
             ACCESS_TEAM_DOMAIN: "team.cloudflareaccess.com",
             ACCESS_AUD: "test-aud",
             OWNER_EMAIL: "owner@example.com",
+            GOOGLE_CLIENT_ID: "gclient.apps.googleusercontent.com",
+            GOOGLE_CLIENT_SECRET: "gsecret",
           },
         },
       }),

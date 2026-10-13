@@ -1,5 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { geminiStatus } from "./gemini";
+import { sheetsStatus } from "./sheets";
 import { enabledFlags, flagOn, withFlags } from "./flags";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { CfWorkerJsonSchemaValidator } from "@modelcontextprotocol/sdk/validation/cfworker";
@@ -63,7 +64,12 @@ export function buildServer(ctx: Ctx): McpServer {
         name: ctx.user.name,
         isAdmin: ctx.user.isAdmin,
         // Connected apps this person's apps can use through the SDK (see the guide), once the feature is on.
-        ...((await flagOn(ctx.env, "connected_apps", ctx.user)) ? { connectedApps: { gemini: (await geminiStatus(ctx.env, ctx.user.email)).connected } } : {}),
+        ...((await flagOn(ctx.env, "connected_apps", ctx.user)) ? {
+              connectedApps: {
+                gemini: (await geminiStatus(ctx.env, ctx.user.email)).connected,
+                googleSheets: (await sheetsStatus(ctx.env, ctx.user.email)).connected,
+              },
+            } : {}),
       })),
   );
 

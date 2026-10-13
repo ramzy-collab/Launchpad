@@ -18,6 +18,7 @@ import { listConnections, revokeConnection } from "./oauth";
 import { approveWaitlist } from "./login";
 import { connectGemini, disconnectGemini, geminiStatus } from "./gemini";
 import { flagOn, setFlag } from "./flags";
+import { sheetsDisconnect, sheetsStatus } from "./sheets";
 import { deleteUser, listUsers, setAdmin } from "./users";
 import { b64decode, isEmail } from "./util";
 
@@ -140,6 +141,8 @@ export function managementApi(kind: "admin" | "deploy") {
     api.get("/services/gemini", async (c) => c.json(await geminiStatus(c.env, c.get("user").email)));
     api.put("/services/gemini", async (c) => c.json(await connectGemini(c.env, c.get("user"), (await jsonBody(c)).apiKey)));
     api.delete("/services/gemini", async (c) => c.json(await disconnectGemini(c.env, c.get("user"))));
+    api.get("/services/google-sheets", async (c) => c.json(await sheetsStatus(c.env, c.get("user").email)));
+    api.delete("/services/google-sheets", async (c) => c.json(await sheetsDisconnect(c.env, c.get("user"))));
     api.put("/features/:name", async (c) => c.json(await setFlag(c.env, c.get("user"), c.req.param("name"), (await jsonBody(c)).state)));
     api.get("/connections", async (c) => c.json(await listConnections(c.env, c.get("user").email)));
     api.delete("/connections/:id", async (c) => {
