@@ -58,6 +58,7 @@
     el.querySelector(".splash-text").textContent = text;
     document.body.appendChild(el);
     requestAnimationFrame(function () { el.classList.add("on"); });
+    return el;
   }
 
   function reloadSoon() { setTimeout(function () { location.reload(); }, 900); }
@@ -136,6 +137,13 @@
       return api("PUT", "/services/" + encodeURIComponent(form.dataset.service), { apiKey: form.elements.apiKey.value.trim() }).then(function () {
         form.reset();
         show("Connected. Your apps can use it now.");
+        reloadSoon();
+      });
+    },
+    "builder-connect": function (form) {
+      return api("PUT", "/builders/" + encodeURIComponent(form.dataset.provider), { apiKey: form.elements.apiKey.value.trim() }).then(function () {
+        form.reset();
+        show("Key saved. Describe your app and press Make it.");
         reloadSoon();
       });
     },
@@ -226,6 +234,70 @@
       return;
     }
     window.open(MAKE_URLS[make.dataset.make] + encodeURIComponent(prompt), "_blank", "noopener");
+  });
+
+  // New app, built here: the person's own API key builds the app on the server, which streams
+  // progress lines ({ progress } ... then { done } or { error }) and publishes it.
+  var BUILDER_NAMES = { claude: "Claude", openai: "ChatGPT" };
+  function build(provider, idea) {
+    var screen = splash(BUILDER_NAMES[provider] + " is building your app…");
+    var sub = document.createElement("p");
+    sub.className = "splash-sub";
+    sub.textContent = "This usually takes a minute or two. You can leave this page; the app will still be published.";
+    screen.appendChild(sub);
+    function fail(message) {
+      screen.remove();
+      show(message, true);
+    }
+    var finished = false;
+    function handle(line) {
+      if (!line.trim()) return;
+      var msg;
+      try { msg = JSON.parse(line); } catch (e) { return; }
+      if (msg.error) { finished = true; fail(msg.error.message + (msg.error.hint ? " " + msg.error.hint : "")); }
+      else if (msg.done) {
+        finished = true;
+        screen.querySelector(".splash-text").textContent = "It's live! Opening " + msg.done.title + "…";
+        sub.textContent = "";
+        setTimeout(function () { location.href = msg.done.url; }, 900);
+      } else if (msg.progress) {
+        sub.textContent = "Writing it now: " + msg.progress.toLocaleString() + " characters so far.";
+      }
+    }
+    fetch("/_api/admin/build", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "x-formelab-request": "1", "content-type": "application/json" },
+      body: JSON.stringify({ provider: provider, idea: idea })
+    }).then(function (res) {
+      if (!res.ok || !res.body) {
+        return res.json().then(function (d) { throw new Error(d.error.message + (d.error.hint ? " " + d.error.hint : "")); }, function () { throw new Error("Request failed (" + res.status + ")"); });
+      }
+      var reader = res.body.getReader();
+      var decoder = new TextDecoder();
+      var buf = "";
+      function pump() {
+        return reader.read().then(function (r) {
+          if (r.done) { handle(buf); if (!finished) fail("The build stopped before it finished. Check My lab in a minute, or try again."); return; }
+          buf += decoder.decode(r.value, { stream: true });
+          var lines = buf.split("\n");
+          buf = lines.pop();
+          lines.forEach(handle);
+          return pump();
+        });
+      }
+      return pump();
+    }).catch(function (e) {
+      if (!finished) fail(e.message || "The build failed. Try again.");
+    });
+  }
+  document.addEventListener("click", function (ev) {
+    var btn = ev.target.closest("[data-build]");
+    var box = document.getElementById("idea");
+    if (!btn || !box) return;
+    var text = box.value.trim();
+    if (!text) { show("Describe your app first, or pick one of the ideas.", true); box.focus(); return; }
+    build(btn.dataset.build, text);
   });
 
   // App browser (My apps, Shared with me): search, filters, sort, and tiles or list.
@@ -374,6 +446,9 @@
     } else if (action === "connection-revoke") {
       if (!confirm("Disconnect this app? It will need to sign in again to use Formelab.")) return;
       p = api("DELETE", "/connections/" + encodeURIComponent(btn.dataset.id)).then(function () { show("Disconnected."); reloadSoon(); });
+    } else if (action === "builder-disconnect") {
+      if (!confirm("Remove your API key? Make it will ask for a key again.")) return;
+      p = api("DELETE", "/builders/" + encodeURIComponent(btn.dataset.provider)).then(function () { show("Key removed."); reloadSoon(); });
     } else if (action === "service-disconnect") {
       if (!confirm("Disconnect? Your apps that use it will stop working until you connect it again.")) return;
       p = api("DELETE", "/services/" + encodeURIComponent(btn.dataset.service)).then(function () { show("Disconnected."); reloadSoon(); });

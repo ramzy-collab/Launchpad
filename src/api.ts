@@ -1,7 +1,7 @@
 import { Hono, type Context } from "hono";
 import { listTokens, mintToken, revokeToken, TOKEN_DEFAULT_TTL_HOURS } from "./auth";
 import type { AppEnv } from "./env";
-import { badRequest, err, jsonError, onError } from "./errors";
+import { ApiError, badRequest, err, errorBody, jsonError, onError } from "./errors";
 import {
   createNamespace,
   deleteNamespace,
@@ -17,6 +17,7 @@ import { filesFromHtml, filesFromUpload, filesFromZip, MAX_UPLOAD_BYTES, type Fi
 import { listConnections, revokeConnection } from "./oauth";
 import { approveWaitlist, setPassword } from "./login";
 import { connectGemini, disconnectGemini, geminiStatus } from "./gemini";
+import { buildApp, connectBuilder, disconnectBuilder, parseBuilder } from "./builder";
 import { addFlagUser, flagOn, removeFlagUser, setFlag } from "./flags";
 import { sheetsDisconnect, sheetsStatus } from "./sheets";
 import { deleteUser, listUsers, setAdmin } from "./users";
@@ -138,6 +139,41 @@ export function managementApi(kind: "admin" | "deploy") {
     });
     api.post("/users/:email/admin", async (c) => c.json(await setAdmin(c.env, c.get("user"), c.req.param("email"), (await jsonBody(c)).admin)));
     api.delete("/users/:email", async (c) => c.json(await deleteUser(c.env, c.get("user"), c.req.param("email"))));
+    // The easy way, built in: the person's own Claude or OpenAI key builds and publishes the app.
+    api.put("/builders/:provider", async (c) => c.json(await connectBuilder(c.env, c.get("user"), parseBuilder(c.req.param("provider")), (await jsonBody(c)).apiKey)));
+    api.delete("/builders/:provider", async (c) => c.json(await disconnectBuilder(c.env, c.get("user"), parseBuilder(c.req.param("provider")))));
+    api.post("/build", async (c) => {
+      const body = await jsonBody(c);
+      const provider = parseBuilder(body.provider);
+      // A build takes a minute or more: stream progress lines (NDJSON) so the page can show it and
+      // the connection stays busy. The last line is { done } or { error }.
+      const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>();
+      const writer = writable.getWriter();
+      const enc = new TextEncoder();
+      let open = true;
+      const send = (v: unknown) => {
+        if (open) writer.write(enc.encode(JSON.stringify(v) + "\n")).catch(() => (open = false));
+      };
+      let chars = 0;
+      let sent = -1;
+      const tick = setInterval(() => {
+        if (chars !== sent || chars === 0) send({ progress: (sent = chars) });
+      }, 1500);
+      send({ progress: 0 });
+      const work = buildApp(ctxOf(c), provider, body.idea, (n) => (chars = n))
+        .then((done) => send({ done }))
+        .catch((e) => {
+          if (!(e instanceof ApiError)) console.error("build failed", e instanceof Error ? e.message : "");
+          send(errorBody(e instanceof ApiError ? e : err(500, "internal", "Something went wrong while building.", "Try again in a moment.")));
+        })
+        .finally(() => {
+          clearInterval(tick);
+          if (open) writer.close().catch(() => {});
+        });
+      // Finish (and publish) even if the page is closed mid-build.
+      c.executionCtx.waitUntil(work);
+      return new Response(readable, { headers: { "content-type": "application/x-ndjson; charset=utf-8", "cache-control": "no-store" } });
+    });
     // Connected apps are behind a feature flag (admin panel → Features).
     api.use("/services/*", async (c, next) => {
       if (!(await flagOn(c.env, "connected_apps", c.get("user")))) throw err(404, "not_found", "Connected apps aren't available yet.", "Check back soon.");

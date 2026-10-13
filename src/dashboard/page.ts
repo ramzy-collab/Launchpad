@@ -16,6 +16,7 @@ import { sheetsConfigured, sheetsStatus } from "../sheets";
 import { ago, appBrowser, appName, fmtBytes, thumb } from "./apps";
 import { connectedAiApps, type AiApp } from "./aiapps";
 import { AI_LOGOS } from "./logos";
+import { BUILDERS, builderKeys, type Builder } from "../builder";
 import { PWA_HEAD } from "../pwa";
 
 export const fmtTime = (ms: number | null) => (ms ? new Date(ms).toISOString().replace("T", " ").slice(0, 16) + " UTC" : "never");
@@ -338,7 +339,7 @@ const IDEAS = [
 export async function newAppPage(c: Context<AppEnv>): Promise<Response> {
   const ctx = ctxOf(c);
   if (!ctx.user.active) return sharedPage(c);
-  const [namespaces, connected] = await Promise.all([listNamespaces(ctx), connectedAiApps(c.env, ctx.user)]);
+  const [namespaces, connected, keys] = await Promise.all([listNamespaces(ctx), connectedAiApps(c.env, ctx.user), builderKeys(c.env, ctx.user.email)]);
   const own = namespaces.filter((n) => n.isOwner || n.editors.includes(ctx.user.email));
   const nsOptions = own.map((n) => `<option value="${e(n.label)}">`).join("");
   const domain = c.env.APP_DOMAIN;
@@ -346,28 +347,67 @@ export async function newAppPage(c: Context<AppEnv>): Promise<Response> {
     connected.has(app)
       ? `<span class="badge on"><span class="dot" aria-hidden="true"></span>Connected</span>`
       : `<a class="muted" href="/connect#${app}">${setup}</a>`;
+  // Claude and ChatGPT: with the person's API key saved, "Make it" builds and publishes right here.
+  // Without one, the button asks for a key, unless their Claude or ChatGPT app is already
+  // connected to Formelab; then it opens that app with the idea typed in, as before.
+  const MAKERS: { b: Builder; app: AiApp; label: string }[] = [
+    { b: "claude", app: "claude", label: "Make it with Claude" },
+    { b: "openai", app: "chatgpt", label: "Make it with ChatGPT" },
+  ];
+  const makers = MAKERS.map(({ b, app, label }) => {
+    const key = keys[b];
+    const btn = key
+      ? `<button type="button" class="make-btn" data-build="${b}"><span class="ai-mini">${AI_LOGOS[app]}</span>${label}</button>`
+      : connected.has(app)
+        ? `<button type="button" class="make-btn" data-make="${app}"><span class="ai-mini">${AI_LOGOS[app]}</span>${label}</button>`
+        : `<button type="button" class="make-btn" data-dialog="dlg-key-${b}" aria-haspopup="dialog"><span class="ai-mini">${AI_LOGOS[app]}</span>${label}</button>`;
+    const note = key
+      ? `<span class="badge on"><span class="dot" aria-hidden="true"></span>Your API key …${e(key.hint)}</span><button type="button" class="linkish muted" data-dialog="dlg-key-${b}" aria-haspopup="dialog">Change key</button>`
+      : connected.has(app)
+        ? `${state(app, "")}<button type="button" class="linkish muted" data-dialog="dlg-key-${b}" aria-haspopup="dialog">Or build it here with an API key</button>`
+        : `<button type="button" class="linkish muted" data-dialog="dlg-key-${b}" aria-haspopup="dialog">Add your API key</button>`;
+    return `<div class="make">${btn}${note}</div>`;
+  }).join("\n    ");
+  const keyDialogs = MAKERS.map(({ b, app }) => {
+    const who = BUILDERS[b];
+    const org = b === "claude" ? "Anthropic" : "OpenAI";
+    const console = b === "claude" ? "console.anthropic.com" : "platform.openai.com";
+    return `<dialog id="dlg-key-${b}" class="howto-dialog" aria-labelledby="dlg-key-${b}-title">
+  <form method="dialog" class="dialog-close"><button aria-label="Close">×</button></form>
+  <div class="howto">
+    <div class="dialog-head"><span class="ai-logo">${AI_LOGOS[app]}</span><h2 id="dlg-key-${b}-title">Build with ${b === "claude" ? "Claude" : "ChatGPT"} right here</h2></div>
+    <p>Paste an API key once. After that, <strong>Make it</strong> builds your app here and publishes it, with nothing to set up in the ${b === "claude" ? "Claude" : "ChatGPT"} app. What it uses is billed to your own ${org} account.</p>
+    <ol>
+      <li>Open <a href="${who.keyUrl}" target="_blank" rel="noopener">${console}</a> and sign in.</li>
+      <li>Make sure the account has credits or billing set up. This is separate from a ${b === "claude" ? "Claude Pro or Max" : "ChatGPT Plus or Pro"} plan.</li>
+      <li>Create a key, copy it, and paste it below.</li>
+    </ol>
+    <form class="inline" data-action="builder-connect" data-provider="${b}">
+      <input name="apiKey" type="password" autocomplete="off" required placeholder="${b === "claude" ? "sk-ant-…" : "sk-…"}" aria-label="${org} API key">
+      <button>Save key</button>
+    </form>
+    <p class="muted">The key is encrypted and only used when you press Make it. Formelab never shows it again.</p>
+    ${keys[b] ? `<p><button type="button" class="danger" data-action="builder-disconnect" data-provider="${b}">Remove my key …${e(keys[b]!.hint)}</button></p>` : ""}
+    ${keys[b] ? "" : `<p class="muted">Rather use the ${b === "claude" ? "Claude" : "ChatGPT"} app? <button type="button" class="linkish" data-make="${app}">Open it with your idea typed in</button> (needs <a href="/connect#${app}">Formelab connected</a> there).</p>`}
+  </div>
+</dialog>`;
+  }).join("\n");
   const body = `<section class="maker">
   <p class="eyebrow">The easy way</p>
   <h2>What do you want to make?</h2>
-  <p>Describe it in your own words. We'll open your AI with it typed in; press send and it builds the app and publishes it here.</p>
+  <p>Describe it in your own words, then press Make it. With your API key saved, the app is built and published right here.</p>
   <textarea id="idea" rows="4" maxlength="4000" placeholder="${e(IDEAS[0]!)}" aria-label="Describe your app"></textarea>
   <div class="ideas" aria-label="Ideas to start from">${IDEAS.map((i) => `<button type="button" class="idea" data-idea="${e(i)}">${e(i)}</button>`).join("")}</div>
   <div class="make-row">
-    <div class="make">
-      <button type="button" class="make-btn" data-make="claude"><span class="ai-mini">${AI_LOGOS.claude}</span>Make it with Claude</button>
-      ${state("claude", "Connect Claude first")}
-    </div>
-    <div class="make">
-      <button type="button" class="make-btn" data-make="chatgpt"><span class="ai-mini">${AI_LOGOS.chatgpt}</span>Make it with ChatGPT</button>
-      ${state("chatgpt", "Connect ChatGPT first")}
-    </div>
+    ${makers}
     <div class="make">
       <button type="button" class="make-btn secondary" data-make="copy"><span class="ai-mini">${AI_LOGOS["claude-code"]}</span>Copy for Claude Code</button>
       ${state("claude-code", "Set up Claude Code")}
     </div>
   </div>
-  <p class="muted">Claude: make sure Formelab is on under the <strong>+</strong> menu → Connectors. ChatGPT: pick <strong>Developer mode</strong> in the <strong>+</strong> menu and turn on Formelab. New apps are private to you until you share them.</p>
+  <p class="muted">Building takes a minute or two. New apps are private to you until you share them.</p>
 </section>
+${keyDialogs}
 
 <section>
   <p class="eyebrow">Already have the files?</p>

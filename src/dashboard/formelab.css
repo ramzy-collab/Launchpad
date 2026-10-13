@@ -342,6 +342,9 @@ th[aria-sort="descending"] .arrow::after { content: "↓"; color: var(--fl-accen
 .make { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
 .make .badge { margin-top: 0; }
 .dash main button.make-btn { display: inline-flex; align-items: center; gap: 10px; min-height: 46px; padding: 8px 20px 8px 10px; }
+.dash main button.linkish { background: none; border: 0; padding: 0; min-height: 0; font: inherit; font-size: .875rem; text-decoration: underline; color: var(--fl-ink-soft); }
+.dash main button.linkish:hover { color: var(--fl-ink); transform: none; filter: none; }
+.splash-sub { margin: -12px 0 0; font-size: 14px; color: var(--fl-ink-soft); text-align: center; max-width: 22rem; }
 .ai-mini { width: 28px; height: 28px; border-radius: 8px; background: #fff; display: inline-flex; align-items: center; justify-content: center; padding: 4px; color: #0D0D0D; flex: none; }
 .ai-mini svg { width: 100%; height: 100%; }
 

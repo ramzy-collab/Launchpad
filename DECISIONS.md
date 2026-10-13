@@ -441,6 +441,32 @@ Choices made while building v1, including where the build differs from the spec 
   `<!-- flag:connected_apps -->` in `guide.md`). For apps the flag follows the app's owner,
   since it's their key. Turning it off deletes nothing; changes are in the admin activity log.
 
+## Building apps in Formelab with the person's own API key
+
+- "The easy way" used to open claude.ai or chatgpt.com with the idea typed in, which only works
+  once the Formelab connector is set up there (and in ChatGPT, Developer mode turned on). That
+  was the hard part for new people. Now a person can save an **Anthropic or OpenAI API key** on
+  the New app page; "Make it" then builds the app on the server (`src/builder.ts`) and publishes
+  it to their space, data writes set to everyone. Without a key, the old flow stays for people
+  whose Claude or ChatGPT app is already connected.
+- **API keys, not Claude/ChatGPT plans.** Claude Pro/Max and ChatGPT Plus/Pro subscriptions can't
+  be used by other apps; only API keys can, billed by usage on the person's own API account.
+  The key pop-up says so.
+- Keys live in `service_keys` next to Gemini's (services `anthropic` and `openai`), encrypted with
+  `SECRETS_KEK`, AAD `user:<email>:<service>`, last four characters in the clear. They're only
+  used for that person's own builds, never by apps. Not behind the `connected_apps` flag: this is
+  the main way to make an app, not a service apps use.
+- Claude: Claude Opus 5.5 through the Anthropic SDK, streaming, adaptive thinking at medium
+  effort, the build guide as a cached system prompt, and Anthropic's server-side refusal
+  fallback. OpenAI: the Responses API, streaming, with the newest plain `gpt-N.N` model the key
+  can list (no `-mini`/dated variants), so it keeps up without code changes.
+- One HTML file comes back; Formelab names the app from its `<title>`, picks a free path
+  (`lunch-sign-up`, `lunch-sign-up-2`, ...) in the person's first own space (or makes one from
+  their email), and publishes. `POST /_api/admin/build` streams NDJSON progress lines so the
+  page shows progress and the connection stays busy; the build finishes and publishes even if
+  the page is closed. Limited to 5 builds a minute per person; each build is in the app's
+  activity log with the model and token count.
+
 ## Changelog
 
 - `CHANGELOG.md` lists every change in plain language, newest first, one `## YYYY-MM-DD` heading
