@@ -30,7 +30,7 @@ describe("dashboard", () => {
     const res = await publishHtml(OWNER, ns, "xss", PAGE("x"), { title: evil });
     expect(res.status).toBe(201);
     await call("/_api/admin/tokens", { as: OWNER, method: "POST", json: { name: `<script>tok()</script>` } });
-    const html = await (await call("/app", { as: OWNER })).text();
+    const html = (await (await call("/app", { as: OWNER })).text()) + (await (await call("/app/keys", { as: OWNER })).text());
     expect(html).not.toContain("<script>alert");
     expect(html).not.toContain("<script>tok()");
     expect(html).not.toContain("<img src=x");
@@ -38,7 +38,7 @@ describe("dashboard", () => {
     expect(html).toContain("&lt;script&gt;tok()&lt;/script&gt;");
   });
 
-  it("shows sites, namespaces and tokens, with an activity log per app instead of a shared one", async () => {
+  it("shows apps, spaces and access keys on their own pages, with an activity log per app", async () => {
     const ns = uniq();
     await publishHtml(OWNER, ns, "listed", PAGE("x"), { title: "Listed app" });
     await call("/_api/admin/tokens", { as: OWNER, method: "POST", json: { name: "laptop-token" } });
@@ -46,10 +46,31 @@ describe("dashboard", () => {
     expect(html).toContain(`https://${ns}.example.app/listed/`);
     expect(html).toContain(`<a href="https://${ns}.example.app/listed/" target="_blank" rel="noopener">`); // apps open in a new tab
     expect(html).toContain("Listed app");
-    expect(html).toContain(`>${ns}</a>`);
-    expect(html).toContain("laptop-token");
     expect(html).not.toContain("Recent activity");
     expect(html).toMatch(/href="\/apps\/[^"]+\/activity">Activity<\/a>/);
+    expect(await (await call("/app/spaces", { as: OWNER })).text()).toContain(`>${ns}</a>`);
+    expect(await (await call("/app/keys", { as: OWNER })).text()).toContain("laptop-token");
+  });
+
+  it("has a left menu with New app, the app and connect pages, and an account menu", async () => {
+    for (const [path, title] of [
+      ["/app", "My apps"], ["/app/new", "New app"], ["/app/shared", "Shared with me"], ["/app/spaces", "Spaces"],
+      ["/app/connect", "Connect your AI"], ["/app/connected", "Connected apps"], ["/app/keys", "Access keys"],
+    ]) {
+      const res = await call(path!, { as: OWNER });
+      expect(res.status, path).toBe(200);
+      const html = await res.text();
+      expect(html, path).toContain(`<h1>${title}</h1>`);
+      expect(html, path).toContain('<a class="new-app" href="/new"');
+      for (const href of ['href="/"', 'href="/shared"', 'href="/spaces"', 'href="/connect"', 'href="/connected"', 'href="/keys"']) expect(html, path).toContain(href);
+      expect(html, path).toContain("data-theme-toggle");
+      expect(html, path).toContain("Admin panel ↗");
+      if (path !== "/app") expect(html, path).not.toMatch(/\son[a-z]+=/i); // My apps holds the escaped XSS titles from the test above
+    }
+    // New app offers asking your AI first, then the upload form; publishing goes back to My apps.
+    const page = await (await call("/app/new", { as: OWNER })).text();
+    expect(page.indexOf("Ask your AI")).toBeLessThan(page.indexOf('data-action="upload"'));
+    expect(page).toContain('data-next="/"');
   });
 
   it("does not show other people's sites or activity", async () => {
@@ -142,7 +163,7 @@ describe("app activity logs", () => {
     expect(res.status).toBe(200);
     const html = await res.text();
     expect(html).toContain(`Invited ${email}`);
-    expect(html).toContain(`Created the namespace ${ns}`);
+    expect(html).toContain(`Created the space ${ns}`);
     expect((await call("https://admin.example.com/activity", { as: `nope-${uniq()}@example.com` })).status).toBe(404);
   });
 });

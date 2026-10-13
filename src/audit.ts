@@ -102,11 +102,11 @@ export function describeActivity(row: AuditRow): string {
     case "delete_site":
       return `Deleted the app ${t}`;
     case "namespace_create":
-      return `Created the namespace ${t}`;
+      return `Created the space ${t}`;
     case "namespace_editors":
-      return `Set the editors of the namespace ${t} to ${list(d.editors) || "nobody"}`;
+      return `Set the editors of the space ${t} to ${list(d.editors) || "nobody"}`;
     case "namespace_delete":
-      return `Deleted the namespace ${t} and ${plural(d.sites, "app")}`;
+      return `Deleted the space ${t} and ${plural(d.sites, "app")}`;
     case "user_delete":
       return `Deleted the account ${t}`;
     case "admin_grant":

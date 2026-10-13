@@ -66,7 +66,7 @@ async function overviewBody(c: Context<AppEnv>): Promise<string> {
     ${stat("Let in, not logged in yet", s.letInNotSignedIn, "/users#not-signed-in")}
     ${stat("Sign-ups this week", s.signupsThisWeek, "/waitlist")}
     ${stat("Apps", s.apps)}
-    ${stat("Namespaces", s.namespaces)}
+    ${stat("Spaces", s.namespaces)}
     ${stat("Admins", s.admins, "/users")}
   </div>
 </section>
@@ -115,7 +115,7 @@ async function usersBody(c: Context<AppEnv>): Promise<string> {
     .join("");
   return `<section>
   <h2>People<span class="count">${e(users.length)}</span></h2>
-  <p class="muted"><strong>Make admin</strong> gives someone this admin area (and lets them in if they were waiting). <strong>Delete</strong> removes the account and everything it owns: its namespaces and apps (with their data and secrets), its place on other people's share lists, tokens and connected AI apps.</p>
+  <p class="muted"><strong>Make admin</strong> gives someone this admin area (and lets them in if they were waiting). <strong>Delete</strong> removes the account and everything it owns: its spaces and apps (with their data and secrets), its place on other people's share lists, access keys and connected AI apps.</p>
   <div class="scroll"><table><thead><tr><th>Email</th><th>Status</th><th>Apps</th><th>Joined</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
 </section>
 
@@ -138,7 +138,7 @@ async function activityBody(c: Context<AppEnv>): Promise<string> {
     .join("");
   return `<section>
   <h2>Activity</h2>
-  <p class="muted">Formelab-level changes, newest first: people let in and invited, admin access, deleted accounts, namespaces, and AI apps connected. What happens inside an app is in that app's own activity log, under <strong>Activity</strong> in its owner's lab.</p>
+  <p class="muted">Formelab-level changes, newest first: people let in and invited, admin access, deleted accounts, spaces, and AI apps connected. What happens inside an app is in that app's own activity log, under <strong>Activity</strong> on its owner's My apps page.</p>
   ${rows ? `<div class="scroll"><table><thead><tr><th>When</th><th>Who</th><th>What they did</th></tr></thead><tbody>${rows}</tbody></table></div>` : `<p class="muted">Nothing yet.</p>`}
 </section>`;
 }

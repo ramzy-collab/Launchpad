@@ -44,8 +44,9 @@
       if (form.elements.spa.checked) fd.set("spa", "true");
       else fd.delete("spa");
       return api("POST", "/sites", fd).then(function (r) {
-        show((r.replaced ? "Published a new version: " : "Published: ") + r.url + (r.replaced ? " (sharing settings kept)" : ""));
-        reloadSoon();
+        show((r.replaced ? "Published a new version: " : "It's live: ") + r.url + (r.replaced ? " (sharing settings kept)" : ""));
+        var next = form.dataset.next;
+        setTimeout(function () { if (next) location.href = next; else location.reload(); }, 1200);
       });
     },
     "site-replace": function (form) {
@@ -73,7 +74,7 @@
     },
     "ns-create": function (form) {
       return api("POST", "/namespaces", { label: form.elements.label.value }).then(function () {
-        show("Namespace created.");
+        show("Space created.");
         reloadSoon();
       });
     },
@@ -93,7 +94,7 @@
         document.getElementById("new-token-value").textContent = r.token;
         document.getElementById("new-token").hidden = false;
         form.reset();
-        show("Token created. Copy it now; it is only shown once.");
+        show("Key created. Copy it now; it is only shown once.");
       });
     }
   };
@@ -108,6 +109,14 @@
       .then(function () { return h(form); })
       .catch(function (e) { show(e.message, true); })
       .then(function () { busy(form, false); });
+  });
+
+  // The left menu on narrow screens.
+  document.addEventListener("click", function (ev) {
+    var toggle = ev.target.closest("[data-menu-toggle]");
+    if (!toggle) return;
+    var open = document.body.classList.toggle("menu-open");
+    toggle.setAttribute("aria-expanded", open ? "true" : "false");
   });
 
   document.addEventListener("click", function (ev) {
@@ -131,10 +140,10 @@
       if (typed.trim() !== label) { show("The mount path did not match; nothing was deleted.", true); return; }
       p = api("DELETE", "/sites/" + encodeURIComponent(btn.dataset.id)).then(function () { show("Site deleted."); reloadSoon(); });
     } else if (action === "ns-delete") {
-      var typedNs = prompt("This permanently deletes the namespace " + btn.dataset.label + " and EVERY site in it.\nType the namespace name to confirm:");
+      var typedNs = prompt("This permanently deletes the space " + btn.dataset.label + " and EVERY app in it.\nType the space name to confirm:");
       if (typedNs === null) return;
       if (typedNs.trim() !== btn.dataset.label) { show("The name did not match; nothing was deleted.", true); return; }
-      p = api("DELETE", "/namespaces/" + encodeURIComponent(btn.dataset.label)).then(function () { show("Namespace deleted."); reloadSoon(); });
+      p = api("DELETE", "/namespaces/" + encodeURIComponent(btn.dataset.label)).then(function () { show("Space deleted."); reloadSoon(); });
     } else if (action === "user-delete") {
       var who = btn.dataset.email;
       var typedUser = prompt("This permanently deletes " + who + " and everything they own: " + btn.dataset.apps + " app(s), their namespaces, data and secrets. It can't be undone.\nType their email to confirm:");
@@ -157,8 +166,8 @@
       if (!confirm("Disconnect this app? It will need to sign in again to use Formelab.")) return;
       p = api("DELETE", "/connections/" + encodeURIComponent(btn.dataset.id)).then(function () { show("Disconnected."); reloadSoon(); });
     } else if (action === "token-revoke") {
-      if (!confirm("Revoke this token? Anything using it will stop working.")) return;
-      p = api("DELETE", "/tokens/" + encodeURIComponent(btn.dataset.id)).then(function () { show("Token revoked."); reloadSoon(); });
+      if (!confirm("Revoke this key? Anything using it will stop working.")) return;
+      p = api("DELETE", "/tokens/" + encodeURIComponent(btn.dataset.id)).then(function () { show("Key revoked."); reloadSoon(); });
     }
     if (p) {
       btn.disabled = true;

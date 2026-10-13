@@ -93,7 +93,7 @@ export function acceptedEmail(origin: string, to: string): Email {
         "Your spot on Formelab is ready. Log in, connect the AI you already use, and ask it to build your first app.",
         "Tip: the <strong>Connect your AI</strong> tab walks you through Claude, ChatGPT and Gemini.",
       ],
-      { label: "Open my lab", url },
+      { label: "Open Formelab", url },
     ),
     text: plain(["You're in.", "Your spot on Formelab is ready. Log in, connect the AI you already use, and ask it to build your first app.", `Log in: ${url}`]),
   };
@@ -127,12 +127,12 @@ export function namespaceSharedEmail(origin: string, to: string, opts: { by: str
     html: layout(
       `You can now edit ${e(opts.namespace)}`,
       [
-        `<strong>${e(opts.by)}</strong> added you as an editor of the <strong>${e(opts.namespace)}</strong> namespace. You can open, update and publish the apps in it; they appear under <strong>Shared with me</strong>.`,
+        `<strong>${e(opts.by)}</strong> added you as an editor of the <strong>${e(opts.namespace)}</strong> space. You can open, update and publish the apps in it; they appear under <strong>Shared with me</strong>.`,
       ],
       { label: "See shared apps", url: `${origin}/shared` },
     ),
     text: plain([
-      `${opts.by} added you as an editor of the "${opts.namespace}" namespace on Formelab.`,
+      `${opts.by} added you as an editor of the "${opts.namespace}" space on Formelab.`,
       `Its apps: ${opts.url}`,
       `Everything shared with you: ${origin}/shared`,
     ]),

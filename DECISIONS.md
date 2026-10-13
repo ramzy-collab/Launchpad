@@ -327,3 +327,16 @@ Choices made while building v1, including where the build differs from the spec 
   a@example.com; made b@example.com an editor"), not as an action code and JSON.
 - Saving an app's settings only logs (and writes) the fields that actually changed, so saving
   the settings form unchanged adds nothing to the log.
+
+## Web app layout
+
+- The web app has a left menu instead of tabs and one long page. A **+ New app** button sits on
+  top (the one primary action), then two groups: **Apps** (My apps, Shared with me, Spaces) and
+  **Connect** (Connect your AI, Connected apps, Access keys). The account menu at the foot of the
+  menu holds the light/dark switch, the admin panel link (admins only, new tab) and Log out. On
+  narrow screens the menu folds behind a menu button in a top bar.
+- **New app** offers asking your AI first (an example prompt to copy, and a link to connect one),
+  then uploading files you already have. Publishing from there returns to My apps.
+- Plain words on the surface: namespaces are called **Spaces** and deploy tokens **Access keys**.
+  The API, MCP tools and database keep the old names (`namespace`, `fl_` tokens).
+- People still on the waitlist only see Shared with me and Connect your AI.

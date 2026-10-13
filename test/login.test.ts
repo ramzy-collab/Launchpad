@@ -153,7 +153,13 @@ describe("accounts and the waitlist", () => {
     const { cookie } = await signIn(email);
     const html = await (await onApp("/", cookie)).text();
     expect(html).toContain("You're on the waitlist");
-    expect(html).not.toContain('data-action="upload"');
+    // Their menu only has Shared with me and Connect your AI.
+    expect(html).not.toContain('href="/new"');
+    expect(html).not.toContain('href="/spaces"');
+    expect(html).toContain('href="/shared"');
+    expect(html).toContain('href="/connect"');
+    expect((await onApp("/new", cookie)).status).toBe(200);
+    expect(await (await onApp("/new", cookie)).text()).not.toContain('data-action="upload"');
     const create = await w(`${APP}/_api/admin/namespaces`, {
       method: "POST",
       headers: { cookie: await hostCookie(cookie, APP), "content-type": "application/json", "x-formelab-request": "1" },
@@ -171,7 +177,7 @@ describe("accounts and the waitlist", () => {
     const approve = await call("/_api/admin/waitlist/approve", { as: OWNER, method: "POST", json: { email } });
     expect(approve.status).toBe(200);
     const html = await (await onApp("/", cookie)).text();
-    expect(html).toContain('data-action="upload"');
+    expect(html).toContain('href="/new"');
   });
 
   it("invited people are active from their first sign-in, and only admins can invite", async () => {
@@ -184,7 +190,7 @@ describe("accounts and the waitlist", () => {
 
   it("the owner is active on first sign-in", async () => {
     const { cookie } = await signIn(OWNER);
-    expect(await (await onApp("/", cookie)).text()).toContain(`<a class="link" href="${ADMIN}/" target="_blank" rel="noopener">Admin</a>`);
+    expect(await (await onApp("/", cookie)).text()).toContain(`<a class="link" href="${ADMIN}/" target="_blank" rel="noopener">Admin panel ↗</a>`);
   });
 });
 

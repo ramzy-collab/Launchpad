@@ -88,7 +88,7 @@ export function connectPage(c: Context<AppEnv>): Response {
 <section class="howto" id="claude-code">
   <h2>Claude Code</h2>
   <ol>
-    <li>On <a href="/">My apps</a>, under <strong>Deploy tokens</strong>, create a token (30 days is fine for personal use) and copy it.</li>
+    <li>Open <a href="/keys">Access keys</a>, create a key (30 days is fine for personal use) and copy it.</li>
     <li>Run this in your terminal, with your token in place of <code>fl_...</code>:</li>
   </ol>
   <div class="copyrow"><pre id="mcp-cmd">${e(cmd)}</pre><button type="button" data-copy="#mcp-cmd">Copy</button></div>

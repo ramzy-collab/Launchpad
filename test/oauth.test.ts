@@ -270,7 +270,7 @@ describe("OAuth for MCP (Claude chat connector)", () => {
     const { tokens } = await connect(email);
     const list = await (await call("/_api/admin/connections", { as: email })).json<{ id: string; clientName: string }[]>();
     expect(list.map((c) => c.clientName)).toEqual(["Claude"]);
-    const html = await (await call("/app", { as: email })).text();
+    const html = await (await call("/app/connected", { as: email })).text();
     expect(html).toContain("Connected apps");
     expect(html).toContain(">Claude<");
 
