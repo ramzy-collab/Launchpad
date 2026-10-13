@@ -419,3 +419,7 @@ Choices made while building v1, including where the build differs from the spec 
 - `CHANGELOG.md` lists every change in plain language, newest first, one `## YYYY-MM-DD` heading
   per day and one `- ` item per change. It's bundled at build time and shown in the admin panel's
   **Changelog** tab. Add an entry with every change.
+- **Vendors** (admin panel → Vendors) lists every outside service, the AI apps people connect,
+  the open-source libraries and artwork built in, and vendors retired or considered, with what
+  each is for, its plan and cost, and where it's set up. The list is `src/vendors.ts`; keep it
+  current when adding or dropping a vendor.

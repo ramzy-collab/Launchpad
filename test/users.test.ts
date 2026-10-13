@@ -143,3 +143,12 @@ describe("admin: changelog", () => {
     expect((await call("https://admin.example.com/changelog", { as: `nope-${uniq()}@example.com` })).status).toBe(404);
   });
 });
+
+describe("admin: vendors", () => {
+  it("lists the vendors in use, the AI apps, open source, and retired ones, to admins only", async () => {
+    const html = await (await call("https://admin.example.com/vendors", { as: OWNER })).text();
+    for (const heading of ["Services in use", "AI apps Formelab works with", "Open-source libraries and artwork", "Retired or considered"]) expect(html).toContain(heading);
+    for (const v of ["Cloudflare Workers", "WorkOS AuthKit", "Cloudflare Email Service", "Google Gemini API", "Resend", "Cloudflare Access (Zero Trust)"]) expect(html).toContain(`<strong>${v}</strong>`);
+    expect((await call("https://admin.example.com/vendors", { as: `nope-${uniq()}@example.com` })).status).toBe(404);
+  });
+});

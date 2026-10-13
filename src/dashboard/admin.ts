@@ -3,6 +3,7 @@ import type { Context } from "hono";
 import { describeActivity, platformActivity } from "../audit";
 import { listFlags, STATE_LABEL } from "../flags";
 import { CHANGELOG_MD } from "../generated/assets";
+import { VENDOR_GROUPS, VENDORS, type VendorGroup } from "../vendors";
 import { isOwnerEmail } from "../auth";
 import type { AppEnv } from "../env";
 import { aiOrigin } from "../hosts";
@@ -13,7 +14,7 @@ import { listWaitlist } from "../waitlist";
 import { head, htmlResponse, nav } from "./layout";
 import { fmtTime, logoutControl } from "./page";
 
-type Tab = "overview" | "users" | "waitlist" | "features" | "activity" | "changelog";
+type Tab = "overview" | "users" | "waitlist" | "features" | "activity" | "changelog" | "vendors";
 
 function adminShell(c: Context<AppEnv>, tab: Tab, body: string): Response {
   const user = c.get("user");
@@ -36,7 +37,7 @@ ${nav(
   <h1>Run Formelab</h1>
   <p>People, the waitlist and admin access. Changes here affect everyone on Formelab.</p>
 </div>
-<nav class="tabs" aria-label="Admin sections"><a href="/"${current("overview")}>Overview</a><a href="/users"${current("users")}>Users</a><a href="/waitlist"${current("waitlist")}>Waitlist</a><a href="/features"${current("features")}>Features</a><a href="/activity"${current("activity")}>Activity</a><a href="/changelog"${current("changelog")}>Changelog</a></nav>
+<nav class="tabs" aria-label="Admin sections"><a href="/"${current("overview")}>Overview</a><a href="/users"${current("users")}>Users</a><a href="/waitlist"${current("waitlist")}>Waitlist</a><a href="/features"${current("features")}>Features</a><a href="/activity"${current("activity")}>Activity</a><a href="/changelog"${current("changelog")}>Changelog</a><a href="/vendors"${current("vendors")}>Vendors</a></nav>
 <div id="flash" role="status" hidden></div>
 ${body}
 </main>
@@ -53,6 +54,7 @@ export async function adminPage(c: Context<AppEnv>, tab: Tab): Promise<Response>
   if (tab === "activity") return adminShell(c, tab, await activityBody(c));
   if (tab === "features") return adminShell(c, tab, await featuresBody(c));
   if (tab === "changelog") return adminShell(c, tab, changelogBody());
+  if (tab === "vendors") return adminShell(c, tab, vendorsBody());
   return adminShell(c, tab, await overviewBody(c));
 }
 
@@ -134,6 +136,32 @@ async function usersBody(c: Context<AppEnv>): Promise<string> {
       : `<p class="muted">Everyone you've let in has logged in.</p>`
   }
 </section>`;
+}
+
+/** Every outside service, AI app and open-source project Formelab uses or used (src/vendors.ts). */
+export function vendorsBody(): string {
+  const code = (s: string) => e(s).replace(/`([^`]+)`/g, "<code>$1</code>");
+  const sinceText = (s: string) => s.replace(/(\d{4}-\d{2}-\d{2})/g, (d) => new Date(d + "T12:00:00Z").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }));
+  return (Object.keys(VENDOR_GROUPS) as VendorGroup[])
+    .map((g) => {
+      const list = VENDORS.filter((v) => v.group === g);
+      const rows = list
+        .map(
+          (v) => `<tr>
+  <td><a href="${e(v.url)}" target="_blank" rel="noopener"><strong>${e(v.name)}</strong></a><div class="muted">${e(sinceText(v.since))}</div></td>
+  <td>${code(v.purpose)}</td>
+  <td>${code(v.plan)}</td>
+  <td class="muted">${code(v.setup)}</td>
+</tr>`,
+        )
+        .join("");
+      return `<section>
+  <h2>${e(VENDOR_GROUPS[g].title)}<span class="count">${e(list.length)}</span></h2>
+  <p class="muted">${e(VENDOR_GROUPS[g].intro)}</p>
+  <div class="scroll"><table class="vendors"><thead><tr><th>Vendor</th><th>What it's for</th><th>Plan and cost</th><th>Where it's set up</th></tr></thead><tbody>${rows}</tbody></table></div>
+</section>`;
+    })
+    .join("\n");
 }
 
 /** CHANGELOG.md as HTML. It's our own file, in a small fixed format: "## YYYY-MM-DD" days and "- " items. */

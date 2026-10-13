@@ -376,6 +376,9 @@ th[aria-sort="descending"] .arrow::after { content: "↓"; color: var(--fl-accen
 .changelog { margin: 0; padding-left: 1.2rem; display: flex; flex-direction: column; gap: 10px; }
 .changelog li { color: var(--fl-ink-soft); line-height: 1.55; }
 .changelog li strong { color: var(--fl-ink); }
+table.vendors td:first-child { min-width: 11rem; }
+table.vendors a { word-break: normal; }
+table.vendors td:nth-child(2) { min-width: 16rem; }
 .changelog-day h2 { font-size: 1.25rem !important; }
 
 /* ---------- Consent ---------- */
