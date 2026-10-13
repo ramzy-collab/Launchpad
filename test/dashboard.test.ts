@@ -79,7 +79,10 @@ describe("dashboard", () => {
     expect(soon).not.toMatch(/\sstyle="/); // strict CSP: no inline styles
     // New app offers asking your AI first, then the upload form; publishing goes back to My apps.
     const page = await (await call("/app/new", { as: OWNER })).text();
-    expect(page.indexOf("Ask your AI")).toBeLessThan(page.indexOf('data-action="upload"'));
+    expect(page.indexOf("What do you want to make?")).toBeGreaterThan(-1);
+    expect(page.indexOf("What do you want to make?")).toBeLessThan(page.indexOf('data-action="upload"'));
+    for (const make of ["claude", "chatgpt", "copy"]) expect(page).toContain(`data-make="${make}"`);
+    expect(page).toContain('href="/connect#claude"'); // not connected yet: a link to set it up
     expect(page).toContain('data-next="/"');
   });
 

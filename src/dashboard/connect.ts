@@ -6,6 +6,7 @@ import { escapeHtml as e } from "../util";
 import { aiOrigin } from "../hosts";
 import { listTokens } from "../auth";
 import { listConnections } from "../oauth";
+import { tileFor } from "./aiapps";
 import { AI_LOGOS } from "./logos";
 import { fmtTime, shell } from "./page";
 
@@ -15,16 +16,6 @@ const APPS = [
   { id: "gemini", name: "Gemini", where: "Gemini CLI, Gemini Enterprise" },
   { id: "claude-code", name: "Claude Code", where: "In your terminal" },
 ] as const;
-
-/** Which tile a connected OAuth client belongs to, from the name it registered with. */
-function tileFor(clientName: string): string | null {
-  const n = clientName.toLowerCase();
-  if (n.includes("claude code") || n.includes("claude-code")) return "claude-code";
-  if (n.includes("claude")) return "claude";
-  if (n.includes("chatgpt") || n.includes("openai")) return "chatgpt";
-  if (n.includes("gemini") || n.includes("antigravity")) return "gemini";
-  return null;
-}
 
 export async function connectPage(c: Context<AppEnv>): Promise<Response> {
   const user = c.get("user");

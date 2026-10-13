@@ -235,6 +235,25 @@ summary { cursor: pointer; color: var(--fl-accent); font-weight: 500; font-size:
   .dash .content { padding-top: 20px; }
 }
 
+/* ---------- New app: make it with your AI ---------- */
+.dash main textarea {
+  width: 100%; resize: vertical; min-height: 7rem; background: var(--fl-canvas); border: 1.5px solid var(--fl-line); color: var(--fl-ink);
+  padding: 12px 14px; border-radius: var(--fl-radius-md); font: inherit; font-size: 1.0625rem; outline: none; transition: border-color .15s;
+}
+.dash main textarea:focus { border-color: var(--fl-accent); }
+.ideas { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 18px; }
+.dash main button.idea {
+  background: var(--fl-surface); color: var(--fl-ink-soft); border: 1.5px dashed var(--fl-line); font-weight: 500; font-size: .875rem;
+  white-space: normal; text-align: left; min-height: 36px; padding: 6px 14px;
+}
+.dash main button.idea:hover { color: var(--fl-ink); border-color: var(--fl-accent); filter: none; }
+.make-row { display: flex; flex-wrap: wrap; gap: 14px 18px; margin-bottom: 12px; }
+.make { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+.make .badge { margin-top: 0; }
+.dash main button.make-btn { display: inline-flex; align-items: center; gap: 10px; min-height: 46px; padding: 8px 20px 8px 10px; }
+.ai-mini { width: 28px; height: 28px; border-radius: 8px; background: #fff; display: inline-flex; align-items: center; justify-content: center; padding: 4px; color: #0D0D0D; flex: none; }
+.ai-mini svg { width: 100%; height: 100%; }
+
 /* ---------- Connect your AI ---------- */
 .ai-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr)); gap: 12px; }
 .dash main button.ai-tile {

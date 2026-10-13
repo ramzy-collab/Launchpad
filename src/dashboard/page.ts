@@ -8,9 +8,10 @@ import { ApiError } from "../errors";
 import { plainPage } from "../serve";
 import { adminOrigin } from "../hosts";
 import { ctxOf } from "../api";
-import { listConnections } from "../oauth";
 import { head, htmlResponse } from "./layout";
 import { SERVICE_ICONS, SPRITE_URL } from "./services";
+import { connectedAiApps, type AiApp } from "./aiapps";
+import { AI_LOGOS } from "./logos";
 
 export const fmtTime = (ms: number | null) => (ms ? new Date(ms).toISOString().replace("T", " ").slice(0, 16) + " UTC" : "never");
 const fmtBytes = (n: number) => (n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`);
@@ -203,26 +204,45 @@ export async function dashboardPage(c: Context<AppEnv>): Promise<Response> {
   return shell(c, ctx.user, "apps", body);
 }
 
-const EXAMPLE_PROMPT = "Make me a simple budget tracker where I can add expenses by category, and publish it on Formelab.";
+const IDEAS = [
+  "A budget tracker where I add expenses by category and see a monthly total",
+  "A sign-up sheet for our team lunch, with a spot for dietary needs",
+  "A habit tracker with a streak for each habit",
+];
 
-/** New app: ask your AI (the easy path), or upload files you already have. */
+/** New app: describe it and hand it to your AI (the easy path), or upload files you already have. */
 export async function newAppPage(c: Context<AppEnv>): Promise<Response> {
   const ctx = ctxOf(c);
   if (!ctx.user.active) return sharedPage(c);
-  const [namespaces, connections] = await Promise.all([listNamespaces(ctx), listConnections(c.env, ctx.user.email).catch(() => [])]);
+  const [namespaces, connected] = await Promise.all([listNamespaces(ctx), connectedAiApps(c.env, ctx.user)]);
   const own = namespaces.filter((n) => n.isOwner || n.editors.includes(ctx.user.email));
   const nsOptions = own.map((n) => `<option value="${e(n.label)}">`).join("");
   const domain = c.env.APP_DOMAIN;
-  const body = `<section>
+  const state = (app: AiApp, setup: string) =>
+    connected.has(app)
+      ? `<span class="badge on"><span class="dot" aria-hidden="true"></span>Connected</span>`
+      : `<a class="muted" href="/connect#${app}">${setup}</a>`;
+  const body = `<section class="maker">
   <p class="eyebrow">The easy way</p>
-  <h2>Ask your AI</h2>
-  <p>Describe the app in Claude, ChatGPT or Gemini. It makes the app and publishes it here for you. Try something like:</p>
-  <div class="copyrow"><p class="prompt" id="example-prompt">${e(EXAMPLE_PROMPT)}</p><button type="button" data-copy="#example-prompt">Copy</button></div>
-  ${
-    connections.length
-      ? `<p class="muted">Your AI is connected (${e(connections.map((k) => k.clientName).join(", "))}). Paste the idea into a chat and you're off.</p>`
-      : `<p><a href="/connect">Connect your AI first →</a> It takes about a minute.</p>`
-  }
+  <h2>What do you want to make?</h2>
+  <p>Describe it in your own words. We'll open your AI with it typed in; press send and it builds the app and publishes it here.</p>
+  <textarea id="idea" rows="4" maxlength="4000" placeholder="${e(IDEAS[0]!)}" aria-label="Describe your app"></textarea>
+  <div class="ideas" aria-label="Ideas to start from">${IDEAS.map((i) => `<button type="button" class="idea" data-idea="${e(i)}">${e(i)}</button>`).join("")}</div>
+  <div class="make-row">
+    <div class="make">
+      <button type="button" class="make-btn" data-make="claude"><span class="ai-mini">${AI_LOGOS.claude}</span>Make it with Claude</button>
+      ${state("claude", "Connect Claude first")}
+    </div>
+    <div class="make">
+      <button type="button" class="make-btn" data-make="chatgpt"><span class="ai-mini">${AI_LOGOS.chatgpt}</span>Make it with ChatGPT</button>
+      ${state("chatgpt", "Connect ChatGPT first")}
+    </div>
+    <div class="make">
+      <button type="button" class="make-btn secondary" data-make="copy"><span class="ai-mini">${AI_LOGOS["claude-code"]}</span>Copy for Claude Code</button>
+      ${state("claude-code", "Set up Claude Code")}
+    </div>
+  </div>
+  <p class="muted">Claude: make sure Formelab is on under the <strong>+</strong> menu → Connectors. ChatGPT: pick <strong>Developer mode</strong> in the <strong>+</strong> menu and turn on Formelab. New apps are private to you until you share them.</p>
 </section>
 
 <section>

@@ -352,3 +352,10 @@ Choices made while building v1, including where the build differs from the spec 
   (`clientInfo.name`, "claude-code" for Claude Code) is saved on the key (`tokens.client_name`,
   migration 0006). Connect your AI matches it to a tile like a sign-in's client name, and offers
   **Revoke key** there; Access keys shows it as "Used by".
+- **New app hands the idea to the person's own AI** (no AI runs on Formelab's side yet): a
+  prompt box with example ideas and **Make it with Claude** / **Make it with ChatGPT** buttons that
+  open `claude.ai/new?q=` or `chatgpt.com/?q=` in a new tab with the idea typed in (plus "publish
+  it to Formelab" when the idea doesn't mention Formelab), and **Copy for Claude Code**. Each
+  button shows Connected, or links to that app's setup on Connect your AI. Gemini has no reliable
+  prefill link, so it isn't offered here. A built-in builder (Formelab calling a model itself)
+  is the planned next step.

@@ -124,6 +124,29 @@
   });
   if (location.hash.length > 1) openDialog("dlg-" + location.hash.slice(1));
 
+  // New app: hand the idea to Claude or ChatGPT in a new tab, or copy it for Claude Code.
+  var MAKE_URLS = { claude: "https://claude.ai/new?q=", chatgpt: "https://chatgpt.com/?q=" };
+  function makePrompt(idea) {
+    return /formelab/i.test(idea) ? idea : idea + "\n\nBuild this as a web app and publish it to Formelab.";
+  }
+  document.addEventListener("click", function (ev) {
+    var idea = ev.target.closest("[data-idea]");
+    var box = document.getElementById("idea");
+    if (idea && box) { box.value = idea.dataset.idea; box.focus(); return; }
+    var make = ev.target.closest("[data-make]");
+    if (!make || !box) return;
+    var text = box.value.trim();
+    if (!text) { show("Describe your app first, or pick one of the ideas.", true); box.focus(); return; }
+    var prompt = makePrompt(text);
+    if (make.dataset.make === "copy") {
+      navigator.clipboard.writeText(prompt).then(function () {
+        show("Copied. Paste it into Claude Code and press enter.");
+      });
+      return;
+    }
+    window.open(MAKE_URLS[make.dataset.make] + encodeURIComponent(prompt), "_blank", "noopener");
+  });
+
   // The left menu on narrow screens.
   document.addEventListener("click", function (ev) {
     var toggle = ev.target.closest("[data-menu-toggle]");
