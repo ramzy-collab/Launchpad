@@ -1,9 +1,10 @@
 # Formelab security audit
 
-Date: 2026-10-13 · Scope: everything in this repository at `4da43b0` (Worker source in `src/`,
-migrations, `wrangler.toml`, `scripts/`, the dashboard, the SDK and the MCP/OAuth layer).
-Method: a manual read of every source file, then exploit tests run against the Worker in the
-project's own `vitest-pool-workers` harness. Findings marked **Confirmed** were reproduced that way.
+Date: 2026-10-13. First pass at `4da43b0` (the old `main`); second pass at `cab70ba`, after the
+Oct 9–13 work (WorkOS accounts, formelab.app, admin panel, Gemini, Google Sheets, emails) was merged.
+Method: a manual read of the source. First-pass findings marked **Confirmed** were reproduced with
+tests in the project's `vitest-pool-workers` harness. Second-pass findings (N1–N7) come from
+reading the code only and are marked **Code read**.
 `npm audit --omit=dev` reported 0 known vulnerabilities, and git history contains no committed credentials.
 
 ## Summary
@@ -13,16 +14,28 @@ project's own `vitest-pool-workers` harness. Findings marked **Confirmed** were 
 | 1 | **Critical** | Any viewer of an app can send its secrets to a server they control through the secret proxy | **Fixed** |
 | 2 | **High** | All apps in a namespace share one origin, so apps aren't isolated from each other (restricted apps included) | Confirmed |
 | 3 | **High** | App KV has no write permissions: any viewer can read, overwrite, wipe or fill an app's data | Confirmed |
-| 4 | Medium | Untrusted app code is served from the same registrable domain as the dashboard and OAuth | Design |
+| 4 | Medium | Untrusted app code is served from the same registrable domain as the web app (now `formelab.app` and `*.formelab.app`) | Design; see N4 |
 | 5 | Medium | Indirect prompt injection: the MCP `fetch` tool gives other people's HTML to an agent that can also delete and publish | Design |
-| 6 | Medium | Removing someone from Access doesn't cut off their deploy tokens or OAuth grants (up to 30 days) | Documented |
+| 6 | Medium | Removing someone from Access doesn't cut off their deploy tokens or OAuth grants (up to 30 days) | **Mostly fixed**: admins can now delete a user, which revokes tokens, grants and sessions |
 | 7 | Low | Proxy response redaction is easy to bypass | Confirmed |
 | 8 | Low | Any viewer can use up an app's proxy rate limit and fill the unbounded audit table | Code read |
 | 9 | Low | `GET /_api/kv` returns up to about 64 MB in one response | Code read |
 | 10 | Low | Site editors (not owners) can make a restricted app public; namespace editors can delete the owner's apps | Design |
 | 11 | Low | Anyone can claim any free namespace name first | Design |
 | 12 | Low | `scripts/publish.sh` passes `--title` and `--allowed-emails` to `curl -F`, so a value starting with `@` uploads a local file | Code read |
-| 13 | Info | `is_admin` is never revoked; it's currently cosmetic | Code read |
+| 13 | Info | `is_admin` is never revoked by `upsertUser` | Code read; admin access can now be removed from the admin panel |
+
+### Second pass: new code (Oct 9–13)
+
+| # | Severity | Finding | Status |
+|---|---|---|---|
+| N1 | **High** | Google Sheets: the owner's Google token covers every spreadsheet they own, and any viewer of any of their apps can use it on any spreadsheet | Code read |
+| N2 | **High** | Open sign-up: waitlisted accounts count as "signed in", so apps set to `all` are open to anyone on the internet, including KV, secrets and the owner's Gemini and Sheets | Code read |
+| N3 | Medium | The owner's Gemini and Sheets quotas can be used up by any viewer | Code read |
+| N4 | Medium | The admin API works from the web app's 30-day session, and the web app is same-site with user apps | Code read |
+| N5 | Medium | Sign-in hand-off codes aren't bound to the browser that asked for them (login CSRF) | Code read |
+| N6 | Low | Return-path checks after sign-in miss some forms that browsers treat as another host (possible open redirect) | Code read, not tested |
+| N7 | Low | Share emails go to any address with sender-chosen app titles, a possible spam or phishing relay | Code read; rate limits not checked |
 
 ---
 
@@ -179,6 +192,97 @@ grants privileges, compute it from `OWNER_EMAIL` on every request instead.
 
 ---
 
+## Second pass: new findings
+
+### N1. High: Google Sheets access is all-or-nothing
+
+**Where:** `src/sheets.ts`, `src/runtime.ts` (`/_api/sheets`)
+
+Connecting Google Sheets stores a token with the `spreadsheets` scope, which covers every
+spreadsheet in the owner's Google account. `sheetsCall` accepts any Sheets API path from any viewer
+of any app the owner owns, so anyone who can open one of those apps can read, overwrite or
+restructure any of the owner's spreadsheets whose ID they know, and create new ones. JavaScript
+written by a site editor runs with the same access, so co-editors can do the same through the
+owner's visitors. The path checks keep calls inside the Sheets API, but not inside the sheets the
+app is meant to use.
+
+**Fix:**
+- switch to the `drive.file` scope, so Formelab only reaches spreadsheets it created or the person opened with it;
+- keep an allow-list of spreadsheet IDs per app, set by the owner, and reject any other ID;
+- consider allowing writes only for the app's owner and editors.
+
+### N2. High: "all" now means anyone who signs up
+
+**Where:** `src/auth.ts` (`canViewSite`), `src/login.ts`, `src/sites.ts`
+
+WorkOS sign-in accepts any verified email and creates a session even for waitlisted accounts.
+`user.active` is only checked when creating a namespace. `canViewSite` lets any signed-in user
+open an app with `visibility: "all"`, and so use its KV, its secret proxy, and the owner's Gemini
+and Sheets connections. New apps now default to `restricted`, which helps, but anything set to
+`all` is effectively public.
+
+**Fix:** require `user.active` in `canViewSite` (and in `/_api/*` on namespace hosts) for
+`all` apps, unless the owner explicitly marks an app as public. Also rename "all" in the UI to
+say who it really covers.
+
+### N3. Medium: owner quotas can be used up by viewers
+
+**Where:** `src/gemini.ts`, `src/sheets.ts`
+
+Gemini and Sheets calls are limited to 60 per minute per app, not per viewer, and use the owner's
+key. Any viewer can spend the owner's Gemini budget (up to 8,192 output tokens per call), across
+every app the owner has. **Fix:** add a per-viewer limit and a per-owner daily cap, and let owners
+turn connected services on per app.
+
+The Gemini integration itself is well built: it only calls Google, with a fixed model, so the key
+can't be redirected the way app secrets could before fix #1.
+
+### N4. Medium: admin access from the web app session
+
+**Where:** `src/index.ts` (`signedInHost`), `src/api.ts`
+
+The admin panel has its own 8-hour sign-in, but the admin endpoints (`/_api/admin/users`,
+`/users/:email/admin`, `/waitlist/approve`, `/features/:name`) are served by the same management
+API on the web app host too, where an admin's session lasts 30 days. The shorter admin session
+therefore isn't a real boundary. The web app (`formelab.app`) is also same-site with every
+published app (`*.formelab.app`). `__Host-` cookies and the Origin and custom-header checks block
+the obvious attacks, but this is the setup finding #4 warned about.
+
+**Fix:** serve the admin endpoints only on the admin host. Move published apps to their own
+registrable domain (for example `formelab-apps.com`, or `*.formelab.site`).
+
+### N5. Medium: login CSRF through the hand-off code
+
+**Where:** `src/login.ts` (`appHandoff`, `appCallback`)
+
+`/_auth/callback?code=...` accepts any unexpired code minted for that host, from any browser. A
+person can mint a code with their own session and send the link to someone else. Opening it signs
+the victim's browser into the sender's account on `formelab.app` or an app host. Anything the
+victim then enters (secrets, data, uploads) goes to the sender's account.
+
+**Fix:** before redirecting to `/auth/app`, set a random nonce cookie on the target host. Include
+the nonce in the code request, and refuse the callback unless the cookie matches.
+
+### N6. Low: return-path checks
+
+**Where:** `src/login.ts` (`safeReturn`, `appCallback`)
+
+`safeReturn` rejects `//` and `/\`, but browsers also strip tabs and newlines from URLs. A value
+like `/<tab>/example.net` could therefore be treated as another host. `appCallback` doesn't reject
+`/\` at all. I haven't tested this. **Fix:** resolve the value with `new URL(value, origin)`
+and accept it only if the resulting origin is unchanged.
+
+### N7. Low: share emails as a relay
+
+**Where:** `src/email.ts`, sharing in `src/sites.ts`
+
+Adding someone to an app sends them an email from Formelab with the sharer's chosen app title and
+a link to the app. Any active user can do this for arbitrary addresses. I didn't check for a rate
+limit. **Fix:** a per-sender daily cap on share emails, and send them only to addresses that
+already have accounts or are on the waitlist.
+
+---
+
 ## What's done well
 
 - All SQL is parameterized. The only dynamic SQL (`updateSite`) builds column names from a fixed list.
@@ -195,11 +299,19 @@ grants privileges, compute it from `OWNER_EMAIL` on every request instead.
 - The OAuth consent page uses browser-bound `__Host-` cookies, can't be framed, and has a tight `form-action`.
 - No dependency CVEs, and no secrets in git history.
 
+Second pass, also done well: sessions are `__Host-` cookies stored only as hashes and bound to
+one host; app hosts get their own short sessions through single-use codes; user deletion removes
+tokens, grants, sessions and connected services; dashboard templates escape everything; app icons
+are served with a sandboxing CSP; Gemini can only reach Google.
+
 ## Suggested order of work
 
-1. #1: host allow-lists for secrets. This is small and closes the critical issue.
-2. #3: KV write permissions.
-3. #2 and #4 together: per-app origins on a separate user-content domain.
-4. #6: user disable and revoke-all.
-5. #5: read-only MCP scope.
-6. The low findings as cleanup.
+1. ~~#1: host allow-lists for secrets.~~ Done.
+2. N1: limit Google Sheets access per app.
+3. N2: keep waitlisted accounts out of apps.
+4. #3: KV write permissions.
+5. N5 and N6: bind hand-off codes to the browser; strict return paths.
+6. N4, #2 and #4 together: admin endpoints on the admin host only, and published apps on their own domain.
+7. N3 and N7: per-viewer and per-sender limits.
+8. #5: read-only MCP scope.
+9. The low findings as cleanup.
