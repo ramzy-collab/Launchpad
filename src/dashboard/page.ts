@@ -193,6 +193,11 @@ export async function appSettingsPage(c: Context<AppEnv>, id: string): Promise<R
         ? `<label>Editors (can update it) <input name="editors" value="${e(site.editors.join(", "))}" placeholder="teammate@example.com, ..."></label>`
         : `<p class="muted">Editors: ${e(site.editors.join(", ") || "none")}. Only the owner can change them.</p>`
     }
+    ${
+      mine && c.get("features")?.has("connected_apps")
+        ? `<label>Google Sheets it can use (links or ids, one per line) <textarea name="sheets" rows="3" placeholder="https://docs.google.com/spreadsheets/d/...">${e(site.sheets.join("\n"))}</textarea></label>`
+        : ""
+    }
     <label class="check"><input type="checkbox" name="spa"${site.spa ? " checked" : ""}> SPA fallback (send unknown addresses in the app to its index.html)</label>
     <label class="check"><input type="checkbox" name="hidden"${site.hidden ? " checked" : ""}> Hidden from listings</label>
     <div><button>Save</button></div>

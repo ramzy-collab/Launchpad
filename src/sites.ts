@@ -53,6 +53,8 @@ export interface SiteRow {
   updated_at: number;
   /** See src/icons.ts: NULL = not looked for yet, "" = none. */
   icon_path?: string | null;
+  /** JSON array of the Google spreadsheet ids the app may use (see src/sheets.ts). */
+  sheets?: string;
 }
 
 /** Everything a service call needs: bindings, the acting user, and a way to defer work. */
@@ -173,6 +175,8 @@ export interface SiteView {
   updatedAt: number;
   /** Where the web app shows the app's icon; null when the app has none (show its letter). */
   iconUrl: string | null;
+  /** Google spreadsheet ids the app may use through its owner's Sheets connection. */
+  sheets: string[];
 }
 
 export const siteView = (env: Env, s: SiteRow, requestUrl?: string): SiteView => ({
@@ -192,7 +196,45 @@ export const siteView = (env: Env, s: SiteRow, requestUrl?: string): SiteView =>
   createdAt: s.created_at,
   updatedAt: s.updated_at,
   iconUrl: s.icon_path ? `/apps/${encodeURIComponent(s.id)}/icon?v=${s.current_version}` : null,
+  sheets: parseJsonArray(s.sheets),
 });
+
+export const MAX_SITE_SHEETS = 50;
+const SHEET_ID = /^[A-Za-z0-9_-]{20,128}$/;
+
+/**
+ * Spreadsheet ids from a list (or a comma/space separated string) of ids or Google Sheets URLs
+ * like https://docs.google.com/spreadsheets/d/<id>/edit.
+ */
+export function sheetIdList(raw: unknown): string[] {
+  let list: unknown = raw;
+  if (raw === null || raw === "") return [];
+  if (typeof raw === "string") list = raw.split(/[\s,;]+/);
+  if (!Array.isArray(list)) throw badRequest("sheets must be a list of spreadsheet ids or links.", "Send [\"<spreadsheet id>\"] or a Google Sheets link.");
+  const out = new Set<string>();
+  for (const item of list) {
+    const v = String(item ?? "").trim();
+    if (!v) continue;
+    const id = /\/spreadsheets\/d\/([A-Za-z0-9_-]+)/.exec(v)?.[1] ?? v;
+    if (!SHEET_ID.test(id)) {
+      throw badRequest(`"${v.slice(0, 80)}" is not a Google spreadsheet id or link.`, "Copy the link from the spreadsheet's address bar (docs.google.com/spreadsheets/d/<id>/edit).");
+    }
+    out.add(id);
+  }
+  if (out.size > MAX_SITE_SHEETS) throw badRequest(`An app can use at most ${MAX_SITE_SHEETS} spreadsheets.`, "Remove spreadsheets the app no longer uses.");
+  return [...out];
+}
+
+/** Adds a spreadsheet to an app's list (used when the owner creates one through the app). */
+export async function addSiteSheet(env: Env, siteId: string, sheetId: string): Promise<void> {
+  await env.DB.prepare(
+    `UPDATE sites SET sheets = json_insert(sheets, '$[#]', ?1)
+      WHERE id = ?2 AND NOT EXISTS (SELECT 1 FROM json_each(sites.sheets) WHERE value = ?1)
+        AND json_array_length(sheets) < ?3`,
+  )
+    .bind(sheetId, siteId, MAX_SITE_SHEETS)
+    .run();
+}
 
 export const namespaceView = (n: NamespaceRow, user: User, env: Env, requestUrl?: string) => ({
   label: n.label,
@@ -557,6 +599,7 @@ export interface SitePatch {
   visibility?: unknown;
   allowed_emails?: unknown;
   editors?: unknown;
+  sheets?: unknown;
 }
 
 export async function updateSite(ctx: Ctx, id: string, patch: SitePatch) {
@@ -609,6 +652,18 @@ export async function updateSite(ctx: Ctx, id: string, patch: SitePatch) {
       set("editors", JSON.stringify(list));
       detail.editorsAdded = newEditors;
       detail.editorsRemoved = gone;
+    }
+  }
+  if (patch.sheets !== undefined) {
+    // The spreadsheets are reached with the owner's own Google account, so only the owner chooses them.
+    const list = sheetIdList(patch.sheets);
+    const before = parseJsonArray(site.sheets);
+    if (added(list, before).length || added(before, list).length) {
+      if (site.owner_email !== ctx.user.email) {
+        throw err(403, "owner_only", "Only the app's owner can choose which Google spreadsheets it uses.", "They're reached with the owner's Google account. Ask the owner to change this.");
+      }
+      set("sheets", JSON.stringify(list));
+      detail.sheets = list.length;
     }
   }
   if (sets.length) {

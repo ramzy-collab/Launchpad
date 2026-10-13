@@ -48,6 +48,12 @@ async function connectSheets(as: string, code = "good-code") {
   });
   return { google, cb };
 }
+const SHEET = "1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms";
+/** Lists spreadsheets for the app at <ns>/s, as its owner. */
+async function allowSheets(as: string, ns: string, list: unknown) {
+  const site = await env.DB.prepare("SELECT id FROM sites WHERE namespace = ? AND mount_path = 's'").bind(ns).first<{ id: string }>();
+  return call(`/_api/admin/sites/${site!.id}`, { as, method: "PATCH", json: { sheets: list } });
+}
 const sheets = (as: string, ns: string, json: unknown) => call(`https://${ns}.example.app/_api/sheets`, { as, mount: "/s/", method: "POST", json });
 
 afterEach(() => onOutbound(undefined));
@@ -90,30 +96,31 @@ describe("Google Sheets as a connected app (OAuth)", () => {
     const friend = `sf-${uniq()}@example.com`;
     await publishHtml(OWNER, ns, "s", PAGE("x"), { allowed_emails: friend });
     await connectSheets(OWNER);
+    expect((await allowSheets(OWNER, ns, [SHEET])).status).toBe(200);
 
     expect(await (await call(`https://${ns}.example.app/_api/sheets`, { as: OWNER, mount: "/s/" })).json()).toEqual({ connected: true, available: true });
-    const read = await sheets(OWNER, ns, { method: "GET", path: "spreadsheets/abc123/values/Sheet1!A1:B2" });
+    const read = await sheets(OWNER, ns, { method: "GET", path: "spreadsheets/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/values/Sheet1!A1:B2" });
     expect(read.status).toBe(200);
     const text = await read.text();
     expect(JSON.parse(text).data.values[1]).toEqual(["Ada", "ada@example.com"]);
     expect(text).not.toContain("at-");
     expect(seen.some((s) => s.body.includes("grant_type=refresh_token"))).toBe(true);
     const call1 = seen.find((s) => s.url.startsWith("https://sheets.googleapis.com/"))!;
-    expect(call1.url).toBe("https://sheets.googleapis.com/v4/spreadsheets/abc123/values/Sheet1!A1:B2");
+    expect(call1.url).toBe("https://sheets.googleapis.com/v4/spreadsheets/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/values/Sheet1!A1:B2");
     expect(call1.auth).toMatch(/^Bearer at-\d+$/);
 
     // Someone the app is shared with uses the owner's connection.
-    const add = await sheets(friend, ns, { method: "POST", path: "spreadsheets/abc123/values/Sheet1!A:B:append", query: { valueInputOption: "USER_ENTERED" }, body: { values: [["Bo", "bo@example.com"]] } });
+    const add = await sheets(friend, ns, { method: "POST", path: "spreadsheets/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/values/Sheet1!A:B:append", query: { valueInputOption: "USER_ENTERED" }, body: { values: [["Bo", "bo@example.com"]] } });
     expect(add.status).toBe(200);
     const sent = seen.at(-1)!;
-    expect(sent.url).toBe("https://sheets.googleapis.com/v4/spreadsheets/abc123/values/Sheet1!A:B:append?valueInputOption=USER_ENTERED");
+    expect(sent.url).toBe("https://sheets.googleapis.com/v4/spreadsheets/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/values/Sheet1!A:B:append?valueInputOption=USER_ENTERED");
     expect(JSON.parse(sent.body)).toEqual({ values: [["Bo", "bo@example.com"]] });
 
     // Only Sheets API paths.
     for (const path of ["../v1/files", "spreadsheets/%2e%2e/%2e%2e/oauth", "drive/v3/files", "https://evil.test/x"]) {
       expect((await sheets(OWNER, ns, { method: "GET", path })).status, path).toBe(400);
     }
-    expect((await sheets(OWNER, ns, { method: "GET", path: "spreadsheets/nope/values/A1" })).status).toBe(404);
+    expect((await sheets(OWNER, ns, { method: "GET", path: "spreadsheets/nope/values/A1" })).status).toBe(403);
 
     const site = await env.DB.prepare("SELECT id FROM sites WHERE namespace = ?").bind(ns).first<{ id: string }>();
     const log = await (await call(`/app/apps/${site!.id}/activity`, { as: OWNER })).text();
@@ -126,14 +133,74 @@ describe("Google Sheets as a connected app (OAuth)", () => {
     const owner = `sd-${uniq()}@example.com`;
     const ns = uniq();
     await publishHtml(owner, ns, "s", PAGE("x"));
-    const r = await sheets(owner, ns, { method: "GET", path: "spreadsheets/abc123/values/Sheet1!A1:B2" });
+    await allowSheets(owner, ns, [SHEET]);
+    const r = await sheets(owner, ns, { method: "GET", path: "spreadsheets/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/values/Sheet1!A1:B2" });
     expect(r.status).toBe(409);
     expect((await r.json<{ error: { code: string } }>()).error.code).toBe("sheets_not_connected");
     await connectSheets(owner);
-    expect((await sheets(owner, ns, { method: "GET", path: "spreadsheets/abc123/values/Sheet1!A1:B2" })).status).toBe(200);
+    expect((await sheets(owner, ns, { method: "GET", path: "spreadsheets/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/values/Sheet1!A1:B2" })).status).toBe(200);
     expect((await call("/_api/admin/services/google-sheets", { as: owner, method: "DELETE" })).status).toBe(200);
     expect(seen.some((s) => s.url === "https://oauth2.googleapis.com/revoke" && s.body.includes("token=rt-1"))).toBe(true);
-    expect((await sheets(owner, ns, { method: "GET", path: "spreadsheets/abc123/values/Sheet1!A1:B2" })).status).toBe(409);
+    expect((await sheets(owner, ns, { method: "GET", path: "spreadsheets/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/values/Sheet1!A1:B2" })).status).toBe(409);
+  });
+
+  it("only lets an app use the spreadsheets its owner listed for it", async () => {
+    mockGoogle();
+    const ns = uniq();
+    const friend = `sl-${uniq()}@example.com`;
+    const editor = `se-${uniq()}@example.com`;
+    await publishHtml(OWNER, ns, "s", PAGE("x"), { allowed_emails: friend, editors: editor });
+    await connectSheets(OWNER);
+    const read = (as: string, id: string) => sheets(as, ns, { method: "GET", path: `spreadsheets/${id}/values/Sheet1!A1:B2` });
+    const other = "1OtherSpreadsheetIdOfTheOwner_0123456789ab";
+
+    // Nothing is listed yet: every spreadsheet is refused, before anything reaches Google.
+    seen.length = 0;
+    const refused = await read(friend, SHEET);
+    expect(refused.status).toBe(403);
+    expect((await refused.json<{ error: { code: string } }>()).error.code).toBe("sheet_not_allowed");
+    expect(seen.some((s) => s.url.startsWith("https://sheets.googleapis.com/"))).toBe(false);
+
+    // A link works as well as an id; listed spreadsheets work for viewers, others still don't.
+    expect((await allowSheets(OWNER, ns, `https://docs.google.com/spreadsheets/d/${SHEET}/edit#gid=0`)).status).toBe(200);
+    expect((await read(friend, SHEET)).status).toBe(200);
+    expect((await read(friend, other)).status).toBe(403);
+    expect((await sheets(friend, ns, { method: "POST", path: `spreadsheets/${other}:batchUpdate`, body: { requests: [] } })).status).toBe(403);
+    // A path has to name a spreadsheet (apart from creating one).
+    expect((await sheets(OWNER, ns, { method: "GET", path: "spreadsheets" })).status).toBe(400);
+
+    // Only the owner chooses the list: not editors, and not with bad ids.
+    const byEditor = await allowSheets(editor, ns, [SHEET, other]);
+    expect(byEditor.status).toBe(403);
+    expect((await byEditor.json<{ error: { code: string } }>()).error.code).toBe("owner_only");
+    expect((await allowSheets(OWNER, ns, ["not a sheet"])).status).toBe(400);
+    expect((await read(friend, other)).status).toBe(403);
+    // An editor saving the settings form without touching the list is fine.
+    expect((await allowSheets(editor, ns, [SHEET])).status).toBe(200);
+  });
+
+  it("lets only the owner create a spreadsheet, and adds it to the app's list", async () => {
+    mockGoogle();
+    const created = "1NewlyCreatedSpreadsheetId_abcdefghijklmn";
+    const base = (globalThis as unknown as { __lpOutbound?: (r: Request) => Promise<Response> }).__lpOutbound!;
+    onOutbound(async (req) => {
+      if (req.url === "https://sheets.googleapis.com/v4/spreadsheets" && req.method === "POST") {
+        return Response.json({ spreadsheetId: created, spreadsheetUrl: `https://docs.google.com/spreadsheets/d/${created}/edit` });
+      }
+      return base(req);
+    });
+    const ns = uniq();
+    const friend = `sc-${uniq()}@example.com`;
+    await publishHtml(OWNER, ns, "s", PAGE("x"), { allowed_emails: friend });
+    await connectSheets(OWNER);
+    const create = (as: string) => sheets(as, ns, { method: "POST", path: "spreadsheets", body: { properties: { title: "t" } } });
+
+    const byFriend = await create(friend);
+    expect(byFriend.status).toBe(403);
+    expect((await byFriend.json<{ error: { code: string } }>()).error.code).toBe("sheets_owner_only");
+    expect((await create(OWNER)).status).toBe(200);
+    const row = await env.DB.prepare("SELECT sheets FROM sites WHERE namespace = ?").bind(ns).first<{ sheets: string }>();
+    expect(JSON.parse(row!.sheets)).toEqual([created]);
   });
 
   it("is off with the connected_apps flag", async () => {
@@ -143,6 +210,6 @@ describe("Google Sheets as a connected app (OAuth)", () => {
     expect(await (await call("/app/connected", { as: OWNER })).text()).not.toContain("dlg-google-sheets");
     const ns = uniq();
     await publishHtml(OWNER, ns, "s", PAGE("x"));
-    expect((await sheets(OWNER, ns, { method: "GET", path: "spreadsheets/abc123/values/Sheet1!A1:B2" })).status).toBe(403);
+    expect((await sheets(OWNER, ns, { method: "GET", path: "spreadsheets/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/values/Sheet1!A1:B2" })).status).toBe(403);
   });
 });

@@ -226,6 +226,9 @@ Then smoke-test the live domain (section 2.2).
 - **`0010_secret_hosts`** adds a host allow-list to every secret. Secrets stored before it have no
   list, so the proxy refuses them (`secret_needs_hosts`) until an owner or editor sets each one
   again with `hosts`. Tell app owners before deploying it.
+- **`0011_site_sheets`** gives each app a list of the Google spreadsheets it may use. Apps that
+  already use Google Sheets get `sheet_not_allowed` until their owner lists the spreadsheets in the
+  app's settings (or with `update_site`'s `sheets`).
 
 ### 2.2 Smoke test
 

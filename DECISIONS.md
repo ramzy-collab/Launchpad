@@ -101,6 +101,13 @@ Choices made while building v1, including where the build differs from the spec 
   value and hosts together, so an editor can't widen the hosts of a value they never saw. Secrets
   saved before migration `0010` have `hosts = NULL` and are refused (`secret_needs_hosts`) until
   set again: the owner chose a clean break over leaving existing secrets open.
+- **Google Sheets is limited per app (audit finding N1).** The owner's Google token reaches every
+  spreadsheet they own, so each app carries its own list of spreadsheet ids (`sites.sheets`).
+  `sheetsCall` refuses any path that doesn't name a listed spreadsheet (`sheet_not_allowed`), before
+  calling Google. Only the app's owner can change the list, since it's their account; editors
+  can't. Creating a spreadsheet (`POST spreadsheets`) is owner-only too, and the new id is added to
+  the app's list. The `drive.file` scope would be tighter still, but would make every existing
+  connection reconnect and stop apps opening sheets by id; it's a possible later step.
 - **Redaction (beyond the spec):** some APIs echo request headers back (httpbin does). The proxy
   replaces every substituted value of 6+ characters (and the `{{basic}}` value) with `[redacted]` in
   the returned text and `location`, so "secret values never appear in any API response" holds even

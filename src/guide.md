@@ -58,7 +58,8 @@ Apps get platform features through a small browser SDK, `window.formelab`:
 10. **To read or write a spreadsheet, use `formelab.sheets`** (Google Sheets through the owner's
    connected Google account). Never ask for Google credentials. `whoami` says whether it's
    connected (`connectedApps.googleSheets`); if not, tell the user to connect it in Formelab
-   (Connected apps → Google Sheets).
+   (Connected apps → Google Sheets). An app can only use the spreadsheets listed for it: after
+   publishing, pass the spreadsheet ids or links the user gave you to `update_site`'s `sheets`.
 <!-- /flag:connected_apps -->
 
 ## 3. SDK reference
@@ -182,6 +183,11 @@ Formelab. Anyone who can open the app can use it, as the owner; calls are limite
 per app and show up in the app's activity log. A spreadsheet's id is the long part of its URL:
 `docs.google.com/spreadsheets/d/<id>/edit`.
 
+**An app can only use the spreadsheets listed for it.** The owner lists them in the app's settings
+in Formelab, or an AI sets them with `update_site` (`sheets: ["<id or link>"]`). Only the owner can
+change the list, and only the owner can `create()` a spreadsheet; one created through the app is
+added to its list automatically. Any other spreadsheet fails with `sheet_not_allowed`.
+
 ```js
 const { connected } = await formelab.sheets.available();   // false: the owner hasn't connected it
 const rows = await formelab.sheets.read(id, "Sheet1!A1:C50");              // [["Name","Email"], ...]
@@ -193,8 +199,9 @@ await formelab.sheets.request("POST", `spreadsheets/${id}:batchUpdate`, { body: 
 ```
 
 Values are entered as if typed (`USER_ENTERED`), so numbers, dates and formulas work. Store the
-spreadsheet id in KV (or ask the owner for it in a settings form) rather than hard-coding it.
-Errors: `sheets_not_connected` (409), `sheets_reconnect` (the owner must reconnect),
+spreadsheet id in KV rather than hard-coding it.
+Errors: `sheets_not_connected` (409), `sheet_not_allowed` (403: not on the app's list),
+`sheets_owner_only` (403: only the owner can create), `sheets_reconnect` (the owner must reconnect),
 `sheets_forbidden`, `sheets_not_found`, `rate_limited`. Show `e.message` and `e.hint`.
 
 <!-- /flag:connected_apps -->

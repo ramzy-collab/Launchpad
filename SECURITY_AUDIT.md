@@ -29,7 +29,7 @@ reading the code only and are marked **Code read**.
 
 | # | Severity | Finding | Status |
 |---|---|---|---|
-| N1 | **High** | Google Sheets: the owner's Google token covers every spreadsheet they own, and any viewer of any of their apps can use it on any spreadsheet | Code read |
+| N1 | **High** | Google Sheets: the owner's Google token covers every spreadsheet they own, and any viewer of any of their apps can use it on any spreadsheet | **Fixed** (per-app list) |
 | N2 | **High** | Open sign-up: waitlisted accounts count as "signed in", so apps set to `all` are open to anyone on the internet, including KV, secrets and the owner's Gemini and Sheets | Code read |
 | N3 | Medium | The owner's Gemini and Sheets quotas can be used up by any viewer | Code read |
 | N4 | Medium | The admin API works from the web app's 30-day session, and the web app is same-site with user apps | Code read |
@@ -196,6 +196,10 @@ grants privileges, compute it from `OWNER_EMAIL` on every request instead.
 
 ### N1. High: Google Sheets access is all-or-nothing
 
+> **Fixed:** each app now has its own list of spreadsheets (migration `0011`), set only by the
+> app's owner. Other spreadsheets are refused before Google is called, and only the owner can
+> create spreadsheets through an app. The `drive.file` scope remains a possible later tightening.
+
 **Where:** `src/sheets.ts`, `src/runtime.ts` (`/_api/sheets`)
 
 Connecting Google Sheets stores a token with the `spreadsheets` scope, which covers every
@@ -307,7 +311,7 @@ are served with a sandboxing CSP; Gemini can only reach Google.
 ## Suggested order of work
 
 1. ~~#1: host allow-lists for secrets.~~ Done.
-2. N1: limit Google Sheets access per app.
+2. ~~N1: limit Google Sheets access per app.~~ Done.
 3. N2: keep waitlisted accounts out of apps.
 4. #3: KV write permissions.
 5. N5 and N6: bind hand-off codes to the browser; strict return paths.
