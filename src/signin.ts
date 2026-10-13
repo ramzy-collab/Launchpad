@@ -24,7 +24,7 @@ import {
 } from "./login";
 import { homeHead, loginPage, topNav } from "./dashboard/home";
 import { htmlResponse, PAGE_CSP } from "./dashboard/layout";
-import { appOrigin } from "./hosts";
+import { appOrigin, siteOrigin } from "./hosts";
 import { identifyBrowser } from "./auth";
 import { cookieHeader, readCookie, SESSION_COOKIE } from "./session";
 import { escapeHtml as e, isEmail, normEmail } from "./util";
@@ -106,11 +106,11 @@ function view(c: Context<AppEnv>, returnTo: string): View {
 
 /**
  * The page CSP, with form-action widened to Formelab's own hosts: after signing in, the redirect
- * goes on to the web app (APP_DOMAIN) or an app (<ns>.APP_DOMAIN) through /app or /auth/app.
+ * goes on to the web app (app.DOMAIN) or an app (<host_label>.APP_DOMAIN) through /app or /auth/app.
  */
 function signinCsp(c: Context<AppEnv>): string {
   const app = appOrigin(c.env, c.req.url);
-  const wild = app.replace("://", "://*.");
+  const wild = siteOrigin(c.env, "*", c.req.url);
   return PAGE_CSP.replace("form-action 'self'", `form-action 'self' ${app} ${wild}`);
 }
 

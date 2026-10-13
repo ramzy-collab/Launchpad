@@ -12,7 +12,7 @@ export interface Env {
   OAUTH_PROVIDER?: import("@cloudflare/workers-oauth-provider").OAuthHelpers;
   /** Home page, sign-in, waitlist, MCP connector, admin.DOMAIN (e.g. formelab.ai). */
   DOMAIN: string;
-  /** The web app and published apps, <ns>.APP_DOMAIN (e.g. formelab.app). See src/hosts.ts. */
+  /** Published apps, one host each: <host_label>.APP_DOMAIN (e.g. hoops-7kq2.formelab.app). See src/hosts.ts. */
   APP_DOMAIN: string;
   ENVIRONMENT: string;
   DEV_USER?: string;

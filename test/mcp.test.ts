@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { call, ICON_PAGE, OWNER, PAGE, publishHtml, uniq } from "./helpers";
+import { call, ICON_PAGE, OWNER, PAGE, publishHtml, uniq, appAt } from "./helpers";
 
 const publishHtmlPlain = (ns: string) => publishHtml(OWNER, ns, "plain", PAGE("no icon"));
 
@@ -75,7 +75,7 @@ describe("MCP server", () => {
 
     const pub = await tool(t, "publish", { html: ICON_PAGE("<h1>Hello, world</h1>"), namespace: ns, mount_path: "hello", title: "Hello" });
     expect(pub.isError).toBe(false);
-    expect(pub.data.url).toBe(`https://${ns}.example.app/hello/`);
+    expect(pub.data.url).toBe(`${await appAt(ns, "hello")}/`);
     const page = await call(pub.data.url, { as: OWNER });
     expect(await page.text()).toContain("Hello, world");
 

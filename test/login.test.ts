@@ -3,7 +3,7 @@ import { env } from "cloudflare:workers";
 import { afterEach, describe, expect, it } from "vitest";
 import worker from "../src/index";
 import type { Env } from "../src/env";
-import { call, onOutbound, OWNER, PAGE, publishHtml, uniq } from "./helpers";
+import { appAt, call, onOutbound, OWNER, PAGE, publishHtml, uniq  } from "./helpers";
 
 // The Worker with Formelab's own login (WorkOS) turned on. WorkOS itself is mocked via onOutbound.
 const WENV = { ...(env as unknown as Env), WORKOS_CLIENT_ID: "client_test", WORKOS_API_KEY: "sk_test" } as Env;
@@ -85,7 +85,7 @@ async function hostCookie(cookie: string, origin: string): Promise<string> {
   return cookieFrom(cb, "__Host-fl_session")!;
 }
 
-const APP = "https://example.app";
+const APP = "https://app.example.com";
 const ADMIN = "https://admin.example.com";
 /** A page of the web app on APP_DOMAIN, signed in as the holder of a DOMAIN session. */
 const onApp = async (path: string, cookie: string) => w(APP + path, { headers: { cookie: await hostCookie(cookie, APP) } });
@@ -110,7 +110,7 @@ describe("login page and WorkOS redirect", () => {
     expect(html).not.toContain('class="nav-r"');
     expect(html).not.toContain('type="password"');
     expect(html).not.toContain("Last used");
-    expect(res.headers.get("content-security-policy")).toContain("form-action 'self' https://example.app https://*.example.app;".slice(0, -1));
+    expect(res.headers.get("content-security-policy")).toContain("form-action 'self' https://app.example.com https://*.example.app;".slice(0, -1));
     expect(html).not.toMatch(/\son[a-z]+=/i);
     expect(html).toContain('/_assets/signin.js?v=');
     expect((await (await w("/login?return=https%3A%2F%2Fevil.test%2F")).text())).toContain('name="return" value="/app"');
@@ -368,7 +368,8 @@ describe("accounts and the waitlist, continued", () => {
   it("a session cookie only works on the host it was made for", async () => {
     const { cookie } = await signIn(`host-${uniq()}@example.com`);
     const ns = uniq();
-    const res = await w(`https://${ns}.example.app/`, { headers: { cookie } });
+    await publishHtml(OWNER, ns, "h", PAGE("h"));
+    const res = await w(`${await appAt(ns, "h")}/`, { headers: { cookie } });
     expect(res.status).toBe(302);
     expect(res.headers.get("location")).toContain("https://example.com/auth/app?return=");
   });
@@ -398,50 +399,55 @@ describe("my apps and shared with me", () => {
   });
 });
 
-describe("namespace hosts get their own session", () => {
+describe("app hosts get their own session", () => {
   it("hands the session over with a single-use code", async () => {
     const ns = uniq();
     const friend = `ns-${uniq()}@example.com`;
     await publishHtml(OWNER, ns, "app", PAGE("hello friend"), { allowed_emails: friend });
+    await publishHtml(OWNER, ns, "other", PAGE("other app"), { allowed_emails: friend });
+    const app = await appAt(ns, "app");
     const { cookie } = await signIn(friend);
 
     // 1. The app host sends the visitor to the apex.
-    const first = await w(`https://${ns}.example.app/app/?x=1`);
+    const first = await w(`${app}/page?x=1`);
     const handoffUrl = first.headers.get("location")!;
-    expect(handoffUrl).toBe(`https://example.com/auth/app?return=${encodeURIComponent(`https://${ns}.example.app/app/?x=1`)}`);
+    expect(handoffUrl).toBe(`https://example.com/auth/app?return=${encodeURIComponent(`${app}/page?x=1`)}`);
 
     // 2. The apex, signed in, sends back a code.
     const handoff = await w(handoffUrl, { headers: { cookie } });
     const back = new URL(handoff.headers.get("location")!);
-    expect(back.origin + back.pathname).toBe(`https://${ns}.example.app/_auth/callback`);
-    expect(back.searchParams.get("return")).toBe("/app/?x=1");
+    expect(back.origin + back.pathname).toBe(`${app}/_auth/callback`);
+    expect(back.searchParams.get("return")).toBe("/page?x=1");
 
     // 3. The app host trades the code for its own cookie.
     const cb = await w(back.toString());
-    expect(cb.headers.get("location")).toBe("/app/?x=1");
+    expect(cb.headers.get("location")).toBe("/page?x=1");
     const appCookie = cookieFrom(cb, "__Host-fl_session")!;
     expect(appCookie).toBeTruthy();
     expect(appCookie).not.toBe(cookie);
-    const page = await w(`https://${ns}.example.app/app/`, { headers: { cookie: appCookie } });
+    const page = await w(`${app}/`, { headers: { cookie: appCookie } });
     expect(await page.text()).toContain("hello friend");
 
-    // The code works once, and only on its own host.
+    // The code works once, and only on its own host; the cookie doesn't open another app in the space.
     expect((await w(back.toString())).status).toBe(400);
-    expect((await w(`https://other${ns}.example.app/_auth/callback?code=${back.searchParams.get("code")}`)).status).toBe(400);
+    const other = await appAt(ns, "other");
+    expect((await w(`${other}/_auth/callback?code=${back.searchParams.get("code")}`)).status).toBe(400);
+    expect((await w(`${other}/`, { headers: { cookie: appCookie } })).status).toBe(302);
 
     // The app-host cookie isn't a dashboard login, and logging out ends both.
     expect((await w(`${APP}/`, { headers: { cookie: appCookie } })).status).toBe(302);
     await w("/auth/logout", { method: "POST", headers: { cookie } });
-    expect((await w(`https://${ns}.example.app/app/`, { headers: { cookie: appCookie } })).status).toBe(302);
+    expect((await w(`${app}/`, { headers: { cookie: appCookie } })).status).toBe(302);
   });
 
   it("people who weren't shared the app still can't open it", async () => {
     const ns = uniq();
     await publishHtml(OWNER, ns, "", PAGE("secret stuff"));
     const { cookie } = await signIn(`nope-${uniq()}@example.com`);
-    const handoff = await w(`/auth/app?return=${encodeURIComponent(`https://${ns}.example.app/`)}`, { headers: { cookie } });
+    const app = await appAt(ns, "");
+    const handoff = await w(`/auth/app?return=${encodeURIComponent(`${app}/`)}`, { headers: { cookie } });
     const cb = await w(handoff.headers.get("location")!);
-    const page = await w(`https://${ns}.example.app/`, { headers: { cookie: cookieFrom(cb, "__Host-fl_session")! } });
+    const page = await w(`${app}/`, { headers: { cookie: cookieFrom(cb, "__Host-fl_session")! } });
     expect(page.status).toBe(403);
     expect(await page.text()).not.toContain("secret stuff");
   });
@@ -452,32 +458,33 @@ describe("namespace hosts get their own session", () => {
     await publishHtml(OWNER, ns, "open", PAGE("members only"), { visibility: "all" });
     await publishHtml(OWNER, ns, "mine", PAGE("shared by name"), { allowed_emails: email });
     const { cookie } = await signIn(email); // lands on the waitlist
-    const nsCookie = await hostCookie(cookie, `https://${ns}.example.app`);
-    const get = (path: string, headers: Record<string, string> = {}) =>
-      w(`https://${ns}.example.app${path}`, { headers: { cookie: nsCookie, ...headers } });
+    const hosts = { open: await appAt(ns, "open"), mine: await appAt(ns, "mine") };
+    const cookies = { open: await hostCookie(cookie, hosts.open), mine: await hostCookie(cookie, hosts.mine) };
+    const get = (app: "open" | "mine", path: string, headers: Record<string, string> = {}) =>
+      w(`${hosts[app]}${path}`, { headers: { cookie: cookies[app], ...headers } });
 
-    const open = await get("/open/");
+    const open = await get("open", "/");
     expect(open.status).toBe(403);
     const text = await open.text();
     expect(text).toContain("still on the waitlist");
     expect(text).not.toContain("members only");
     // Nor its data, through the app API.
-    expect((await get("/_api/kv", { "x-formelab-mount": "/open/" })).status).toBe(403);
+    expect((await get("open", "/_api/kv", { "x-formelab-mount": "/" })).status).toBe(403);
     // An app shared with them by name still works.
-    expect(await (await get("/mine/")).text()).toContain("shared by name");
-    expect((await get("/_api/kv", { "x-formelab-mount": "/mine/" })).status).toBe(200);
+    expect(await (await get("mine", "/")).text()).toContain("shared by name");
+    expect((await get("mine", "/_api/kv", { "x-formelab-mount": "/" })).status).toBe(200);
     // Listing the namespace doesn't show the members-only app either.
     const listed = await w(`${APP}/_api/admin/sites?namespace=${ns}`, { headers: { cookie: await hostCookie(cookie, APP) } });
     expect((await listed.json<{ mountPath: string }[]>()).map((s) => s.mountPath)).toEqual(["mine"]);
 
     // Once they're let in, the members-only app opens.
     expect((await call("/_api/admin/waitlist/approve", { as: OWNER, method: "POST", json: { email } })).status).toBe(200);
-    expect(await (await get("/open/")).text()).toContain("members only");
+    expect(await (await get("open", "/")).text()).toContain("members only");
   });
 
   it("only hands sessions to Formelab's own hosts", async () => {
     const { cookie } = await signIn(`evil-${uniq()}@example.com`);
-    for (const target of ["https://evil.test/", "https://example.com/app", "http://x.example.app/", "https://x.example.com/", "not a url"]) {
+    for (const target of ["https://evil.test/", "https://example.com/app", "http://x-a2b3.example.app/", "https://x.example.com/", "https://admin.example.com/", "not a url"]) {
       expect((await w(`/auth/app?return=${encodeURIComponent(target)}`, { headers: { cookie } })).status, target).toBe(400);
     }
   });

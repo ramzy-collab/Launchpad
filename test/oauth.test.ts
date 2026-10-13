@@ -4,7 +4,7 @@ import worker from "../src/index";
 import type { Env } from "../src/env";
 import { describe, expect, it } from "vitest";
 import { afterEach } from "vitest";
-import { accessJwt, call, ICON, onOutbound, OWNER, uniq } from "./helpers";
+import { accessJwt, appAt, call, ICON, onOutbound, OWNER, PAGE, publishHtml, uniq } from "./helpers";
 
 const ORIGIN = "https://example.com";
 const RESOURCE = `${ORIGIN}/mcp`;
@@ -138,8 +138,10 @@ describe("OAuth for MCP (Claude chat connector)", () => {
     expect(as.code_challenge_methods_supported).toEqual(["S256"]);
   });
 
-  it("does not expose OAuth endpoints on namespace hosts", async () => {
-    const res = await call(`https://${uniq()}.example.app/.well-known/oauth-authorization-server`, { as: OWNER });
+  it("does not expose OAuth endpoints on app hosts", async () => {
+    const ns = uniq();
+    await publishHtml(OWNER, ns, "o", PAGE("o"));
+    const res = await call(`${await appAt(ns, "o")}/.well-known/oauth-authorization-server`, { as: OWNER });
     expect(res.status).toBe(404);
   });
 
@@ -286,7 +288,7 @@ describe("OAuth for MCP (Claude chat connector)", () => {
     // The web app host isn't wrapped by the OAuth provider, so it must not depend on the helpers
     // the provider puts on env for DOMAIN requests (in production env starts without them).
     const bare = { ...(env as unknown as Env), OAUTH_PROVIDER: undefined } as Env;
-    const req = new Request("https://example.app/connect", { headers: { "cf-access-jwt-assertion": await accessJwt(email) } });
+    const req = new Request("https://app.example.com/connect", { headers: { "cf-access-jwt-assertion": await accessJwt(email) } });
     const fresh = await (await worker.fetch(req, bare, createExecutionContext())).text();
     const freshTile = fresh.slice(fresh.indexOf('data-dialog="dlg-claude"'), fresh.indexOf("</button>", fresh.indexOf('data-dialog="dlg-claude"')));
     expect(freshTile).toContain("Connected</span>");

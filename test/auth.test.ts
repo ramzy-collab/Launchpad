@@ -3,7 +3,7 @@ import { generateKeyPair } from "jose";
 import { describe, expect, it } from "vitest";
 import { identifyHuman, mintToken, upsertUser } from "../src/auth";
 import type { Env } from "../src/env";
-import { accessJwt, call, OWNER, publishHtml, PAGE, uniq } from "./helpers";
+import { accessJwt, call, OWNER, publishHtml, PAGE, uniq, appAt } from "./helpers";
 
 const NOW = () => Date.now();
 
@@ -11,15 +11,16 @@ describe("security 1: Access JWT required", () => {
   it("rejects requests with no JWT on every protected surface", async () => {
     const ns = uniq();
     expect((await publishHtml(OWNER, ns, "", PAGE("hi"))).status).toBe(201);
+    const app = await appAt(ns, "");
     const urls = [
-      "https://example.app/_api/admin/whoami",
+      "https://app.example.com/_api/admin/whoami",
       "https://example.com/_platform/guide.md",
       "https://admin.example.com/_api/admin/sites",
-      `https://${ns}.example.app/`,
-      `https://${ns}.example.app/index.html`,
-      `https://${ns}.example.app/_api/me`,
-      `https://${ns}.example.app/_api/kv`,
-      `https://${ns}.example.app/_platform/sdk.js`,
+      `${app}/`,
+      `${app}/index.html`,
+      `${app}/_api/me`,
+      `${app}/_api/kv`,
+      `${app}/_platform/sdk.js`,
     ];
     for (const u of urls) {
       const res = await call(u, { mount: "/" });
@@ -27,11 +28,11 @@ describe("security 1: Access JWT required", () => {
       expect(await res.text(), u).not.toContain("hi</body>");
     }
     // The web app sends visitors without a sign-in to DOMAIN to sign in, then back.
-    const dash = await call("https://example.app/");
+    const dash = await call("https://app.example.com/");
     expect(dash.status).toBe(302);
-    expect(dash.headers.get("location")).toBe("https://example.com/auth/app?return=https%3A%2F%2Fexample.app%2F");
-    const handoff = await call("/auth/app?return=https%3A%2F%2Fexample.app%2F");
-    expect(handoff.headers.get("location")).toBe("/login?return=%2Fauth%2Fapp%3Freturn%3Dhttps%253A%252F%252Fexample.app%252F");
+    expect(dash.headers.get("location")).toBe("https://example.com/auth/app?return=https%3A%2F%2Fapp.example.com%2F");
+    const handoff = await call("/auth/app?return=https%3A%2F%2Fapp.example.com%2F");
+    expect(handoff.headers.get("location")).toBe("/login?return=%2Fauth%2Fapp%3Freturn%3Dhttps%253A%252F%252Fapp.example.com%252F");
   });
 
   it("never trusts Cf-Access-Authenticated-User-Email on its own", async () => {
@@ -159,13 +160,13 @@ describe("security 9: deploy tokens", () => {
 describe("admin API CSRF", () => {
   it("rejects cross-origin and header-less writes", async () => {
     const jwt = await accessJwt(OWNER);
-    const res1 = await call("https://example.app/_api/admin/namespaces", {
+    const res1 = await call("https://app.example.com/_api/admin/namespaces", {
       method: "POST",
       headers: { "cf-access-jwt-assertion": jwt, origin: "https://evil.test", "x-formelab-request": "1", "content-type": "application/json" },
       body: JSON.stringify({ label: uniq() }),
     });
     expect(res1.status).toBe(403);
-    const res2 = await call("https://example.app/_api/admin/namespaces", {
+    const res2 = await call("https://app.example.com/_api/admin/namespaces", {
       method: "POST",
       headers: { "cf-access-jwt-assertion": jwt, "content-type": "application/json" },
       body: JSON.stringify({ label: uniq() }),

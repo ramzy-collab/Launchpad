@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { pngSize } from "../src/icons";
-import { APP, APP_DOMAIN, call, OWNER, publishHtml, publishZip, uniq } from "./helpers";
+import { APP, appAt, call, OWNER, publishHtml, publishZip, uniq } from "./helpers";
 
 const SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><circle cx="5" cy="5" r="5"/></svg>`;
 
@@ -54,7 +54,7 @@ describe("installing Formelab", () => {
     expect(body).toContain("Get the app");
     expect(body).toContain('data-install hidden');
     for (const p of ["ios", "android", "desktop", "mac"]) expect(body).toContain(`data-steps="${p}"`);
-    expect(body).toContain(`https://${ns}.${APP_DOMAIN}/notes/`);
+    expect(body).toContain(`${await appAt(ns, "notes")}/`);
     expect(body).not.toMatch(/\son[a-z]+=/i); // strict CSP: no inline handlers
   });
 });
@@ -63,57 +63,60 @@ describe("installing a published app", () => {
   it("adds a manifest link to the app's pages, unless it has its own", async () => {
     const ns = uniq();
     await publishHtml(OWNER, ns, "tools/budget", `<!doctype html><html><head><title>b</title></head><body>hi</body></html>`, { title: "Budget" });
-    const html = await (await call(`https://${ns}.${APP_DOMAIN}/tools/budget/`, { as: OWNER })).text();
-    expect(html).toContain('<base href="/tools/budget/"><link rel="manifest" href="/_platform/manifest.webmanifest?mount=tools%2Fbudget" crossorigin="use-credentials">');
+    const html = await (await call(`${await appAt(ns, "tools/budget")}/`, { as: OWNER })).text();
+    expect(html).toContain('<base href="/"><link rel="manifest" href="/_platform/manifest.webmanifest" crossorigin="use-credentials">');
     expect(html).toContain('<meta name="apple-mobile-web-app-title" content="Budget">');
 
     await publishHtml(OWNER, ns, "own", `<!doctype html><html><head><link rel="manifest" href="app.webmanifest"></head><body>hi</body></html>`);
-    const own = await (await call(`https://${ns}.${APP_DOMAIN}/own/`, { as: OWNER })).text();
+    const own = await (await call(`${await appAt(ns, "own")}/`, { as: OWNER })).text();
     expect(own.match(/rel="manifest"/g)).toHaveLength(1);
   });
 
   it("writes a manifest scoped to the app, for people who can open it", async () => {
     const ns = uniq();
     await publishZip(OWNER, ns, "kit", { "index.html": `<!doctype html><head><link rel="icon" href="icon.svg"></head><p>hi`, "icon.svg": SVG }, { title: "Kit" });
-    const url = `https://${ns}.${APP_DOMAIN}/_platform/manifest.webmanifest?mount=kit`;
+    const app = await appAt(ns, "kit");
+    const url = `${app}/_platform/manifest.webmanifest`;
     expect((await call(url)).status).toBe(401); // needs a sign-in, like the app
-    expect((await call(url, { as: `stranger-${uniq()}@example.com` })).status).toBe(404);
-    expect((await call(`https://${ns}.${APP_DOMAIN}/_platform/manifest.webmanifest?mount=nope`, { as: OWNER })).status).toBe(404);
+    expect((await call(url, { as: `stranger-${uniq()}@example.com` })).status).toBe(403);
 
     const res = await call(url, { as: OWNER });
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toBe("application/manifest+json");
     const m = await res.json<{ id: string; name: string; start_url: string; scope: string; display: string; icons: { src: string; type: string; sizes: string }[] }>();
-    expect(m).toMatchObject({ id: "/kit/", name: "Kit", start_url: "/kit/", scope: "/kit/", display: "standalone" });
+    expect(m).toMatchObject({ id: "/", name: "Kit", start_url: "/", scope: "/", display: "standalone" });
     expect(m.icons).toHaveLength(1);
     expect(m.icons[0]).toMatchObject({ type: "image/svg+xml", sizes: "any" });
 
     // The icon's address is signed, so it loads without cookies; a changed signature doesn't.
-    const icon = await call(`https://${ns}.${APP_DOMAIN}${m.icons[0]!.src}`);
+    const icon = await call(`${app}${m.icons[0]!.src}`);
     expect(icon.status).toBe(200);
     expect(icon.headers.get("content-type")).toBe("image/svg+xml");
     expect(icon.headers.get("content-security-policy")).toContain("sandbox");
     expect(await icon.text()).toBe(SVG);
     const forged = m.icons[0]!.src.replace(/[0-9a-f]$/, (d) => (d === "0" ? "1" : "0"));
-    expect((await call(`https://${ns}.${APP_DOMAIN}${forged}`)).status).toBe(404);
-    // ...and only on the app's own host.
-    expect((await call(`https://other${ns}.${APP_DOMAIN}${m.icons[0]!.src}`)).status).toBe(404);
+    expect((await call(`${app}${forged}`)).status).toBe(404);
+    // ...and only on the app's own host, not another app's.
+    await publishHtml(OWNER, ns, "other", `<!doctype html><html><head></head><body>o</body></html>`);
+    expect((await call(`${await appAt(ns, "other")}${m.icons[0]!.src}`)).status).toBe(404);
   });
 
   it("uses a big PNG icon as is, and adds it as the iPhone home screen icon; small ones get the letter tile", async () => {
     const ns = uniq();
     await publishZip(OWNER, ns, "big", { "index.html": `<!doctype html><head><link rel="icon" href="logo.png"></head><p>hi`, "logo.png": pngHeader(512, 512) }, { title: "Big" });
-    const html = await (await call(`https://${ns}.${APP_DOMAIN}/big/`, { as: OWNER })).text();
+    const bigApp = await appAt(ns, "big");
+    const html = await (await call(`${bigApp}/`, { as: OWNER })).text();
     expect(html).toMatch(/<link rel="apple-touch-icon" href="\/_platform\/app-icon\/[^/]+\/[^/]+\/icon\/[0-9a-f]{32}">/);
-    const big = await (await call(`https://${ns}.${APP_DOMAIN}/_platform/manifest.webmanifest?mount=big`, { as: OWNER })).json<{ icons: { src: string; type: string; sizes: string }[] }>();
+    const big = await (await call(`${bigApp}/_platform/manifest.webmanifest`, { as: OWNER })).json<{ icons: { src: string; type: string; sizes: string }[] }>();
     expect(big.icons[0]).toMatchObject({ type: "image/png", sizes: "512x512" });
     expect(big.icons[0]!.src).toContain("/icon/");
 
     await publishZip(OWNER, ns, "small", { "index.html": `<!doctype html><head><link rel="icon" href="fav.png"></head><p>hi`, "fav.png": pngHeader(32, 32) }, { title: "Small" });
-    const small = await (await call(`https://${ns}.${APP_DOMAIN}/_platform/manifest.webmanifest?mount=small`, { as: OWNER })).json<{ icons: { src: string; type: string }[] }>();
+    const smallApp = await appAt(ns, "small");
+    const small = await (await call(`${smallApp}/_platform/manifest.webmanifest`, { as: OWNER })).json<{ icons: { src: string; type: string }[] }>();
     expect(small.icons[0]).toMatchObject({ type: "image/svg+xml" });
     expect(small.icons[0]!.src).toContain("/letter/");
-    const letter = await call(`https://${ns}.${APP_DOMAIN}${small.icons[0]!.src}`);
+    const letter = await call(`${smallApp}${small.icons[0]!.src}`);
     expect(await letter.text()).toContain(">S</text>");
   });
 

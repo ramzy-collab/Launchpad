@@ -161,8 +161,10 @@ How accounts work:
 - Apps are **private by default**: only the owner, the app's editors, and namespace editors can
   open them. Add emails under **Share with** to let others open an app; it then appears on their
   **Shared with me** page.
-- Each namespace host (`<ns>.example.com`) gets its own session cookie, handed over from the
-  dashboard's through a single-use code, so an app's JavaScript can't touch the dashboard login.
+- Each app has its own host (`<name>-<code>.<APP_DOMAIN>`, e.g. `budget-7kq2.example.app`) and its
+  own session cookie, handed over from the sign-in on DOMAIN through a single-use code. Apps can't
+  touch each other's data or the web app's login: each is a separate origin, and APP_DOMAIN holds
+  nothing but published apps. The web app is at `app.<DOMAIN>`.
 
 ### 1.8 Notification emails (Cloudflare Email Service)
 
@@ -201,7 +203,7 @@ flag). Formelab needs its own Google sign-in client:
    should be able to connect (up to 100) under **Test users**. **Data access**: add the scope
    `.../auth/spreadsheets`.
 4. **Clients → Create client → Web application**. Authorized redirect URI:
-   `https://formelab.app/services/google-sheets/callback`.
+   `https://app.formelab.ai/services/google-sheets/callback` (the web app, `app.<DOMAIN>`).
 5. Copy the client ID and secret, then:
    ```bash
    npx wrangler secret put GOOGLE_CLIENT_ID
@@ -242,6 +244,17 @@ Then smoke-test the live domain (section 2.2).
   as owner-and-editors only. Nothing to do for existing apps.
 - **`0013_feature_flag_users`** lets admins turn a feature on for specific people (admin panel →
   Features). Nothing to do: no one has a feature by name until an admin adds them.
+- **`0016_site_hosts`** gives every app its own address (`<name>-<code>.<APP_DOMAIN>`) and moves
+  the web app to `app.<DOMAIN>`. Before deploying the code that needs it:
+  1. Apply the migration (it assigns addresses to existing apps).
+  2. In Google Cloud (1.9), add the redirect URI `https://app.formelab.ai/services/google-sheets/callback`
+     next to the old one (remove the old one later).
+  3. Make sure `app.<DOMAIN>` resolves: the proxied `*` record on DOMAIN (1.3) covers it.
+
+  Old addresses keep working as permanent redirects: `<ns>.<APP_DOMAIN>/<path>/...` and
+  `<ns>.<DOMAIN>/<path>/...` go to the app's own address, and `<APP_DOMAIN>/...` goes to the web
+  app. Data an app kept in the browser (`localStorage`) stays at the old address, and people who
+  installed an app or the web app on a device should install it again from the new address.
 
 ### 2.2 Smoke test
 
@@ -290,12 +303,12 @@ npm run dev                             # wrangler dev --env dev on http://local
 ```
 
 - `[env.dev]` in `wrangler.toml` sets `ENVIRONMENT=dev`, `DOMAIN=localhost` and
-  `APP_DOMAIN=app.localhost`, and has no routes, so wrangler keeps the real Host header.
+  `APP_DOMAIN=apps.localhost`, and has no routes, so wrangler keeps the real Host header.
 - In dev, `DEV_USER` from `.dev.vars` is the signed-in user (no Access). This bypass only works when
   `ENVIRONMENT` is exactly `dev`; production uses `ENVIRONMENT=production`.
 - Home page: <http://localhost:8787/>. Login: <http://localhost:8787/login>. Web app:
   <http://app.localhost:8787/>. Admin: <http://admin.localhost:8787/>. Apps:
-  `http://<ns>.app.localhost:8787/<path>/` (browsers resolve
+  `http://<name>-<code>.apps.localhost:8787/`, the address the web app shows (browsers resolve
   `*.localhost` to your machine; for curl use `--resolve` or rely on curl's own `*.localhost` handling).
 - In dev the secret proxy also allows `http://` URLs (still never private addresses).
 
@@ -413,7 +426,7 @@ All errors are JSON: `{ "error": { "code", "message", "hint" } }`.
 | `POST /tokens` `{ name, ttlHours }` | `/_api/admin` only: returns the token once (1–720 hours, default 24) |
 | `GET /tokens`, `DELETE /tokens/:id` | `/_api/admin` only: list / revoke your tokens |
 
-**Runtime API**: `https://<ns>.APP_DOMAIN/_api/*`, used by the SDK (see the guide):
+**Runtime API**: `https://<name>-<code>.APP_DOMAIN/_api/*` (each app's own host), used by the SDK (see the guide):
 `GET /me`, `GET /kv?prefix=`, `GET|PUT|DELETE /kv/:key`, `GET /secrets`,
 `PUT|DELETE /secrets/:name`, `POST /secrets/:name/proxy`. `PUT /secrets/:name` takes
 `{ value, hosts }`: the proxy only sends a secret to the hosts listed with it.

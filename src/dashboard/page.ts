@@ -126,7 +126,7 @@ export async function sharedPage(c: Context<AppEnv>): Promise<Response> {
 <section>
   ${
     sites.length
-      ? appBrowser(sites, { shared: true, appDomain: c.env.APP_DOMAIN })
+      ? appBrowser(sites, { shared: true })
       : `<p class="muted">Nothing yet. When someone adds your email to one of their apps, it shows up here.</p>`
   }
 </section>`;
@@ -257,7 +257,7 @@ export async function dashboardPage(c: Context<AppEnv>): Promise<Response> {
   if (!ctx.user.active) return sharedPage(c);
   const sites = await listOwnSites(ctx);
   const body = sites.length
-    ? `<section>${appBrowser(sites.map((s) => ({ ...s, canManage: true })), { shared: false, appDomain: c.env.APP_DOMAIN })}</section>`
+    ? `<section>${appBrowser(sites.map((s) => ({ ...s, canManage: true })), { shared: false })}</section>`
     : `<section class="empty">
   <h2>What do you want to make?</h2>
   <p>A budget tracker, a sign-up sheet for your team, a tiny game. Describe it to your AI and it lands here, live.</p>
@@ -384,7 +384,7 @@ export async function newAppPage(c: Context<AppEnv>): Promise<Response> {
     <label class="check"><input type="checkbox" name="spa"> SPA fallback</label>
     <div><button>Publish</button></div>
   </form>
-  <p class="muted">Your app will live at <code>https://&lt;space&gt;.${e(domain)}/&lt;path&gt;/</code>.${own.length ? "" : " New here? Type a name for your space and we'll create it."}</p>
+  <p class="muted">Your app gets its own address, like <code>https://&lt;name&gt;-7kq2.${e(domain)}/</code>.${own.length ? "" : " New here? Type a name for your space (it groups your apps) and we'll create it."}</p>
 </section>`;
   return shell(c, ctx.user, "new", body);
 }

@@ -1,6 +1,6 @@
 import { env } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
-import { call, OWNER, PAGE, publishHtml, r2Keys, uniq } from "./helpers";
+import { call, OWNER, PAGE, publishHtml, r2Keys, uniq, appAt } from "./helpers";
 
 const del = (email: string, as = OWNER) => call(`/_api/admin/users/${encodeURIComponent(email)}`, { as, method: "DELETE" });
 const count = async (sql: string, ...binds: unknown[]) =>
@@ -24,8 +24,8 @@ describe("admin: users", () => {
     // Their own namespace with an app, data and a secret.
     const pub = await publishHtml(gone, ns, "mine", PAGE("theirs"));
     const { site } = await pub.json<{ site: { id: string } }>();
-    await call(`https://${ns}.example.app/_api/kv/k`, { as: gone, mount: "/mine/", method: "PUT", body: '"v"' });
-    await call(`https://${ns}.example.app/_api/secrets/s`, { as: gone, mount: "/mine/", method: "PUT", json: { hosts: ["api.test"], value: "shh" } });
+    await call(`${await appAt(ns, "mine")}/_api/kv/k`, { as: gone, mount: "/", method: "PUT", body: '"v"' });
+    await call(`${await appAt(ns, "mine")}/_api/secrets/s`, { as: gone, mount: "/", method: "PUT", json: { hosts: ["api.test"], value: "shh" } });
     await call("/_api/admin/tokens", { as: gone, method: "POST", json: { name: "t" } });
     // An app of the owner's shared with them, and a namespace they edit.
     const ownerNs = uniq();
