@@ -275,5 +275,6 @@ The script calls `POST https://<DOMAIN>/_api/deploy/sites` (multipart: `file`, `
 - [ ] Every SDK call is wrapped in `try/catch`, and errors show `e.message` and `e.hint` to the user.
 - [ ] KV keys are namespaced (`"vote:" + email`), values stay well under 64 KB.
 - [ ] Works on a phone (responsive layout, `<meta name="viewport">`).
+- [ ] Has an icon: a small SVG that fits the app, linked as `<link rel="icon" href="icon.svg">` (or inlined as a `data:image/svg+xml,...` URL). Formelab shows it on the app's tile.
 - [ ] Apps are private by default (only the owner and editors). Add `allowed_emails` for the people who should open it; they see it under "Shared with me".
 - [ ] Published with the right `namespace` and `mount_path`; the URL was shared with the user.

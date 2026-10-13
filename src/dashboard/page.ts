@@ -10,7 +10,7 @@ import { adminOrigin } from "../hosts";
 import { ctxOf } from "../api";
 import { head, htmlResponse } from "./layout";
 import { SERVICE_ICONS, SPRITE_URL } from "./services";
-import { ago, appBrowser, appName, fmtBytes, hueClass, initial } from "./apps";
+import { ago, appBrowser, appName, fmtBytes, thumb } from "./apps";
 import { connectedAiApps, type AiApp } from "./aiapps";
 import { AI_LOGOS } from "./logos";
 
@@ -164,7 +164,7 @@ export async function appSettingsPage(c: Context<AppEnv>, id: string): Promise<R
   const body = `<section class="app-head">
   <p><a href="${mine ? "/" : "/shared"}">← ${mine ? "My apps" : "Shared with me"}</a></p>
   <div class="app-title">
-    <span class="thumb lg ${hueClass(site.id)}" aria-hidden="true">${e(initial(site))}</span>
+    ${thumb(site, "lg")}
     <div><p class="app-url"><a href="${e(site.url)}" target="_blank" rel="noopener">${e(site.url)}</a></p></div>
     <a class="cta open-app" href="${e(site.url)}" target="_blank" rel="noopener">Open app ↗</a>
   </div>

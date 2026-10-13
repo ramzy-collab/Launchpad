@@ -1,4 +1,5 @@
 import { audit } from "./audit";
+import { findIcon, iconPathFor } from "./icons";
 import { canManageSite, canPublishTo, canViewSite, isNamespaceEditor, isNamespaceOwner, ownerOnly } from "./auth";
 import type { Env, User } from "./env";
 import { now } from "./env";
@@ -50,6 +51,8 @@ export interface SiteRow {
   total_bytes: number;
   created_at: number;
   updated_at: number;
+  /** See src/icons.ts: NULL = not looked for yet, "" = none. */
+  icon_path?: string | null;
 }
 
 /** Everything a service call needs: bindings, the acting user, and a way to defer work. */
@@ -168,6 +171,8 @@ export interface SiteView {
   totalBytes: number;
   createdAt: number;
   updatedAt: number;
+  /** Where the web app shows the app's icon; null when the app has none (show its letter). */
+  iconUrl: string | null;
 }
 
 export const siteView = (env: Env, s: SiteRow, requestUrl?: string): SiteView => ({
@@ -186,6 +191,7 @@ export const siteView = (env: Env, s: SiteRow, requestUrl?: string): SiteView =>
   totalBytes: s.total_bytes,
   createdAt: s.created_at,
   updatedAt: s.updated_at,
+  iconUrl: s.icon_path ? `/apps/${encodeURIComponent(s.id)}/icon?v=${s.current_version}` : null,
 });
 
 export const namespaceView = (n: NamespaceRow, user: User, env: Env, requestUrl?: string) => ({
@@ -316,13 +322,23 @@ export async function listSharedSites(ctx: Ctx) {
     env.DB.prepare("SELECT * FROM sites ORDER BY updated_at DESC").all<SiteRow>(),
   ]);
   const nsByLabel = new Map(namespaces.results.map((n) => [n.label, n]));
-  return sites.results
+  const out = sites.results
     .filter((s) => {
       const ns = nsByLabel.get(s.namespace);
       if (!ns || ownsSite(user, s, ns)) return false;
       return listed(s.allowed_emails, user.email) || listed(s.editors, user.email) || listed(ns.editors, user.email);
     })
     .map((s) => ({ ...siteView(env, s, ctx.requestUrl), canManage: canManageSite(user, s, nsByLabel.get(s.namespace)!) }));
+  const shown = new Set(out.map((v) => v.id));
+  findMissingIcons(ctx, sites.results.filter((r) => shown.has(r.id)));
+  return out;
+}
+
+/** Apps published before icons existed haven't been looked at yet: do a few in the background,
+ * so their icons show from the next visit on. */
+function findMissingIcons(ctx: Ctx, sites: SiteRow[]) {
+  const todo = sites.filter((s) => s.icon_path === null || s.icon_path === undefined).slice(0, 20);
+  if (todo.length) ctx.waitUntil(Promise.all(todo.map((s) => iconPathFor(ctx.env, s).catch(() => ""))));
 }
 
 /** The person's own apps (see ownsSite), for the dashboard's "My apps". */
@@ -333,12 +349,15 @@ export async function listOwnSites(ctx: Ctx) {
     env.DB.prepare("SELECT * FROM sites ORDER BY namespace, mount_path").all<SiteRow>(),
   ]);
   const nsByLabel = new Map(namespaces.results.map((n) => [n.label, n]));
-  return sites.results
+  const out = sites.results
     .filter((s) => {
       const ns = nsByLabel.get(s.namespace);
       return !!ns && ownsSite(user, s, ns);
     })
     .map((s) => ({ ...siteView(env, s, ctx.requestUrl), canManage: true }));
+  const shown = new Set(out.map((v) => v.id));
+  findMissingIcons(ctx, sites.results.filter((r) => shown.has(r.id)));
+  return out;
 }
 
 export async function listSites(ctx: Ctx, rawNamespace?: string | null) {
@@ -501,6 +520,11 @@ export async function publishSite(ctx: Ctx, input: PublishInput) {
     throw e;
   }
   if (existing) ctx.waitUntil(deletePrefix(env.BUCKET, `sites/${id}/${existing.current_version}/`).catch(() => {}));
+  // Remember the app's icon for the web app's tiles (see icons.ts).
+  const indexHtml = new TextDecoder().decode(input.files.get("index.html")!.subarray(0, 64 * 1024));
+  const icon = findIcon(input.files.keys(), indexHtml, mount);
+  await env.DB.prepare("UPDATE sites SET icon_path = ? WHERE id = ? AND current_version = ?").bind(icon, id, version).run();
+  row.icon_path = icon;
   await audit(env, user.email, existing ? "replace" : "publish", `${label}/${mount}`, {
     siteId: id,
     version,

@@ -1,9 +1,10 @@
 import { Hono, type Context, type MiddlewareHandler } from "hono";
-import { managementApi } from "./api";
+import { ctxOf, managementApi } from "./api";
 import { identifyBearer, identifyBrowser } from "./auth";
 import { adminPage } from "./dashboard/admin";
 import { connectPage } from "./dashboard/connect";
 import { SERVICES_SPRITE } from "./dashboard/services";
+import { appIcon } from "./icons";
 import { appActivityPage, appSettingsPage, connectedPage, dashboardPage, keysPage, newAppPage, sharedPage, spacesPage } from "./dashboard/page";
 import { homePage, loginPage } from "./dashboard/home";
 import type { AppEnv, Env } from "./env";
@@ -180,6 +181,7 @@ webApp.get("/connect", (c) => connectPage(c));
 webApp.get("/connected", (c) => connectedPage(c));
 webApp.get("/keys", (c) => keysPage(c));
 webApp.get("/apps/:id", (c) => appSettingsPage(c, c.req.param("id")));
+webApp.get("/apps/:id/icon", (c) => appIcon(ctxOf(c), c.req.param("id")));
 webApp.get("/apps/:id/activity", (c) => appActivityPage(c, c.req.param("id")));
 webApp.notFound(() => plainPage(404, "Not found", "There is nothing here."));
 

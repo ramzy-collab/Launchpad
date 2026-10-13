@@ -374,3 +374,12 @@ Choices made while building v1, including where the build differs from the spec 
   or the space's owner can change it) or Delete.
 - Thumbnails are a colored square with the app's first letter; the color comes from the app id
   through one of eight classes, since the CSP allows no inline styles.
+- **App icons on tiles:** at publish, Formelab looks for the app's icon: what `index.html` links
+  as its icon (apple-touch-icon, then SVG, then any; a small `data:` URI counts), else a
+  well-known file at the app's root (`favicon.svg`, `favicon.ico`, `logo.png`, ...). External
+  URLs and paths outside the app are ignored. The answer is stored in `sites.icon_path`
+  (migration 0007; NULL for older apps, which listing them looks into in the background, up to
+  20 at a time, so their icons appear on the next visit). The web app serves
+  it at `/apps/<id>/icon` to people who can open the app, with a sandboxing CSP so an SVG opened
+  directly can't run script on the web app's host; apps without an icon keep their letter tile.
+  The build guide's checklist asks agents to include an icon.

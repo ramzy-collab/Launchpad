@@ -29,6 +29,14 @@ export function hueClass(key: string): string {
   return `hue-${h % 8}`;
 }
 
+/** The app's icon (its favicon or logo), or its first letter on a colored square. */
+export function thumb(s: SiteView, size: "" | "sm" | "lg" = ""): string {
+  const cls = `thumb${size ? " " + size : ""}`;
+  return s.iconUrl
+    ? `<span class="${cls} has-icon" aria-hidden="true"><img src="${e(s.iconUrl)}" alt="" loading="lazy" decoding="async"></span>`
+    : `<span class="${cls} ${hueClass(s.id)}" aria-hidden="true">${e(initial(s))}</span>`;
+}
+
 export const appName = (s: SiteView) => s.title || (s.mountPath ? s.mountPath : s.namespace);
 export const initial = (s: SiteView) => (appName(s).match(/[\p{L}\p{N}]/u)?.[0] ?? "•").toUpperCase();
 
@@ -51,7 +59,7 @@ function tile(s: BrowserApp, shared: boolean, now: number): string {
   const path = s.mountPath ? `/${s.mountPath}/` : "/";
   return `<div class="tile" ${dataAttrs(s, shared)}>
   <a class="tile-link" href="${e(s.url)}" target="_blank" rel="noopener">
-    <span class="thumb ${hueClass(s.id)}" aria-hidden="true">${e(initial(s))}</span>
+    ${thumb(s)}
     <span class="tile-title">${e(appName(s))}</span>
     <span class="tile-path">${e(path)}</span>
     <span class="tile-meta">${shared ? `${e(s.ownerEmail)} · ` : ""}${e(VIS_SHORT[s.visibility])} · ${e(ago(s.updatedAt, now))}</span>
@@ -62,7 +70,7 @@ function tile(s: BrowserApp, shared: boolean, now: number): string {
 
 function row(s: BrowserApp, shared: boolean, now: number): string {
   return `<tr ${dataAttrs(s, shared)}>
-  <td><a class="row-app" href="${e(s.url)}" target="_blank" rel="noopener"><span class="thumb sm ${hueClass(s.id)}" aria-hidden="true">${e(initial(s))}</span><span>${e(appName(s))}<span class="muted row-url">${e(s.url)}</span></span></a></td>
+  <td><a class="row-app" href="${e(s.url)}" target="_blank" rel="noopener">${thumb(s, "sm")}<span>${e(appName(s))}<span class="muted row-url">${e(s.url)}</span></span></a></td>
   <td>${e(s.namespace)}</td>
   ${shared ? `<td>${e(s.ownerEmail)}</td><td>${s.canManage ? "Can edit" : "Can open"}</td>` : `<td>${e(VIS[s.visibility])}${s.allowedEmails.length ? `<div class="muted">${e(s.allowedEmails.join(", "))}</div>` : ""}</td>`}
   <td class="nowrap">${e(ago(s.updatedAt, now))}</td>

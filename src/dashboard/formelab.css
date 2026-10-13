@@ -260,6 +260,9 @@ summary { cursor: pointer; color: var(--fl-accent); font-weight: 500; font-size:
 .gear:hover { color: var(--fl-accent); border-color: var(--fl-accent); }
 td .gear { position: static; }
 .thumb { width: 52px; height: 52px; border-radius: 14px; display: inline-flex; align-items: center; justify-content: center; font: 800 1.5rem var(--fl-display); color: #fff; flex: none; }
+.thumb.has-icon { background: #fff; border: 1px solid var(--fl-line); padding: 8px; overflow: hidden; }
+.thumb.has-icon img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.thumb.sm.has-icon { padding: 4px; }
 .thumb.sm { width: 32px; height: 32px; border-radius: 9px; font-size: 1rem; }
 .thumb.lg { width: 64px; height: 64px; border-radius: 18px; font-size: 1.875rem; }
 .hue-0 { background: #5B4CF5; } .hue-1 { background: #FF6B4A; } .hue-2 { background: #2BC48A; } .hue-3 { background: #F5A623; }
