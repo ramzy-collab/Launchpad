@@ -43,6 +43,11 @@ describe("Google Gemini as a connected app", () => {
     expect(bad.status).toBe(400);
     expect((await bad.json<{ error: { message: string } }>()).error.message).toContain("Google didn't accept this key");
     expect((await connect(me, "nope")).status).toBe(400);
+    // Newer keys look like "AQ.<...>": they pass the format check and go to Google.
+    const before = seen.length;
+    expect((await connect(me, "AQ.Ab8RFAKEFAKEFAKEFAKEFAKEFAKE_fake-key0123")).status).toBe(400);
+    expect(seen.length).toBe(before + 1);
+    expect((await (await connect(me, "AQ.Ab8RFAKEFAKEFAKEFAKEFAKEFAKE_fake-key0123")).json<{ error: { message: string } }>()).error.message).toContain("Google didn't accept");
 
     const ok = await connect(me, GOOD);
     expect(ok.status).toBe(200);

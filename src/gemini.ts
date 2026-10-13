@@ -52,8 +52,10 @@ const googleError = async (res: Response) => {
 /** Checks the key with Google (a free model lookup), then saves it encrypted. */
 export async function connectGemini(env: Env, user: User, rawKey: unknown): Promise<ServiceStatus> {
   const key = String(rawKey ?? "").trim();
-  if (!/^[A-Za-z0-9_-]{20,200}$/.test(key)) {
-    throw badRequest("That doesn't look like a Gemini API key.", "Copy the whole key from Google AI Studio (aistudio.google.com/apikey); it usually starts with \"AIza\".");
+  // A light check only: Google's key formats change (older keys start "AIza", newer ones "AQ."), and
+  // Google itself checks the key next.
+  if (!/^[A-Za-z0-9._~-]{20,400}$/.test(key)) {
+    throw badRequest("That doesn't look like a Gemini API key.", "Copy the whole key from Google AI Studio (aistudio.google.com/apikey), with no spaces.");
   }
   let res: Response;
   try {
