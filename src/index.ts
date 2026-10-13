@@ -5,6 +5,7 @@ import { adminPage } from "./dashboard/admin";
 import { connectPage } from "./dashboard/connect";
 import { SERVICES_SPRITE } from "./dashboard/services";
 import { appIcon } from "./icons";
+import { enabledFlags, withFlags } from "./flags";
 import { appActivityPage, appSettingsPage, connectedPage, dashboardPage, keysPage, newAppPage, sharedPage, spacesPage } from "./dashboard/page";
 import { homePage, loginPage } from "./dashboard/home";
 import type { AppEnv, Env } from "./env";
@@ -23,7 +24,8 @@ const text = (body: string, type: string, cache = "no-cache") =>
     headers: { "content-type": type, "cache-control": cache, "x-content-type-options": "nosniff" },
   });
 
-const guide = () => text(GUIDE_MD, "text/markdown; charset=utf-8");
+/** The build guide, without the sections on features this person doesn't have yet. */
+const guide = async (c: Context<AppEnv>) => text(withFlags(GUIDE_MD, await enabledFlags(c.env, c.get("user") ?? null)), "text/markdown; charset=utf-8");
 const unauthorizedPage = () => plainPage(401, "Sign-in required", "Log in to Formelab, then reload this page.");
 
 /** Whether the request carries any sign-in at all (a session cookie or an Access JWT). */
@@ -164,6 +166,10 @@ function signedInHost(requireSignIn: MiddlewareHandler<AppEnv>, routes: (app: Ho
   for (const [path, handler] of assetRoutes) app.get(path, handler);
   routes(app);
   app.use("*", requireSignIn);
+  app.use("*", async (c, next) => {
+    c.set("features", await enabledFlags(c.env, c.get("user")));
+    await next();
+  });
   app.post("/auth/logout", logout);
   app.use("/_api/admin/*", sameOriginWrites);
   app.route("/_api/admin", managementApi("admin"));
@@ -199,6 +205,7 @@ adminApp.get("/", (c) => adminPage(c, "overview"));
 adminApp.get("/users", (c) => adminPage(c, "users"));
 adminApp.get("/waitlist", (c) => adminPage(c, "waitlist"));
 adminApp.get("/activity", (c) => adminPage(c, "activity"));
+adminApp.get("/features", (c) => adminPage(c, "features"));
 adminApp.notFound(() => plainPage(404, "Not found", "There is nothing here."));
 // ---------------------------------------------------------------------------
 // Namespace hosts: <ns>.APP_DOMAIN

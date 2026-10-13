@@ -49,11 +49,13 @@ Apps get platform features through a small browser SDK, `window.formelab`:
    mount path. KV and secrets are always scoped to one app.
 8. KV is visible to **everyone who can view the app**. Don't store private data there unless the
    app is `restricted` to the right people.
+<!-- flag:connected_apps -->
 9. **For AI features, use `formelab.gemini`** (Google Gemini 3.5 Flash-Lite through the owner's
    connected key). Don't ask the user for an AI API key or put one in a secret: they connect
    Gemini once in Formelab (Connected apps → Google Gemini), and every app they own can use it.
    The `whoami` tool says whether it's connected (`connectedApps.gemini`); if it isn't, tell the
    user to connect it, and build the app to say so too (see `formelab.gemini.available()`).
+<!-- /flag:connected_apps -->
 
 ## 3. SDK reference
 
@@ -130,6 +132,7 @@ to 5 MB (`truncated: true` if cut); redirects are not followed (you get the 3xx 
 60 calls per minute per app; an unknown placeholder is an error. If the API echoes the secret back,
 the platform replaces it with `[redacted]`.
 
+<!-- flag:connected_apps -->
 ### `formelab.gemini`: AI in your app
 
 Calls Google **Gemini 3.5 Flash-Lite** (`gemini-3.5-flash-lite`) with the app owner's Gemini key,
@@ -159,6 +162,7 @@ Errors: `gemini_not_connected` (409: show "Connect Google Gemini in Formelab to 
 `gemini_key_rejected`, `gemini_quota` (429 from Google), `rate_limited`, `gemini_unreachable`.
 Show `e.message` and `e.hint`. Temperature and top-P/K aren't supported by this model.
 
+<!-- /flag:connected_apps -->
 ## 4. Patterns
 
 ### Dashboard over an external API

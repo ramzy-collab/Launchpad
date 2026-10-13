@@ -1,5 +1,5 @@
 import { env } from "cloudflare:workers";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { call, onOutbound, OWNER, PAGE, publishHtml, uniq } from "./helpers";
 
 const GOOD = "AIzaSyTESTKEY0123456789abcdefGHIJ";
@@ -25,11 +25,16 @@ function mockGoogle(answer = "Hello from Gemini") {
   });
 }
 afterEach(() => onOutbound(undefined));
+const setFlag = (state: string, as = OWNER) => call("/_api/admin/features/connected_apps", { as, method: "PUT", json: { state } });
 
 const connect = (as: string, apiKey: string) => call("/_api/admin/services/gemini", { as, method: "PUT", json: { apiKey } });
 const ask = (as: string, ns: string, mount: string, json: unknown) => call(`https://${ns}.example.app/_api/ai/gemini`, { as, mount: mount ? `/${mount}/` : "/", method: "POST", json });
 
 describe("Google Gemini as a connected app", () => {
+  beforeEach(async () => {
+    expect((await setFlag("on")).status).toBe(200);
+  });
+
   it("checks the key with Google, stores it encrypted, and shows only its last four characters", async () => {
     mockGoogle();
     const me = `g-${uniq()}@example.com`;
@@ -59,7 +64,7 @@ describe("Google Gemini as a connected app", () => {
     await publishHtml(OWNER, ns, "ai", PAGE("x"), { allowed_emails: friend });
     expect((await connect(OWNER, GOOD)).status).toBe(200);
 
-    expect(await (await call(`https://${ns}.example.app/_api/ai/gemini`, { as: OWNER, mount: "/ai/" })).json()).toEqual({ connected: true, model: "gemini-3.5-flash-lite" });
+    expect(await (await call(`https://${ns}.example.app/_api/ai/gemini`, { as: OWNER, mount: "/ai/" })).json()).toEqual({ connected: true, available: true, model: "gemini-3.5-flash-lite" });
     const res = await ask(OWNER, ns, "ai", { prompt: "Summarize: lots of text", system: "Be brief.", schema: { type: "string" }, maxOutputTokens: 50 });
     expect(res.status).toBe(200);
     const text = await res.text();
@@ -99,5 +104,52 @@ describe("Google Gemini as a connected app", () => {
     expect((await ask(owner, ns, "", {})).status).toBe(400); // no prompt
     expect((await call("/_api/admin/services/gemini", { as: owner, method: "DELETE" })).status).toBe(200);
     expect((await ask(owner, ns, "", { prompt: "hi" })).status).toBe(409);
+  });
+});
+
+describe("the connected_apps feature flag", () => {
+  it("is off by default: the page shows no apps, and nothing can use them", async () => {
+    mockGoogle();
+    expect((await setFlag("off")).status).toBe(200);
+    const page = await (await call("/app/connected", { as: OWNER })).text();
+    expect(page).toContain("Coming soon");
+    expect(page).not.toContain("dlg-gemini-service");
+    expect(page).toContain('Connected apps <span class="soon">Soon</span>');
+    expect((await connect(OWNER, GOOD)).status).toBe(404);
+    const ns = uniq();
+    await publishHtml(OWNER, ns, "ai", PAGE("x"));
+    expect(await (await call(`https://${ns}.example.app/_api/ai/gemini`, { as: OWNER, mount: "/ai/" })).json()).toEqual({ connected: false, available: false });
+    const r = await ask(OWNER, ns, "ai", { prompt: "hi" });
+    expect(r.status).toBe(403);
+    expect((await r.json<{ error: { code: string } }>()).error.code).toBe("not_available");
+    const guide = await (await call("/_platform/guide.md", { as: OWNER })).text();
+    expect(guide).not.toContain("formelab.gemini");
+    expect(guide).not.toContain("<!-- flag:");
+  });
+
+  it("can be on for admins only, then for everyone; only admins can change it", async () => {
+    mockGoogle();
+    const person = `ff-${uniq()}@example.com`;
+    expect((await setFlag("on", person)).status).toBe(403);
+    expect((await setFlag("sideways")).status).toBe(400);
+    expect((await call("/_api/admin/features/nope", { as: OWNER, method: "PUT", json: { state: "on" } })).status).toBe(404);
+
+    expect((await setFlag("admins")).status).toBe(200);
+    expect(await (await call("/app/connected", { as: OWNER })).text()).toContain("dlg-gemini-service");
+    expect(await (await call("/app/connected", { as: person })).text()).not.toContain("dlg-gemini-service");
+    expect(await (await call("/_platform/guide.md", { as: OWNER })).text()).toContain("formelab.gemini.generate");
+    expect(await (await call("/_platform/guide.md", { as: person })).text()).not.toContain("formelab.gemini");
+    // An admin's app works for the people it's shared with (it follows the app's owner).
+    expect((await connect(OWNER, GOOD)).status).toBe(200);
+    const ns = uniq();
+    await publishHtml(OWNER, ns, "ai", PAGE("x"), { allowed_emails: person });
+    expect((await ask(person, ns, "ai", { prompt: "hi" })).status).toBe(200);
+
+    expect((await setFlag("on")).status).toBe(200);
+    expect(await (await call("/app/connected", { as: person })).text()).toContain("dlg-gemini-service");
+    const admin = await (await call("https://admin.example.com/features", { as: OWNER })).text();
+    expect(admin).toContain('data-action="feature-set" data-name="connected_apps"');
+    expect(admin).toContain('<option value="on" selected>Everyone</option>');
+    expect(await (await call("https://admin.example.com/activity", { as: OWNER })).text()).toContain("Set Connected apps to on for everyone");
   });
 });

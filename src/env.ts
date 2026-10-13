@@ -44,6 +44,8 @@ export type AppEnv = {
     site: import("./sites").SiteRow;
     /** The browser session behind the request, when it came from Formelab's own login. */
     sessionId: string | undefined;
+    /** Feature flags this person has (web app and admin pages; see flags.ts). */
+    features: Set<string>;
   };
 };
 

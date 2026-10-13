@@ -1,5 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { geminiStatus } from "./gemini";
+import { enabledFlags, flagOn, withFlags } from "./flags";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { CfWorkerJsonSchemaValidator } from "@modelcontextprotocol/sdk/validation/cfworker";
 import { z } from "zod";
@@ -61,8 +62,8 @@ export function buildServer(ctx: Ctx): McpServer {
         email: ctx.user.email,
         name: ctx.user.name,
         isAdmin: ctx.user.isAdmin,
-        // Connected apps this person's apps can use through the SDK (see the guide).
-        connectedApps: { gemini: (await geminiStatus(ctx.env, ctx.user.email)).connected },
+        // Connected apps this person's apps can use through the SDK (see the guide), once the feature is on.
+        ...((await flagOn(ctx.env, "connected_apps", ctx.user)) ? { connectedApps: { gemini: (await geminiStatus(ctx.env, ctx.user.email)).connected } } : {}),
       })),
   );
 
@@ -153,7 +154,7 @@ export function buildServer(ctx: Ctx): McpServer {
   server.registerTool(
     "get_guide",
     { description: "Return the Formelab app-building guide (markdown): URL model, SDK reference, patterns, starter app, checklist.", annotations: { readOnlyHint: true } },
-    () => run(async () => GUIDE_MD),
+    () => run(async () => withFlags(GUIDE_MD, await enabledFlags(ctx.env, ctx.user))),
   );
 
   // `search` and `fetch` follow the shape ChatGPT expects from connectors (outside Developer Mode
@@ -207,7 +208,7 @@ async function fetchItem(ctx: Ctx, id: string) {
     return {
       id,
       title: GUIDE_TITLE,
-      text: GUIDE_MD,
+      text: withFlags(GUIDE_MD, await enabledFlags(ctx.env, ctx.user)),
       url: `${apexOrigin(ctx.env, ctx.requestUrl ?? "https://" + ctx.env.DOMAIN)}/_platform/guide.md`,
       metadata: { type: "guide" },
     };

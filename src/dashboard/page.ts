@@ -58,7 +58,7 @@ export function shell(c: Context<AppEnv>, user: User, page: Page, body: string, 
       ${link("spaces", "/spaces")}
       <p class="side-label">Connect</p>
       ${link("connect", "/connect")}
-      <a href="/connected"${current("connected")}>Connected apps</a>
+      <a href="/connected"${current("connected")}>Connected apps${c.get("features")?.has("connected_apps") ? "" : ` <span class="soon">Soon</span>`}</a>
     </nav>`
     : `<nav class="side-nav" aria-label="Main">
       ${link("shared", "/shared")}
@@ -340,13 +340,16 @@ export async function spacesPage(c: Context<AppEnv>): Promise<Response> {
 /** Connected apps: services a person's apps can use through Formelab (Google Gemini so far). */
 export async function connectedPage(c: Context<AppEnv>): Promise<Response> {
   const user = c.get("user");
-  const gemini = await geminiStatus(c.env, user.email);
+  // Behind the connected_apps flag (admin panel → Features): off, the page lists no apps yet.
+  const on = !!c.get("features")?.has("connected_apps");
+  const gemini = on ? await geminiStatus(c.env, user.email) : { connected: false };
   // The coming-soon wall: each logo drawn once in a cached sprite and reused.
   const tiles = Array.from({ length: Math.max(150, SERVICE_ICONS.length) }, (_, n) => {
     const i = n % SERVICE_ICONS.length;
     return `<svg class="svc" viewBox="0 0 48 48"><use href="${SPRITE_URL}#svc-${i}"/></svg>`;
   }).join("");
-  const body = `<section class="howto">
+  const apps = on
+    ? `<section class="howto">
   <h2>Your apps can use</h2>
   <div class="ai-grid">
     <button type="button" class="ai-tile" data-dialog="dlg-gemini-service" aria-haspopup="dialog">
@@ -384,12 +387,19 @@ export async function connectedPage(c: Context<AppEnv>): Promise<Response> {
   </div>
 </dialog>
 
-<section class="soon-wall compact">
+`
+    : "";
+  const body = `${apps}<section class="soon-wall${on ? " compact" : ""}">
   <div class="wall" aria-hidden="true">${tiles}</div>
   <div class="soon-card">
-    <p class="eyebrow">More coming soon</p>
+    <p class="eyebrow">${on ? "More coming soon" : "Coming soon"}</p>
     <h2>Plug your apps into the tools you already use</h2>
-    <p>Next up: Google Sheets, Stripe, Gmail, Notion and more. Connect them here once, and any of your apps can use them.</p>
+    <p>${
+      on
+        ? "Next up: Google Sheets, Stripe, Gmail, Notion and more. Connect them here once, and any of your apps can use them."
+        : "Soon you'll connect services like Google Sheets, Stripe, Gmail and Notion here, once, and any of your apps can use them. No keys to copy, no code to write."
+    }</p>
+    <p class="muted">Looking for Claude, ChatGPT or Gemini chat? They're under <a href="/connect">Connect your AI</a>.</p>
   </div>
 </section>`;
   return shell(c, user, "connected", body);

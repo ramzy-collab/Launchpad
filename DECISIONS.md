@@ -405,3 +405,11 @@ Choices made while building v1, including where the build differs from the spec 
   with its token count. Connecting and disconnecting are in the admin activity log.
 - AIs learn about it from the build guide (a ground rule and an SDK section) and from `whoami`
   (`connectedApps.gemini`), so they use it instead of asking for an API key.
+- **Behind a feature flag.** Connected apps (all of them, Gemini included) are behind the
+  `connected_apps` flag (migration 0009, `src/flags.ts`), set in the admin panel's **Features**
+  tab: **Off** (the default), **Admins only** or **Everyone**. Off, the Connected apps page still
+  shows, but only its "Coming soon" wall, with a **Soon** tag in the menu; the key API answers
+  404, apps' Gemini calls answer `not_available` (and `available()` says so), `whoami` leaves out
+  `connectedApps`, and the build guide drops its Gemini sections (marked
+  `<!-- flag:connected_apps -->` in `guide.md`). For apps the flag follows the app's owner,
+  since it's their key. Turning it off deletes nothing; changes are in the admin activity log.

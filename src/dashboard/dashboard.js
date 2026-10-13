@@ -103,6 +103,12 @@
         reloadSoon();
       });
     },
+    "feature-set": function (form) {
+      return api("PUT", "/features/" + encodeURIComponent(form.dataset.name), { state: form.elements.state.value }).then(function () {
+        show("Saved. It applies right away.");
+        reloadSoon();
+      });
+    },
     "service-connect": function (form) {
       return api("PUT", "/services/" + encodeURIComponent(form.dataset.service), { apiKey: form.elements.apiKey.value.trim() }).then(function () {
         form.reset();

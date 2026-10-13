@@ -17,6 +17,7 @@ import { filesFromHtml, filesFromUpload, filesFromZip, MAX_UPLOAD_BYTES, type Fi
 import { listConnections, revokeConnection } from "./oauth";
 import { approveWaitlist } from "./login";
 import { connectGemini, disconnectGemini, geminiStatus } from "./gemini";
+import { flagOn, setFlag } from "./flags";
 import { deleteUser, listUsers, setAdmin } from "./users";
 import { b64decode, isEmail } from "./util";
 
@@ -131,9 +132,15 @@ export function managementApi(kind: "admin" | "deploy") {
     });
     api.post("/users/:email/admin", async (c) => c.json(await setAdmin(c.env, c.get("user"), c.req.param("email"), (await jsonBody(c)).admin)));
     api.delete("/users/:email", async (c) => c.json(await deleteUser(c.env, c.get("user"), c.req.param("email"))));
+    // Connected apps are behind a feature flag (admin panel → Features).
+    api.use("/services/*", async (c, next) => {
+      if (!(await flagOn(c.env, "connected_apps", c.get("user")))) throw err(404, "not_found", "Connected apps aren't available yet.", "Check back soon.");
+      await next();
+    });
     api.get("/services/gemini", async (c) => c.json(await geminiStatus(c.env, c.get("user").email)));
     api.put("/services/gemini", async (c) => c.json(await connectGemini(c.env, c.get("user"), (await jsonBody(c)).apiKey)));
     api.delete("/services/gemini", async (c) => c.json(await disconnectGemini(c.env, c.get("user"))));
+    api.put("/features/:name", async (c) => c.json(await setFlag(c.env, c.get("user"), c.req.param("name"), (await jsonBody(c)).state)));
     api.get("/connections", async (c) => c.json(await listConnections(c.env, c.get("user").email)));
     api.delete("/connections/:id", async (c) => {
       await revokeConnection(c.env, c.get("user").email, c.req.param("id"));

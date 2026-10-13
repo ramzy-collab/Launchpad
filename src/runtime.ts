@@ -5,6 +5,7 @@ import { badRequest, err, forbidden, jsonError, notFound, onError } from "./erro
 import { kvDelete, kvGet, kvList, kvSet } from "./kv";
 import { proxy, secretDelete, secretList, secretSet } from "./secrets";
 import { geminiAvailable, geminiGenerate } from "./gemini";
+import { flagOnForOwner } from "./flags";
 import { getNamespace, getSiteByMount, validateMountPath } from "./sites";
 
 /**
@@ -102,7 +103,15 @@ export function runtimeApi() {
   });
 
   // Gemini through the app owner's connected key (see gemini.ts). Anyone who can open the app can use it.
-  api.get("/ai/gemini", async (c) => c.json(await geminiAvailable(c.env, c.get("site"))));
+  // Behind the connected_apps flag, which follows the app's owner (it's their key).
+  api.use("/ai/*", async (c, next) => {
+    if (!(await flagOnForOwner(c.env, "connected_apps", c.get("site").owner_email))) {
+      if (c.req.method === "GET") return c.json({ connected: false, available: false });
+      throw err(403, "not_available", "Connected apps like Google Gemini aren't available on Formelab yet.", "Check back soon; the app can't use AI until then.");
+    }
+    await next();
+  });
+  api.get("/ai/gemini", async (c) => c.json({ ...(await geminiAvailable(c.env, c.get("site"))), available: true }));
   api.post("/ai/gemini", async (c) => {
     if (Number(c.req.header("content-length") ?? 0) > 2 * 1024 * 1024) throw err(413, "body_too_large", "The request to Gemini is larger than 1 MB.", "Send a shorter prompt or smaller images.");
     let body: unknown;

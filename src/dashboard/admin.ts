@@ -1,6 +1,7 @@
 // Formelab admin: a separate area from anyone's own lab, for running Formelab itself. Admins only.
 import type { Context } from "hono";
 import { describeActivity, platformActivity } from "../audit";
+import { listFlags, STATE_LABEL } from "../flags";
 import { isOwnerEmail } from "../auth";
 import type { AppEnv } from "../env";
 import { aiOrigin } from "../hosts";
@@ -11,7 +12,7 @@ import { listWaitlist } from "../waitlist";
 import { head, htmlResponse, nav } from "./layout";
 import { fmtTime, logoutControl } from "./page";
 
-type Tab = "overview" | "users" | "waitlist" | "activity";
+type Tab = "overview" | "users" | "waitlist" | "features" | "activity";
 
 function adminShell(c: Context<AppEnv>, tab: Tab, body: string): Response {
   const user = c.get("user");
@@ -34,7 +35,7 @@ ${nav(
   <h1>Run Formelab</h1>
   <p>People, the waitlist and admin access. Changes here affect everyone on Formelab.</p>
 </div>
-<nav class="tabs" aria-label="Admin sections"><a href="/"${current("overview")}>Overview</a><a href="/users"${current("users")}>Users</a><a href="/waitlist"${current("waitlist")}>Waitlist</a><a href="/activity"${current("activity")}>Activity</a></nav>
+<nav class="tabs" aria-label="Admin sections"><a href="/"${current("overview")}>Overview</a><a href="/users"${current("users")}>Users</a><a href="/waitlist"${current("waitlist")}>Waitlist</a><a href="/features"${current("features")}>Features</a><a href="/activity"${current("activity")}>Activity</a></nav>
 <div id="flash" role="status" hidden></div>
 ${body}
 </main>
@@ -49,6 +50,7 @@ export async function adminPage(c: Context<AppEnv>, tab: Tab): Promise<Response>
   if (tab === "users") return adminShell(c, tab, await usersBody(c));
   if (tab === "waitlist") return adminShell(c, tab, await waitlistBody(c));
   if (tab === "activity") return adminShell(c, tab, await activityBody(c));
+  if (tab === "features") return adminShell(c, tab, await featuresBody(c));
   return adminShell(c, tab, await overviewBody(c));
 }
 
@@ -129,6 +131,29 @@ async function usersBody(c: Context<AppEnv>): Promise<string> {
     .join("")}</tbody></table></div>`
       : `<p class="muted">Everyone you've let in has logged in.</p>`
   }
+</section>`;
+}
+
+async function featuresBody(c: Context<AppEnv>): Promise<string> {
+  const flags = await listFlags(c.env);
+  const rows = flags
+    .map(
+      (f) => `<tr>
+  <td><strong>${e(f.label)}</strong><div class="muted">${e(f.description)}</div></td>
+  <td class="nowrap">${f.updatedAt ? `${e(fmtTime(f.updatedAt))}<div class="muted">${e(f.updatedBy ?? "")}</div>` : '<span class="muted">Never changed</span>'}</td>
+  <td><form class="inline" data-action="feature-set" data-name="${e(f.name)}">
+    <select name="state" aria-label="${e(f.label)}">${(["off", "admins", "on"] as const)
+      .map((s) => `<option value="${s}"${s === f.state ? " selected" : ""}>${e(STATE_LABEL[s])}</option>`)
+      .join("")}</select>
+    <button>Save</button>
+  </form></td>
+</tr>`,
+    )
+    .join("");
+  return `<section>
+  <h2>Features</h2>
+  <p class="muted">New features ship turned off. Turn one on for <strong>Admins only</strong> to try it yourself, then for <strong>Everyone</strong>. Turning a feature off hides it again right away; nothing people set up is deleted.</p>
+  <div class="scroll"><table><thead><tr><th>Feature</th><th>Last changed</th><th>Who gets it</th></tr></thead><tbody>${rows}</tbody></table></div>
 </section>`;
 }
 
