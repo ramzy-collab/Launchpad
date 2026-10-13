@@ -4,6 +4,7 @@ import type { Context } from "hono";
 import type { AppEnv } from "../env";
 import { escapeHtml as e } from "../util";
 import { aiOrigin } from "../hosts";
+import { listTokens } from "../auth";
 import { listConnections } from "../oauth";
 import { AI_LOGOS } from "./logos";
 import { fmtTime, shell } from "./page";
@@ -32,13 +33,28 @@ export async function connectPage(c: Context<AppEnv>): Promise<Response> {
   const geminiConfig = JSON.stringify({ mcpServers: { formelab: { httpUrl: url } } }, null, 2);
   const cmd = `claude mcp add --transport http formelab ${url} \\\n  --header "Authorization: Bearer fl_..."`;
 
-  const connections = await listConnections(c.env, user.email).catch(() => []);
-  const byTile = new Map<string, typeof connections>();
-  for (const k of connections) {
-    const t = tileFor(k.clientName);
-    if (t) byTile.set(t, [...(byTile.get(t) ?? []), k]);
-  }
-  const others = connections.filter((k) => !tileFor(k.clientName));
+  // Connections are OAuth sign-ins (Claude, ChatGPT, Gemini) and access keys an AI app has
+  // used over MCP (Claude Code), matched to a tile by the app's name.
+  const [grants, tokens] = await Promise.all([listConnections(c.env, user.email).catch(() => []), listTokens(c.env, user)]);
+  const t0 = Date.now();
+  type Conn = { tile: string | null; text: string; button: string };
+  const connections: Conn[] = [
+    ...grants.map((k) => ({
+      tile: tileFor(k.clientName),
+      text: `${k.clientName}, connected ${fmtTime(k.createdAt)}`,
+      button: `<button class="danger" data-action="connection-revoke" data-id="${e(k.id)}">Disconnect</button>`,
+    })),
+    ...tokens
+      .filter((k) => k.clientName && !k.revoked && k.expiresAt > t0)
+      .map((k) => ({
+        tile: tileFor(k.clientName!),
+        text: `${k.clientName} with the access key "${k.name}", last used ${fmtTime(k.lastUsed)}`,
+        button: `<button class="danger" data-action="token-revoke" data-id="${e(k.id)}">Revoke key</button>`,
+      })),
+  ];
+  const byTile = new Map<string, Conn[]>();
+  for (const k of connections) if (k.tile) byTile.set(k.tile, [...(byTile.get(k.tile) ?? []), k]);
+  const others = connections.filter((k) => !k.tile);
 
   const STEPS: Record<string, string> = {
     claude: `  <p class="muted">claude.ai, the Claude desktop app, and the mobile apps. Works on every plan, including Free. Free accounts can add one custom connector, so if you already use yours, remove it first.</p>
@@ -103,6 +119,7 @@ export async function connectPage(c: Context<AppEnv>): Promise<Response> {
     <li>Run this in your terminal, with your token in place of <code>fl_...</code>:</li>
   </ol>
   <div class="copyrow"><pre id="mcp-cmd">${e(cmd)}</pre><button type="button" data-copy="#mcp-cmd">Copy</button></div>
+  <p>Then start Claude Code. It shows up here as <strong>Connected</strong> the first time it uses Formelab.</p>
   <p class="muted">Agents can also read the build guide at <a href="/_platform/guide.md">/_platform/guide.md</a>.</p>
 `,
   };
@@ -110,7 +127,7 @@ export async function connectPage(c: Context<AppEnv>): Promise<Response> {
   const status = (list: typeof connections) =>
     list.length
       ? `<div class="conn-status"><p><span class="dot" aria-hidden="true"></span><strong>Connected</strong> to your Formelab account.</p>${list
-          .map((k) => `<div class="inline"><span class="muted">${e(k.clientName)}, since ${e(fmtTime(k.createdAt))}</span><button class="danger" data-action="connection-revoke" data-id="${e(k.id)}">Disconnect</button></div>`)
+          .map((k) => `<div class="inline"><span class="muted">${e(k.text)}</span>${k.button}</div>`)
           .join("")}</div>`
       : "";
 

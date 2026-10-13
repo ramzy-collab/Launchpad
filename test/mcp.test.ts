@@ -25,6 +25,30 @@ const tool = async (t: string, name: string, args: Record<string, unknown> = {})
 };
 
 describe("MCP server", () => {
+  it("shows Claude Code as connected once it uses an access key", async () => {
+    const email = `cc-${uniq()}@example.com`;
+    const t = await token(email);
+    const claudeTile = async () => {
+      const html = await (await call("/app/connect", { as: email })).text();
+      const at = html.indexOf('data-dialog="dlg-claude-code"');
+      return { tile: html.slice(at, html.indexOf("</button>", at)), html };
+    };
+    expect((await claudeTile()).tile).not.toContain("Connected</span>");
+    await rpc(t, "initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "claude-code", version: "2.1.0" } });
+    let page = await claudeTile();
+    for (let i = 0; i < 20 && !page.tile.includes("Connected</span>"); i++) {
+      await new Promise((r) => setTimeout(r, 25)); // the name is saved in the background
+      page = await claudeTile();
+    }
+    expect(page.tile).toContain("Connected</span>");
+    expect(page.html).toContain('claude-code with the access key &quot;mcp&quot;');
+    expect(page.html).toContain('data-action="token-revoke"');
+    expect(await (await call("/app/keys", { as: email })).text()).toContain("<td>claude-code</td>");
+    // The Claude (chat) tile isn't affected.
+    const chat = page.html.slice(page.html.indexOf('data-dialog="dlg-claude"'), page.html.indexOf("</button>", page.html.indexOf('data-dialog="dlg-claude"')));
+    expect(chat).not.toContain("Connected</span>");
+  });
+
   it("requires a valid bearer token", async () => {
     const res = await call("/mcp", { method: "POST", json: { jsonrpc: "2.0", id: 1, method: "tools/list" } });
     expect(res.status).toBe(401);

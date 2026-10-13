@@ -8,7 +8,7 @@ import {
   type OAuthHelpers,
 } from "@cloudflare/workers-oauth-provider";
 import type { Context } from "hono";
-import { getUser, userForDeployToken } from "./auth";
+import { getUser, noteTokenClient, resolveDeployToken } from "./auth";
 import { audit } from "./audit";
 import type { AppEnv, Env } from "./env";
 import { notFound } from "./errors";
@@ -39,6 +39,23 @@ export const MCP_SCOPE = "mcp";
 interface McpProps {
   email: string;
   via: "oauth" | "token";
+  /** The access key, for connections made with one (via "token"). */
+  tokenId?: string;
+}
+
+/** The client name in an MCP initialize message (a single message or a batch), if this is one. */
+async function initializeClientName(req: Request): Promise<string | null> {
+  if (req.method !== "POST") return null;
+  try {
+    const body = await req.clone().json();
+    for (const m of Array.isArray(body) ? body : [body]) {
+      const name = m?.method === "initialize" ? m?.params?.clientInfo?.name : undefined;
+      if (typeof name === "string" && name.trim()) return name.trim().slice(0, 100);
+    }
+  } catch {
+    /* not JSON: the MCP transport will answer it */
+  }
+  return null;
 }
 
 /** The apex origin: https://DOMAIN in production, the request's own origin in dev (http://localhost:8787). */
@@ -56,6 +73,12 @@ const mcpApiHandler = {
         { error: { code: "unauthorized", message: "This connection's account no longer exists.", hint: "Reconnect from your MCP client." } },
         { status: 401 },
       );
+    }
+    // Access keys carry no app name, so learn it from the MCP handshake (Claude Code says
+    // "claude-code"); Connect your AI uses it to show which AI app is connected.
+    if (ctx.props?.via === "token" && ctx.props.tokenId) {
+      const client = await initializeClientName(req);
+      if (client) ctx.waitUntil(noteTokenClient(env, ctx.props.tokenId, client).catch(() => {}));
     }
     return handleMcp(req, env, user, ctx);
   },
@@ -81,8 +104,8 @@ function providerOptions(origin: string, defaultHandler: ApexHandler): OAuthProv
     resourceMetadata: { resource, authorization_servers: [origin], resource_name: "Formelab" },
     resolveExternalToken: async ({ token, env }) => {
       if (!token.startsWith("fl_")) return null;
-      const user = await userForDeployToken(env, token);
-      return user ? { props: { email: user.email, via: "token" } satisfies McpProps, audience: resource } : null;
+      const found = await resolveDeployToken(env, token);
+      return found ? { props: { email: found.user.email, via: "token", tokenId: found.tokenId } satisfies McpProps, audience: resource } : null;
     },
     onError: ({ code, internal }) => {
       console.warn("oauth error", code, internal?.category, internal?.reason);

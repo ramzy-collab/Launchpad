@@ -347,3 +347,8 @@ Choices made while building v1, including where the build differs from the spec 
   OAuth connections matches it by client name (Claude, ChatGPT, Gemini, Claude Code), and the
   setup steps, connection details and Disconnect in a dialog. `/connect#claude` (or `#chatgpt`,
   `#gemini`, `#claude-code`) opens that dialog directly. The logos are the official marks, inlined from LobeHub Icons (`@lobehub/icons-static-svg`, MIT) in `src/dashboard/logos.ts`.
+- **Claude Code shows as connected** even though it uses an access key rather than signing in:
+  when an MCP request made with a key is the `initialize` handshake, the client's name
+  (`clientInfo.name`, "claude-code" for Claude Code) is saved on the key (`tokens.client_name`,
+  migration 0006). Connect your AI matches it to a tile like a sign-in's client name, and offers
+  **Revoke key** there; Access keys shows it as "Used by".

@@ -309,7 +309,7 @@ export async function keysPage(c: Context<AppEnv>): Promise<Response> {
     .map((k) => {
       const state = k.revoked ? "revoked" : k.expiresAt <= t ? "expired" : "active";
       return `<tr>
-  <td>${e(k.name)}</td><td>${e(state)}</td><td>${e(fmtTime(k.expiresAt))}</td><td>${e(fmtTime(k.lastUsed))}</td>
+  <td>${e(k.name)}</td><td>${e(state)}</td><td>${e(k.clientName ?? "—")}</td><td>${e(fmtTime(k.expiresAt))}</td><td>${e(fmtTime(k.lastUsed))}</td>
   <td>${state === "active" ? `<button class="danger" data-action="token-revoke" data-id="${e(k.id)}">Revoke</button>` : ""}</td>
 </tr>`;
     })
@@ -333,7 +333,7 @@ ${
   tokens.length
     ? `<section>
   <h2>Your keys</h2>
-  <div class="scroll"><table><thead><tr><th>Name</th><th>State</th><th>Expires</th><th>Last used</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
+  <div class="scroll"><table><thead><tr><th>Name</th><th>State</th><th>Used by</th><th>Expires</th><th>Last used</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
 </section>`
     : ""
 }`;

@@ -106,6 +106,8 @@ export interface TokenInfo {
   revoked: boolean;
   lastUsed: number | null;
   createdAt: number;
+  /** The AI app last seen using the key over MCP (its clientInfo name), if any. */
+  clientName: string | null;
 }
 
 export async function mintToken(env: Env, user: User, name: string, ttlHours = TOKEN_DEFAULT_TTL_HOURS) {
@@ -123,7 +125,7 @@ export async function mintToken(env: Env, user: User, name: string, ttlHours = T
   )
     .bind(id, user.email, name, await sha256Hex(token), expiresAt, createdAt)
     .run();
-  return { token, info: { id, name, expiresAt, revoked: false, lastUsed: null, createdAt } satisfies TokenInfo };
+  return { token, info: { id, name, expiresAt, revoked: false, lastUsed: null, createdAt, clientName: null } satisfies TokenInfo };
 }
 
 /** Resolves `Authorization: Bearer fl_...` to its owner, or null if missing/invalid/expired/revoked. */
@@ -135,6 +137,11 @@ export async function identifyBearer(req: Request, env: Env): Promise<User | nul
 
 /** Looks up a plaintext deploy token (fl_...) by its hash. Null if unknown, expired or revoked. */
 export async function userForDeployToken(env: Env, token: string): Promise<User | null> {
+  return (await resolveDeployToken(env, token))?.user ?? null;
+}
+
+/** Like userForDeployToken, also returning the key's id. */
+export async function resolveDeployToken(env: Env, token: string): Promise<{ user: User; tokenId: string } | null> {
   if (!/^fl_[a-z2-7]{20,100}$/.test(token)) return null;
   const hash = await sha256Hex(token);
   const row = await env.DB.prepare(
@@ -145,7 +152,12 @@ export async function userForDeployToken(env: Env, token: string): Promise<User 
     .first<{ id: string; expires_at: number; revoked: number } & UserRow>();
   if (!row || row.revoked || row.expires_at <= now()) return null;
   await env.DB.prepare("UPDATE tokens SET last_used = ? WHERE id = ?").bind(now(), row.id).run();
-  return userOf(row);
+  return { user: userOf(row), tokenId: row.id };
+}
+
+/** Remembers which AI app uses an access key (from its MCP initialize message). */
+export async function noteTokenClient(env: Env, tokenId: string, clientName: string): Promise<void> {
+  await env.DB.prepare("UPDATE tokens SET client_name = ? WHERE id = ? AND client_name IS NOT ?").bind(clientName, tokenId, clientName).run();
 }
 
 /** The current record for a known user, or null. */
@@ -156,10 +168,10 @@ export async function getUser(env: Env, email: string): Promise<User | null> {
 
 export async function listTokens(env: Env, user: User): Promise<TokenInfo[]> {
   const { results } = await env.DB.prepare(
-    "SELECT id, name, expires_at, revoked, last_used, created_at FROM tokens WHERE owner_email = ? ORDER BY created_at DESC",
+    "SELECT id, name, expires_at, revoked, last_used, created_at, client_name FROM tokens WHERE owner_email = ? ORDER BY created_at DESC",
   )
     .bind(user.email)
-    .all<{ id: string; name: string; expires_at: number; revoked: number; last_used: number | null; created_at: number }>();
+    .all<{ id: string; name: string; expires_at: number; revoked: number; last_used: number | null; created_at: number; client_name: string | null }>();
   return results.map((r) => ({
     id: r.id,
     name: r.name,
@@ -167,6 +179,7 @@ export async function listTokens(env: Env, user: User): Promise<TokenInfo[]> {
     revoked: r.revoked === 1,
     lastUsed: r.last_used,
     createdAt: r.created_at,
+    clientName: r.client_name,
   }));
 }
 
