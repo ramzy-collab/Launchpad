@@ -157,6 +157,17 @@
 
   document.addEventListener("submit", function (ev) {
     var form = ev.target;
+    // Log out in the background, then go where the server says (the WorkOS logout, then home),
+    // without a page in between. If that fails, the form posts the usual way.
+    if (form.classList.contains("logout")) {
+      ev.preventDefault();
+      busy(form, true);
+      fetch(form.action, { method: "POST", headers: { "x-formelab-request": "1" }, credentials: "same-origin" })
+        .then(function (res) { return res.ok ? res.json() : Promise.reject(); })
+        .then(function (r) { location.assign(r.to); })
+        .catch(function () { form.submit(); });
+      return;
+    }
     var h = handlers[form.dataset.action];
     if (!h) return;
     ev.preventDefault();

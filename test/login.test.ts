@@ -102,6 +102,7 @@ describe("login page and WorkOS redirect", () => {
     expect(html).toContain("Continue with email");
     expect(html).not.toContain('type="password"');
     expect(html).not.toContain("Last used");
+    expect(res.headers.get("content-security-policy")).toContain("form-action 'self' https://example.app https://*.example.app;".slice(0, -1));
     expect(html).not.toMatch(/\son[a-z]+=/i);
     expect((await (await w("/login?return=https%3A%2F%2Fevil.test%2F")).text())).toContain('name="return" value="/app"');
   });
@@ -321,6 +322,16 @@ describe("accounts and the waitlist, continued", () => {
     expect(to.searchParams.get("return_to")).toBe("https://example.com/");
     expect((await w(`${APP}/`, { headers: { cookie: appCookie } })).status).toBe(302);
     expect((await w("/auth/app?return=" + encodeURIComponent(APP + "/"), { headers: { cookie } })).headers.get("location")).toMatch(/^\/login/);
+  });
+
+  it("the web app logs out in the background, then goes where the answer says", async () => {
+    const email = `bg-${uniq()}@example.com`;
+    const { cookie } = await signIn(email);
+    const res = await w(`${APP}/auth/logout`, { method: "POST", headers: { cookie: await hostCookie(cookie, APP), origin: APP, "x-formelab-request": "1" } });
+    expect(res.headers.get("content-type")).toContain("application/json");
+    expect(res.headers.getSetCookie().join("\n")).toContain("Max-Age=0");
+    const { to } = (await res.json()) as { to: string };
+    expect(new URL(to).searchParams.get("session_id")).toBe(`session_${email}`);
   });
 
   it("logging out a session from before WorkOS sessions were recorded still works", async () => {
@@ -566,8 +577,9 @@ describe("Formelab's own sign-in page", () => {
     expect(calls).toHaveLength(0);
 
     const res = await post("/login", { email, password: "right password!", action: "password", return: "/app/shared" });
-    expect(res.status).toBe(200);
-    expect(refreshTarget(await res.text())).toBe("/app/shared");
+    // Straight on, no page in between: the login page's CSP lets the form lead to the web app.
+    expect(res.status).toBe(303);
+    expect(res.headers.get("location")).toBe("/app/shared");
     const cookie = cookieFrom(res, "__Host-fl_session")!;
     expect(cookie).not.toBeNull();
     expect(calls[0]!.body).toMatchObject({ grant_type: "password", email, client_id: "client_test", client_secret: "sk_test", ip_address: "203.0.113.9", user_agent: "test-browser" });
@@ -629,7 +641,7 @@ describe("Formelab's own sign-in page", () => {
     expect(await wrong.text()).toContain("That code didn");
 
     const ok = await post("/login/code", { code: "123 456", return: "/app" }, { cookie: pending });
-    expect(ok.status).toBe(200);
+    expect(ok.status).toBe(303);
     expect(cookieFrom(ok, "__Host-fl_session")).not.toBeNull();
     expect(calls.at(-1)!.body).toMatchObject({ grant_type: "urn:workos:oauth:grant-type:magic-auth:code", email, code: "123456" });
     expect(await env.DB.prepare("SELECT email FROM waitlist WHERE email = ?").bind(email).first()).not.toBeNull();
@@ -697,7 +709,7 @@ describe("Formelab's own sign-in page", () => {
     expect(cookieFrom(res, "__Host-fl_session")).toBeNull();
     mockApi(() => signedIn(OWNER));
     const ok = await post("/login", { email: OWNER, password: "a password here", action: "password", return: "/users" }, { host: ADMIN });
-    expect(refreshTarget(await ok.text())).toBe("/users");
+    expect(ok.headers.get("location")).toBe("/users");
     expect(cookieFrom(ok, "__Host-fl_session")).not.toBeNull();
   });
 });

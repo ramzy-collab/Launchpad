@@ -5,9 +5,9 @@
 // owns the accounts, sends the codes and reset emails, and enforces its password rules.
 // Google goes through /auth/login (WorkOS hands straight over to Google).
 //
-// Every form posts back to Formelab, and a signed-in person moves on through a page rather than a
-// redirect: these pages' CSP says form-action 'self', which also covers redirects after a POST,
-// and the way back to the web app leads to another host.
+// Every form posts back to Formelab. A successful sign-in redirects straight on; form-action covers
+// redirects after a POST too, so these pages' CSP also allows Formelab's other hosts, where the
+// way back to the web app or an app leads (see signinCsp).
 import type { Context } from "hono";
 import type { AppEnv, Env } from "./env";
 import {
@@ -23,7 +23,8 @@ import {
   type WorkosAuthentication,
 } from "./login";
 import { homeHead, loginPage, topNav } from "./dashboard/home";
-import { htmlResponse } from "./dashboard/layout";
+import { htmlResponse, PAGE_CSP } from "./dashboard/layout";
+import { appOrigin } from "./hosts";
 import { identifyBrowser } from "./auth";
 import { cookieHeader, readCookie, SESSION_COOKIE } from "./session";
 import { escapeHtml as e, isEmail, normEmail } from "./util";
@@ -90,6 +91,7 @@ interface View {
   returnTo: string;
   /** The sign-in method this browser used last, labelled "Last used". */
   last?: LastUsed | null;
+  csp: string;
   email?: string;
   error?: string;
   info?: string;
@@ -99,7 +101,17 @@ interface View {
 
 function view(c: Context<AppEnv>, returnTo: string): View {
   const last = readCookie(c.req.raw, LAST_USED_COOKIE);
-  return { admin: onAdminHost(c), returnTo, last: last === "email" || last === "google" ? last : null };
+  return { admin: onAdminHost(c), returnTo, last: last === "email" || last === "google" ? last : null, csp: signinCsp(c) };
+}
+
+/**
+ * The page CSP, with form-action widened to Formelab's own hosts: after signing in, the redirect
+ * goes on to the web app (APP_DOMAIN) or an app (<ns>.APP_DOMAIN) through /app or /auth/app.
+ */
+function signinCsp(c: Context<AppEnv>): string {
+  const app = appOrigin(c.env, c.req.url);
+  const wild = app.replace("://", "://*.");
+  return PAGE_CSP.replace("form-action 'self'", `form-action 'self' ${app} ${wild}`);
 }
 
 function frame(v: View, title: string, intro: string, body: string, status = 200): Response {
@@ -129,7 +141,7 @@ ${topNav(v.admin)}
 </main>
 </body>
 </html>`,
-    undefined,
+    v.csp,
     status,
   );
 }
@@ -236,16 +248,11 @@ async function form(c: Context<AppEnv>): Promise<FormData> {
   return f;
 }
 
-/** Sends the browser on to `to` once signed in (see the note at the top on why not a redirect). */
+/** Sends the browser on to `to` once signed in. */
 const moveOn = (to: string) => (headers: Headers) => {
-  headers.set("content-type", "text/html; charset=utf-8");
-  headers.set("x-content-type-options", "nosniff");
+  headers.set("location", to);
   headers.append("set-cookie", cookieHeader(PENDING_COOKIE, "", 0));
-  const href = e(to);
-  return new Response(
-    `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="0;url=${href}"><title>Logging in</title></head><body style="font-family:system-ui,sans-serif;max-width:40rem;margin:4rem auto;padding:0 1rem;color:#222"><p>Logging you in… <a href="${href}">Continue</a></p></body></html>`,
-    { headers },
-  );
+  return new Response(null, { status: 303, headers });
 };
 
 /** GET /login */

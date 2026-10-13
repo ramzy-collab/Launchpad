@@ -211,9 +211,9 @@ function sessionIdOf(accessToken: string | undefined): string | null {
  * POST /auth/logout: ends the Formelab sign-in everywhere, then the WorkOS session behind it, so
  * the next "Log in" asks for a code or password again instead of signing straight back in.
  *
- * It answers with a page that moves on by itself rather than a redirect: the logout form is
- * posted from pages whose CSP says `form-action 'self'`, which also covers redirects after the
- * POST, so the browser would block a redirect to another host (formelab.ai, or WorkOS).
+ * It never redirects: the logout form is posted from pages whose CSP says `form-action 'self'`,
+ * which also covers redirects after the POST, so the browser would block one to another host
+ * (formelab.ai, or WorkOS). dashboard.js posts it in the background and moves on itself.
  */
 export async function logout(c: Context<AppEnv>): Promise<Response> {
   const origin = c.req.header("origin");
@@ -227,7 +227,12 @@ export async function logout(c: Context<AppEnv>): Promise<Response> {
     out.searchParams.set("return_to", to);
     to = out.toString();
   }
-  const page = movingOnPage("Logged out", "You're logged out of Formelab.", to);
+  // The web app and admin panel log out in the background and then go to `to` themselves, so
+  // nobody sees a page in between; the page is for browsers without JavaScript.
+  const page =
+    c.req.header("x-formelab-request") === "1"
+      ? new Response(JSON.stringify({ to }), { headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" } })
+      : movingOnPage("Logged out", "Logging you out…", to);
   page.headers.append("set-cookie", cookieHeader(SESSION_COOKIE, "", 0));
   return page;
 }
@@ -235,7 +240,10 @@ export async function logout(c: Context<AppEnv>): Promise<Response> {
 /** A page that sends the browser on to `to` straight away, with a link in case it doesn't. */
 export function movingOnPage(title: string, message: string, to: string): Response {
   const href = escapeHtml(to);
-  const body = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="0;url=${href}"><title>${escapeHtml(title)}</title></head><body style="font-family:system-ui,sans-serif;max-width:40rem;margin:4rem auto;padding:0 1rem;color:#222"><h1>${escapeHtml(title)}</h1><p>${escapeHtml(message)} <a href="${href}">Continue</a></p></body></html>`;
+  const body = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="0;url=${href}"><title>${escapeHtml(title)}</title>
+<style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#FAFAF8;color:#6E6D68;font:16px/1.5 system-ui,sans-serif}@media(prefers-color-scheme:dark){body{background:#111110;color:#A8A69F}}
+.s{width:28px;height:28px;margin:0 auto 14px;border:3px solid #ECEAE4;border-top-color:#5B4CF5;border-radius:50%;animation:r .8s linear infinite}@keyframes r{to{transform:rotate(1turn)}}a{color:inherit}</style></head>
+<body><div><div class="s" aria-hidden="true"></div><p><a href="${href}">${escapeHtml(message)}</a></p></div></body></html>`;
   return new Response(body, {
     headers: {
       "content-type": "text/html; charset=utf-8",
