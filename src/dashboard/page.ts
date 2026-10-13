@@ -42,7 +42,7 @@ const PAGES: Record<Page, { title: string; intro: string }> = {
   keys: { title: "Access keys", intro: "For tools that publish without signing in, like Claude Code or a script. Treat a key like a password." },
 };
 
-const MENU_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>`;
+export const MENU_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>`;
 
 /** The page frame: the left menu (with the account menu at its foot), then the page's `body`. */
 export function shell(c: Context<AppEnv>, user: User, page: Page, body: string, title?: string): Response {

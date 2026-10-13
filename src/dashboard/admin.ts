@@ -11,33 +11,62 @@ import { plainPage } from "../serve";
 import { adminStats, listUsers } from "../users";
 import { escapeHtml as e } from "../util";
 import { listWaitlist } from "../waitlist";
-import { head, htmlResponse, nav } from "./layout";
-import { fmtTime, logoutControl } from "./page";
+import { head, htmlResponse } from "./layout";
+import { fmtTime, logoutControl, MENU_ICON } from "./page";
 
 type Tab = "overview" | "users" | "waitlist" | "features" | "activity" | "changelog" | "vendors";
 
+const TABS: Record<Tab, { title: string; intro: string }> = {
+  overview: { title: "Overview", intro: "Formelab at a glance. Changes here affect everyone on Formelab." },
+  users: { title: "Users", intro: "Everyone with an account, and people let in who haven't logged in yet." },
+  waitlist: { title: "Waitlist", intro: "People waiting to get in." },
+  activity: { title: "Activity", intro: "Formelab-level changes, newest first." },
+  features: { title: "Features", intro: "Turn new features on for admins, then for everyone." },
+  changelog: { title: "Changelog", intro: "Everything that has changed in Formelab, newest first." },
+  vendors: { title: "Vendors", intro: "Every service, AI app and open-source project Formelab uses, or used." },
+};
+
+/** The admin panel's frame: the same left menu as the web app, grouped into Users and Formelab. */
 function adminShell(c: Context<AppEnv>, tab: Tab, body: string): Response {
   const user = c.get("user");
-  const current = (t: Tab) => (t === tab ? ' aria-current="page"' : "");
+  const link = (t: Tab, href: string) => `<a href="${href}"${t === tab ? ' aria-current="page"' : ""}>${TABS[t].title}</a>`;
   return htmlResponse(`<!doctype html>
 <html lang="en">
 <head>
-${head("Formelab admin", ["dashboard.js"])}
+${head(`${TABS[tab].title} · Formelab Admin Panel`, ["dashboard.js"])}
 </head>
 <body class="dash admin">
-<div class="wrap">
-${nav(
-  "/",
-  `<span class="who">Signed in as <strong>${e(user.email)}</strong> <span class="tag admin">admin</span></span>
-    ${logoutControl(c)}`,
-)}
-<main>
-<div class="dash-hero">
-  <p class="eyebrow">Formelab admin</p>
-  <h1>Run Formelab</h1>
-  <p>People, the waitlist and admin access. Changes here affect everyone on Formelab.</p>
+<div class="app-shell">
+<header class="topbar">
+  <a class="brand" href="/" aria-label="Formelab admin home"><span class="mark"></span>Formelab Admin Panel</a>
+  <button type="button" class="menu-toggle" data-menu-toggle aria-controls="sidebar" aria-expanded="false" aria-label="Open menu">${MENU_ICON}</button>
+</header>
+<aside class="sidebar" id="sidebar">
+  <a class="brand" href="/" aria-label="Formelab admin home"><span class="mark"></span>Formelab Admin Panel</a>
+  <nav class="side-nav" aria-label="Admin sections">
+    <p class="side-label">Users</p>
+    ${link("overview", "/")}
+    ${link("users", "/users")}
+    ${link("waitlist", "/waitlist")}
+    ${link("activity", "/activity")}
+    <p class="side-label">Formelab</p>
+    ${link("features", "/features")}
+    ${link("changelog", "/changelog")}
+    ${link("vendors", "/vendors")}
+  </nav>
+  <details class="account">
+    <summary><span class="avatar" aria-hidden="true">${e(user.email.slice(0, 1).toUpperCase())}</span><span class="who">Settings · <strong>${e(user.email)}</strong></span></summary>
+    <div class="account-menu">
+      <button type="button" class="link theme-item" data-theme-toggle><span class="to-dark">Dark mode</span><span class="to-light">Light mode</span></button>
+      ${logoutControl(c)}
+    </div>
+  </details>
+</aside>
+<main class="content">
+<div class="page-head">
+  <h1>${e(TABS[tab].title)}</h1>
+  <p>${e(TABS[tab].intro)}</p>
 </div>
-<nav class="tabs" aria-label="Admin sections"><a href="/"${current("overview")}>Overview</a><a href="/users"${current("users")}>Users</a><a href="/waitlist"${current("waitlist")}>Waitlist</a><a href="/features"${current("features")}>Features</a><a href="/activity"${current("activity")}>Activity</a><a href="/changelog"${current("changelog")}>Changelog</a><a href="/vendors"${current("vendors")}>Vendors</a></nav>
 <div id="flash" role="status" hidden></div>
 ${body}
 </main>
@@ -176,8 +205,7 @@ export function changelogBody(): string {
   <ul class="changelog">${items}</ul>
 </section>`;
   });
-  return `<p class="muted">Everything that has changed in Formelab, newest first.</p>
-${sections.join("\n")}`;
+  return sections.join("\n");
 }
 
 async function featuresBody(c: Context<AppEnv>): Promise<string> {
@@ -197,7 +225,6 @@ async function featuresBody(c: Context<AppEnv>): Promise<string> {
     )
     .join("");
   return `<section>
-  <h2>Features</h2>
   <p class="muted">New features ship turned off. Turn one on for <strong>Admins only</strong> to try it yourself, then for <strong>Everyone</strong>. Turning a feature off hides it again right away; nothing people set up is deleted.</p>
   <div class="scroll"><table><thead><tr><th>Feature</th><th>Last changed</th><th>Who gets it</th></tr></thead><tbody>${rows}</tbody></table></div>
 </section>`;
@@ -208,7 +235,6 @@ async function activityBody(c: Context<AppEnv>): Promise<string> {
     .map((a) => `<tr><td class="nowrap">${e(fmtTime(a.at))}</td><td>${e(a.actor)}</td><td>${e(describeActivity(a))}</td></tr>`)
     .join("");
   return `<section>
-  <h2>Activity</h2>
   <p class="muted">Formelab-level changes, newest first: people let in and invited, admin access, deleted accounts, spaces, and AI apps connected. What happens inside an app is in that app's own activity log, under <strong>Activity</strong> on its owner's My apps page.</p>
   ${rows ? `<div class="scroll"><table><thead><tr><th>When</th><th>Who</th><th>What they did</th></tr></thead><tbody>${rows}</tbody></table></div>` : `<p class="muted">Nothing yet.</p>`}
 </section>`;

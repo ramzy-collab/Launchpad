@@ -57,7 +57,7 @@ describe("admin: users", () => {
     const res = await call("/admin", { as: OWNER });
     expect(res.status).toBe(200);
     const html = await res.text();
-    expect(html).toContain("Run Formelab");
+    expect(html).toContain("Formelab Admin Panel</a>");
     expect(html).toContain('<a href="/" aria-current="page">Overview</a>');
     expect(html).toContain('class="stat-label">People<');
     expect(html).not.toMatch(/\son[a-z]+=/i);

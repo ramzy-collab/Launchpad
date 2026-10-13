@@ -4,6 +4,7 @@ Everything that has changed in Formelab, newest first. Shown in the admin panel 
 
 ## 2026-10-13
 
+- **Admin panel gets a left menu.** The Formelab Admin Panel now has the same left menu as the web app: Users (Overview, Users, Waitlist, Activity) and Formelab (Features, Changelog, Vendors), with a Settings menu at the bottom for dark mode and logging out.
 - **Changelog and Vendors in the admin panel.** A Changelog tab lists every change since launch, and a Vendors tab keeps track of every service, AI app and open-source project Formelab uses, or used and retired.
 - **Connected apps behind a feature flag.** A new Features tab in the admin panel turns features Off, on for Admins only, or on for Everyone. Connected apps start Off: the page only says "Coming soon" and apps can't use connected services until it's on.
 - **Google Gemini, the first connected app.** People add their Gemini API key once under Connected apps, and any of their apps can use Gemini 3.5 Flash-Lite through the SDK (`formelab.gemini.generate`). The key is checked with Google, stored encrypted, shown only by its last four characters, and never reaches an app. Apps use their owner's key, are limited to 60 calls a minute, and log every call. Newer `AQ.` style keys from Google AI Studio are accepted.
