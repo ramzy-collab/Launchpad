@@ -173,6 +173,7 @@ visits, lets an editor store a key, and calls `https://httpbin.org/anything` thr
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Starter</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%235B4CF5'/%3E%3Cpath d='M20 34l8 8 16-18' stroke='white' stroke-width='6' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
   <style>
     body { font: 16px/1.5 system-ui, sans-serif; max-width: 40rem; margin: 2rem auto; padding: 0 1rem; }
     pre { background: #f4f4f4; padding: .75rem; overflow: auto; }
@@ -275,6 +276,6 @@ The script calls `POST https://<DOMAIN>/_api/deploy/sites` (multipart: `file`, `
 - [ ] Every SDK call is wrapped in `try/catch`, and errors show `e.message` and `e.hint` to the user.
 - [ ] KV keys are namespaced (`"vote:" + email`), values stay well under 64 KB.
 - [ ] Works on a phone (responsive layout, `<meta name="viewport">`).
-- [ ] Has an icon: a small SVG that fits the app, linked as `<link rel="icon" href="icon.svg">` (or inlined as a `data:image/svg+xml,...` URL). Formelab shows it on the app's tile.
+- [ ] **Has an icon (required):** a small SVG that fits the app, linked in `<head>` as `<link rel="icon" href="data:image/svg+xml,...">` (URL-encoded SVG), or as `<link rel="icon" href="icon.svg">` with `icon.svg` in the zip. Formelab shows it on the app's tile, and the `publish` tool refuses apps without one (`icon_required`).
 - [ ] Apps are private by default (only the owner and editors). Add `allowed_emails` for the people who should open it; they see it under "Shared with me".
 - [ ] Published with the right `namespace` and `mount_path`; the URL was shared with the user.

@@ -4,7 +4,7 @@ import worker from "../src/index";
 import type { Env } from "../src/env";
 import { describe, expect, it } from "vitest";
 import { afterEach } from "vitest";
-import { accessJwt, call, onOutbound, OWNER, uniq } from "./helpers";
+import { accessJwt, call, ICON, onOutbound, OWNER, uniq } from "./helpers";
 
 const ORIGIN = "https://example.com";
 const RESOURCE = `${ORIGIN}/mcp`;
@@ -156,7 +156,7 @@ describe("OAuth for MCP (Claude chat connector)", () => {
   it("acts as the person who approved, with their permissions", async () => {
     const ns = uniq();
     const owner = await connect(OWNER);
-    const pub = await mcpCall(owner.tokens.access_token, "publish", { html: "<!doctype html><html><head></head><body>x</body></html>", namespace: ns, mount_path: "" });
+    const pub = await mcpCall(owner.tokens.access_token, "publish", { html: `<!doctype html><html><head>${ICON}</head><body>x</body></html>`, namespace: ns, mount_path: "" });
     expect(((await pub.json()) as { result: { isError?: boolean } }).result.isError).toBeFalsy();
     const other = await connect("someone@example.com");
     const del = await mcpCall(other.tokens.access_token, "delete_site", { namespace: ns, mount_path: "" });

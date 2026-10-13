@@ -394,7 +394,14 @@ export interface PublishInput {
   visibility?: unknown;
   allowedEmails?: unknown;
   editors?: unknown;
+  /** Refuse an app without an icon (the MCP publish tool, so AI-made apps always have one). */
+  requireIcon?: boolean;
 }
+
+/** Shown to AI apps whose publish was refused for lack of an icon. */
+export const ICON_HINT =
+  "Add a small SVG icon that fits the app: put <link rel=\"icon\" href=\"data:image/svg+xml,<url-encoded svg>\"> in index.html's <head>, " +
+  "or include icon.svg in a zip and link it with <link rel=\"icon\" href=\"icon.svg\">. Then publish again.";
 
 const R2_CONCURRENCY = 8;
 
@@ -430,6 +437,9 @@ export async function publishSite(ctx: Ctx, input: PublishInput) {
   const allowed = input.allowedEmails === undefined ? undefined : emailList(input.allowedEmails, "allowed_emails");
   const editors = input.editors === undefined ? undefined : emailList(input.editors, "editors");
   if (!input.files.has("index.html")) throw badRequest("The upload has no index.html.", "Include an index.html at the root.");
+  // The app's icon for the web app's tiles (see icons.ts).
+  const icon = findIcon(input.files.keys(), new TextDecoder().decode(input.files.get("index.html")!.subarray(0, 64 * 1024)), mount);
+  if (input.requireIcon && !icon) throw err(400, "icon_required", "This app has no icon (favicon). Formelab shows it on the app's tile.", ICON_HINT);
 
   let ns = await getNamespace(env, label);
   if (!ns) {
@@ -520,9 +530,6 @@ export async function publishSite(ctx: Ctx, input: PublishInput) {
     throw e;
   }
   if (existing) ctx.waitUntil(deletePrefix(env.BUCKET, `sites/${id}/${existing.current_version}/`).catch(() => {}));
-  // Remember the app's icon for the web app's tiles (see icons.ts).
-  const indexHtml = new TextDecoder().decode(input.files.get("index.html")!.subarray(0, 64 * 1024));
-  const icon = findIcon(input.files.keys(), indexHtml, mount);
   await env.DB.prepare("UPDATE sites SET icon_path = ? WHERE id = ? AND current_version = ?").bind(icon, id, version).run();
   row.icon_path = icon;
   await audit(env, user.email, existing ? "replace" : "publish", `${label}/${mount}`, {

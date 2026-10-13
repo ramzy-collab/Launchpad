@@ -47,7 +47,8 @@ export function buildServer(ctx: Ctx): McpServer {
       instructions:
         "Formelab hosts small self-contained web apps at https://<namespace>." +
         ctx.env.APP_DOMAIN +
-        "/<mount_path>/. Call get_guide before building an app for the first time, then publish with the publish tool.",
+        "/<mount_path>/. Call get_guide before building an app for the first time, then publish with the publish tool. " +
+        "Every app needs an icon (a small SVG favicon linked from index.html); publish refuses apps without one.",
     },
   );
 
@@ -80,7 +81,8 @@ export function buildServer(ctx: Ctx): McpServer {
         "Publish (create or replace) an app and return its URL. Provide exactly one of `html` (a complete single-file HTML document) " +
         "or `zip_base64` (a base64 zip with index.html at its root). Replacing an existing app keeps its KV data, secrets and " +
         "sharing settings: visibility and allowed_emails only apply to a new app; change sharing with update_site. " +
-        "Creates the namespace if it does not exist yet.",
+        "Creates the namespace if it does not exist yet. The app MUST have an icon: a small SVG that fits the app, linked from " +
+        "index.html's <head> as <link rel=\"icon\" href=\"data:image/svg+xml,...\"> (or an icon.svg file in the zip); without one, publish fails with icon_required.",
       inputSchema: {
         html: z.string().optional().describe("Complete HTML document for a single-file app"),
         zip_base64: z.string().optional().describe("Base64-encoded .zip with index.html at its root"),
@@ -103,6 +105,7 @@ export function buildServer(ctx: Ctx): McpServer {
           spa: args.spa,
           visibility: args.visibility,
           allowedEmails: args.allowed_emails,
+          requireIcon: true,
         });
         return { url: r.url, replaced: r.replaced, site: r.site, ...(r.note ? { note: r.note } : {}) };
       }),

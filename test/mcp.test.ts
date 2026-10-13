@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { call, OWNER, PAGE, uniq } from "./helpers";
+import { call, ICON_PAGE, OWNER, PAGE, publishHtml, uniq } from "./helpers";
+
+const publishHtmlPlain = (ns: string) => publishHtml(OWNER, ns, "plain", PAGE("no icon"));
 
 async function token(as = OWNER) {
   const res = await call("/_api/admin/tokens", { as, method: "POST", json: { name: "mcp", ttlHours: 1 } });
@@ -71,7 +73,7 @@ describe("MCP server", () => {
     const ns = uniq();
     expect((await tool(t, "whoami")).data.email).toBe(OWNER);
 
-    const pub = await tool(t, "publish", { html: PAGE("<h1>Hello, world</h1>"), namespace: ns, mount_path: "hello", title: "Hello" });
+    const pub = await tool(t, "publish", { html: ICON_PAGE("<h1>Hello, world</h1>"), namespace: ns, mount_path: "hello", title: "Hello" });
     expect(pub.isError).toBe(false);
     expect(pub.data.url).toBe(`https://${ns}.example.app/hello/`);
     const page = await call(pub.data.url, { as: OWNER });
@@ -88,10 +90,30 @@ describe("MCP server", () => {
     expect((await call(pub.data.url, { as: OWNER })).status).toBe(404);
   });
 
+  it("refuses apps without an icon, telling the AI how to add one", async () => {
+    const t = await token();
+    const ns = uniq();
+    const r = await tool(t, "publish", { html: PAGE("no icon"), namespace: ns, mount_path: "x" });
+    expect(r.isError).toBe(true);
+    expect(r.data.error.code).toBe("icon_required");
+    expect(r.data.error.hint).toContain('<link rel=\"icon\"'.replace(/\\/g, ""));
+    // Nothing was published.
+    const listed = await tool(t, "list_sites", { namespace: ns });
+    expect(JSON.stringify(listed.data)).not.toContain('"mountPath":"x"');
+    // A zip with an icon.svg file works too.
+    const { makeZip } = await import("./helpers");
+    const zip = makeZip({ "index.html": `<!doctype html><head><link rel="icon" href="icon.svg"></head><p>ok`, "icon.svg": "<svg xmlns='http://www.w3.org/2000/svg'/>" });
+    let b64 = "";
+    for (const byte of zip) b64 += String.fromCharCode(byte);
+    expect((await tool(t, "publish", { zip_base64: btoa(b64), namespace: ns, mount_path: "y" })).isError).toBe(false);
+    // The web app's own upload doesn't require one.
+    expect((await publishHtmlPlain(ns)).status).toBe(201);
+  });
+
   it("publishes a zip and requires exactly one of html / zip_base64", async () => {
     const t = await token();
     const { makeZip } = await import("./helpers");
-    const zip = makeZip({ "index.html": PAGE("zipped"), "a.css": "body{}" });
+    const zip = makeZip({ "index.html": ICON_PAGE("zipped"), "a.css": "body{}" });
     let b64 = "";
     for (const byte of zip) b64 += String.fromCharCode(byte);
     const pub = await tool(t, "publish", { zip_base64: btoa(b64), namespace: uniq(), mount_path: "" });
@@ -106,7 +128,7 @@ describe("MCP server", () => {
 
   it("returns permission errors as tool errors with hints", async () => {
     const ns = uniq();
-    await tool(await token(), "publish", { html: PAGE("x"), namespace: ns, mount_path: "" });
+    await tool(await token(), "publish", { html: ICON_PAGE("x"), namespace: ns, mount_path: "" });
     // Private by default: to someone else the app doesn't exist.
     const r = await tool(await token("mallory@example.com"), "delete_site", { namespace: ns, mount_path: "" });
     expect(r.isError).toBe(true);

@@ -128,3 +128,7 @@ export async function r2Keys(prefix: string): Promise<string[]> {
 }
 
 export const PAGE = (body: string) => `<!doctype html><html><head><title>t</title></head><body>${body}</body></html>`;
+
+/** A page with an icon, as the MCP publish tool requires. */
+export const ICON = `<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'/%3E">`;
+export const ICON_PAGE = (body: string) => `<!doctype html><html><head><title>t</title>${ICON}</head><body>${body}</body></html>`;

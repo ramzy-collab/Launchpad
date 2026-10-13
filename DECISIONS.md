@@ -383,3 +383,7 @@ Choices made while building v1, including where the build differs from the spec 
   it at `/apps/<id>/icon` to people who can open the app, with a sandboxing CSP so an SVG opened
   directly can't run script on the web app's host; apps without an icon keep their letter tile.
   The build guide's checklist asks agents to include an icon.
+- **AI-made apps must have an icon:** the MCP `publish` tool refuses an app without one
+  (`icon_required`, with a hint showing the `<link rel="icon">` to add), so the AI adds one and
+  publishes again. Its description and the server's instructions say so up front, and the build
+  guide's starter app includes one. Uploads from the web app and the deploy API don't require it.
