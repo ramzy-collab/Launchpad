@@ -269,6 +269,31 @@ summary { cursor: pointer; color: var(--fl-accent); font-weight: 500; font-size:
 .conn-status p strong { color: var(--fl-ok-ink) !important; }
 .conn-status .muted { color: var(--fl-ok-ink); }
 
+/* ---------- Connected apps: coming soon, over a wall of logos ---------- */
+.dash section.soon-wall {
+  position: relative; overflow: hidden; display: grid; place-items: center; padding: clamp(24px, 5vw, 64px) 16px;
+  min-height: max(30rem, calc(100vh - 13rem)); background: #161514; border-color: #2E2C29;
+}
+.sprite { position: absolute; width: 0; height: 0; }
+.wall {
+  position: absolute; inset: -12%; display: grid; grid-template-columns: repeat(auto-fill, 72px); gap: 18px;
+  justify-content: center; align-content: center; transform: rotate(-8deg);
+  animation: wall-drift 60s linear infinite alternate;
+}
+.svc { width: 72px; height: 72px; border-radius: 18px; box-shadow: 0 6px 16px rgba(0,0,0,.35); }
+.soon-wall::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(ellipse 46% 52% at 50% 50%, rgba(22,21,20,.82), rgba(22,21,20,.35) 70%, rgba(22,21,20,.15));
+}
+.soon-card {
+  position: relative; z-index: 1; max-width: 36rem; text-align: center; background: var(--fl-surface);
+  border: 1px solid var(--fl-line); border-radius: var(--fl-radius-lg); box-shadow: 0 24px 60px rgba(0,0,0,.45);
+  padding: clamp(28px, 5vw, 48px) clamp(20px, 4vw, 40px);
+}
+.soon-card h2 { font-size: clamp(1.5rem, 3.5vw, 2rem) !important; line-height: 1.15; }
+.soon-card p { max-width: 30rem; margin-left: auto; margin-right: auto; }
+@keyframes wall-drift { from { transform: rotate(-8deg) translateY(0); } to { transform: rotate(-8deg) translateY(-90px); } }
+
 /* ---------- Consent ---------- */
 .consent h1 { font-size: 1.75rem; line-height: 1.15; letter-spacing: -.02em; margin: 0 0 16px; }
 .consent .inline { margin-top: 20px; }

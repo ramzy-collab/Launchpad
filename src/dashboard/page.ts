@@ -10,6 +10,7 @@ import { adminOrigin } from "../hosts";
 import { ctxOf } from "../api";
 import { listConnections } from "../oauth";
 import { head, htmlResponse } from "./layout";
+import { SERVICE_ICONS } from "./services";
 
 export const fmtTime = (ms: number | null) => (ms ? new Date(ms).toISOString().replace("T", " ").slice(0, 16) + " UTC" : "never");
 const fmtBytes = (n: number) => (n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`);
@@ -280,13 +281,26 @@ export async function spacesPage(c: Context<AppEnv>): Promise<Response> {
   return shell(c, ctx.user, "spaces", body);
 }
 
-/** Connected apps: services an app can use (coming soon). AI app connections live on Connect your AI. */
+/** Connected apps: services an app can use (coming soon), over a wall of their logos. */
 export function connectedPage(c: Context<AppEnv>): Response {
-  const body = `<section class="empty">
-  <p class="eyebrow">Coming soon</p>
-  <h2>Plug your apps into the tools you already use</h2>
-  <p>Soon you'll connect services like Google Sheets, Stripe, Slack and email here, once, and any of your apps can use them. No keys to copy, no code to write.</p>
-  <p class="muted">Looking for Claude, ChatGPT or Gemini? They're under <a href="/connect">Connect your AI</a>.</p>
+  // Each logo is drawn once as a <symbol> and reused, so the wall stays light.
+  // The brand color is part of the drawing: the page's CSP doesn't allow inline style attributes.
+  const symbols = SERVICE_ICONS.map(
+    ([, color, ink, path], i) => `<symbol id="svc-${i}" viewBox="0 0 48 48"><rect width="48" height="48" rx="12" fill="${color}"/><path transform="translate(12 12)" fill="${ink}" d="${path}"/></symbol>`,
+  ).join("");
+  const tiles = Array.from({ length: 140 }, (_, n) => {
+    const i = (n * 7) % SERVICE_ICONS.length; // spread neighbours so the same logo rarely repeats side by side
+    return `<svg class="svc" viewBox="0 0 48 48"><use href="#svc-${i}"/></svg>`;
+  }).join("");
+  const body = `<section class="soon-wall">
+  <svg class="sprite" aria-hidden="true">${symbols}</svg>
+  <div class="wall" aria-hidden="true">${tiles}</div>
+  <div class="soon-card">
+    <p class="eyebrow">Coming soon</p>
+    <h2>Plug your apps into the tools you already use</h2>
+    <p>Soon you'll connect services like Google Sheets, Stripe, Gmail and Notion here, once, and any of your apps can use them. No keys to copy, no code to write.</p>
+    <p class="muted">Looking for Claude, ChatGPT or Gemini? They're under <a href="/connect">Connect your AI</a>.</p>
+  </div>
 </section>`;
   return shell(c, c.get("user"), "connected", body);
 }

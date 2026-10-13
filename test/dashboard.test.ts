@@ -68,7 +68,11 @@ describe("dashboard", () => {
       expect(html, path).toContain('<a class="link" href="/keys"'); // Access keys sit in the account menu
       if (path !== "/app") expect(html, path).not.toMatch(/\son[a-z]+=/i); // My apps holds the escaped XSS titles from the test above
     }
-    expect(await (await call("/app/connected", { as: OWNER })).text()).toContain("Coming soon");
+    const soon = await (await call("/app/connected", { as: OWNER })).text();
+    expect(soon).toContain("Coming soon");
+    expect(soon).toContain('<div class="wall" aria-hidden="true">'); // the wall of service logos
+    expect(soon).toContain('<symbol id="svc-0"');
+    expect(soon).not.toMatch(/\sstyle="/); // strict CSP: no inline styles
     // New app offers asking your AI first, then the upload form; publishing goes back to My apps.
     const page = await (await call("/app/new", { as: OWNER })).text();
     expect(page.indexOf("Ask your AI")).toBeLessThan(page.indexOf('data-action="upload"'));
