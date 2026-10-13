@@ -223,6 +223,9 @@ Then smoke-test the live domain (section 2.2).
 - Always apply migrations **before** deploying code that needs them. Add new migrations as new
   files (`0003_...sql`); never edit one that has been applied.
 - Check state: `npx wrangler d1 migrations list launchpad --remote`.
+- **`0010_secret_hosts`** adds a host allow-list to every secret. Secrets stored before it have no
+  list, so the proxy refuses them (`secret_needs_hosts`) until an owner or editor sets each one
+  again with `hosts`. Tell app owners before deploying it.
 
 ### 2.2 Smoke test
 
@@ -396,7 +399,8 @@ All errors are JSON: `{ "error": { "code", "message", "hint" } }`.
 
 **Runtime API**: `https://<ns>.APP_DOMAIN/_api/*`, used by the SDK (see the guide):
 `GET /me`, `GET /kv?prefix=`, `GET|PUT|DELETE /kv/:key`, `GET /secrets`,
-`PUT|DELETE /secrets/:name`, `POST /secrets/:name/proxy`.
+`PUT|DELETE /secrets/:name`, `POST /secrets/:name/proxy`. `PUT /secrets/:name` takes
+`{ value, hosts }`: the proxy only sends a secret to the hosts listed with it.
 
 ## 7. Repo layout
 

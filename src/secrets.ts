@@ -4,7 +4,7 @@ import { isDev, now } from "./env";
 import { ApiError, badRequest, err, notFound } from "./errors";
 import type { SiteRow } from "./sites";
 import { checkProxyUrl } from "./ssrf";
-import { b64decode, b64encode } from "./util";
+import { b64decode, b64encode, parseJsonArray } from "./util";
 
 export { checkProxyUrl };
 
@@ -15,6 +15,7 @@ export const PROXY_MAX_BODY = 1024 * 1024;
 export const PROXY_MAX_RESPONSE = 5 * 1024 * 1024;
 export const PROXY_TIMEOUT_MS = 20_000;
 export const PROXY_RATE_PER_MINUTE = 60;
+export const SECRET_MAX_HOSTS = 20;
 const PROXY_METHODS = new Set(["GET", "POST", "PUT", "PATCH", "DELETE"]);
 
 type SecretValue = string | Record<string, unknown>;
@@ -76,6 +77,38 @@ export async function secretList(env: Env, siteId: string): Promise<string[]> {
   return results.map((r) => r.name);
 }
 
+const HOST_RE = /^(\*\.)?[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/;
+
+/**
+ * Validates the hosts a secret may be sent to. Each is a host name ("api.example.com") or a
+ * wildcard for its subdomains ("*.example.com"), and must itself pass the SSRF guard.
+ */
+export function parseSecretHosts(raw: unknown, env: Env): string[] {
+  const hint = "Example: { \"value\": \"sk-123\", \"hosts\": [\"api.example.com\"] }. Use \"*.example.com\" to allow its subdomains.";
+  if (!Array.isArray(raw) || raw.length === 0) {
+    throw badRequest("Say which hosts this secret may be sent to, as a non-empty hosts list.", hint);
+  }
+  if (raw.length > SECRET_MAX_HOSTS) throw badRequest(`A secret can list at most ${SECRET_MAX_HOSTS} hosts.`, hint);
+  const out = new Set<string>();
+  for (const h of raw) {
+    const host = typeof h === "string" ? h.trim().toLowerCase().replace(/\.$/, "") : "";
+    const bare = host.startsWith("*.") ? host.slice(2) : host;
+    const probe = `https://${bare}/`;
+    const blocked = checkProxyUrl(probe, { domain: env.DOMAIN, allowHttp: false }) ?? checkProxyUrl(probe, { domain: env.APP_DOMAIN, allowHttp: false });
+    if (!HOST_RE.test(host) || blocked) {
+      throw badRequest(`"${String(h).slice(0, 80)}" is not an allowed host.`, "List public host names only, without a scheme or path. " + hint);
+    }
+    out.add(host);
+  }
+  return [...out].sort();
+}
+
+/** True if `hostname` is listed exactly, or is a subdomain of a listed "*.domain". */
+export function hostAllowed(hostname: string, hosts: string[]): boolean {
+  const h = hostname.toLowerCase().replace(/\.$/, "");
+  return hosts.some((a) => (a.startsWith("*.") ? h.endsWith(a.slice(1)) : h === a));
+}
+
 export async function secretSet(env: Env, site: SiteRow, actor: User, name: string, body: unknown) {
   validateSecretName(name);
   const value = (body as { value?: unknown } | null)?.value;
@@ -88,20 +121,22 @@ export async function secretSet(env: Env, site: SiteRow, actor: User, name: stri
   if (new TextEncoder().encode(plaintext).length > SECRET_MAX_BYTES) {
     throw err(413, "secret_too_large", "Secret values can be at most 8 KB.", "Store only the key itself, not whole config files.");
   }
+  const hosts = parseSecretHosts((body as { hosts?: unknown }).hosts, env);
   const { iv, ciphertext } = await encryptSecret(env, site.id, name, plaintext);
   const res = await env.DB.prepare(
-    `INSERT INTO secrets (site_id, name, iv, ciphertext, updated_at)
-       SELECT ?1, ?2, ?3, ?4, ?5
+    `INSERT INTO secrets (site_id, name, iv, ciphertext, hosts, updated_at)
+       SELECT ?1, ?2, ?3, ?4, ?7, ?5
         WHERE EXISTS (SELECT 1 FROM secrets WHERE site_id = ?1 AND name = ?2)
            OR (SELECT COUNT(*) FROM secrets WHERE site_id = ?1) < ?6
-     ON CONFLICT(site_id, name) DO UPDATE SET iv = excluded.iv, ciphertext = excluded.ciphertext, updated_at = excluded.updated_at`,
+     ON CONFLICT(site_id, name) DO UPDATE SET iv = excluded.iv, ciphertext = excluded.ciphertext, hosts = excluded.hosts,
+       updated_at = excluded.updated_at`,
   )
-    .bind(site.id, name, iv, ciphertext, now(), SECRETS_MAX_PER_SITE)
+    .bind(site.id, name, iv, ciphertext, now(), SECRETS_MAX_PER_SITE, JSON.stringify(hosts))
     .run();
   if (!res.meta.changes) {
     throw err(409, "too_many_secrets", `This app already has ${SECRETS_MAX_PER_SITE} secrets.`, "Delete secrets you no longer use.");
   }
-  await audit(env, actor.email, "secret_set", `${site.namespace}/${site.mount_path}`, { siteId: site.id, name, kind: typeof value === "string" ? "string" : "object" });
+  await audit(env, actor.email, "secret_set", `${site.namespace}/${site.mount_path}`, { siteId: site.id, name, kind: typeof value === "string" ? "string" : "object", hosts });
   return { ok: true };
 }
 
@@ -112,9 +147,20 @@ export async function secretDelete(env: Env, site: SiteRow, actor: User, name: s
   return { ok: true };
 }
 
-async function loadSecret(env: Env, siteId: string, name: string): Promise<SecretValue> {
-  const row = await env.DB.prepare("SELECT iv, ciphertext FROM secrets WHERE site_id = ? AND name = ?").bind(siteId, name).first<{ iv: string; ciphertext: string }>();
+async function loadSecret(env: Env, siteId: string, name: string): Promise<{ secret: SecretValue; hosts: string[] }> {
+  const row = await env.DB.prepare("SELECT iv, ciphertext, hosts FROM secrets WHERE site_id = ? AND name = ?")
+    .bind(siteId, name)
+    .first<{ iv: string; ciphertext: string; hosts: string | null }>();
   if (!row) throw notFound(`Secret "${name}"`);
+  const hosts = parseJsonArray(row.hosts);
+  if (row.hosts === null || hosts.length === 0) {
+    throw err(
+      409,
+      "secret_needs_hosts",
+      `Secret "${name}" was saved before secrets had to name the hosts they may be sent to, so it can't be used yet.`,
+      "An owner or editor of this app needs to set it again with its hosts: formelab.secrets.set(name, value, { hosts: [\"api.example.com\"] }).",
+    );
+  }
   let pt: string;
   try {
     pt = await decryptSecret(env, siteId, name, row.iv, row.ciphertext);
@@ -122,7 +168,7 @@ async function loadSecret(env: Env, siteId: string, name: string): Promise<Secre
     if (e instanceof ApiError) throw e;
     throw err(500, "secret_unreadable", `Secret "${name}" could not be decrypted.`, "Set the secret again.");
   }
-  return JSON.parse(pt) as SecretValue;
+  return { secret: JSON.parse(pt) as SecretValue, hosts };
 }
 
 // ---------------------------------------------------------------------------
@@ -259,12 +305,17 @@ export async function proxy(env: Env, site: SiteRow, viewer: User, name: string,
   }
 
   await checkRate(env, site.id);
-  const values = placeholderValues(await loadSecret(env, site.id, name));
+  const { secret, hosts } = await loadSecret(env, site.id, name);
+  const values = placeholderValues(secret);
 
   const url = substitute(req.url, values, "url");
   const reason =
     checkProxyUrl(url, { domain: env.DOMAIN, allowHttp: isDev(env) }) ?? checkProxyUrl(url, { domain: env.APP_DOMAIN, allowHttp: isDev(env) });
   if (reason) throw err(400, "url_blocked", `That URL is not allowed: ${reason}.`, "The proxy only calls public https APIs.");
+  // The URL's host is never echoed: a placeholder may have put the secret into it.
+  if (!hostAllowed(new URL(url).hostname, hosts)) {
+    throw err(403, "host_not_allowed", `Secret "${name}" may only be sent to: ${hosts.join(", ")}.`, "Call one of those hosts, or have an owner or editor set the secret again with this host added.");
+  }
 
   const headers = new Headers();
   for (const [k, v] of Object.entries((req.headers as Record<string, unknown>) ?? {})) {

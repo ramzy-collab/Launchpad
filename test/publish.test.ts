@@ -2,6 +2,8 @@ import { env } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
 import { call, OWNER, PAGE, publishHtml, publishZip, r2Keys, uniq } from "./helpers";
 
+const HOSTS = ["api.test"];
+
 type Published = { url: string; site: { id: string; mountPath: string; fileCount: number } };
 
 describe("publish and serve", () => {
@@ -259,7 +261,7 @@ describe("security 12: deleting a site", () => {
     const ns = uniq();
     const { site } = await (await publishZip(OWNER, ns, "gone", { "index.html": PAGE("x"), "a.js": "1", "b/c.css": "2" })).json<Published>();
     await call(`https://${ns}.example.app/_api/kv/k`, { as: OWNER, mount: "/gone/", method: "PUT", body: '"v"' });
-    await call(`https://${ns}.example.app/_api/secrets/s`, { as: OWNER, mount: "/gone/", method: "PUT", json: { value: "shh-secret" } });
+    await call(`https://${ns}.example.app/_api/secrets/s`, { as: OWNER, mount: "/gone/", method: "PUT", json: { hosts: HOSTS, value: "shh-secret" } });
     expect((await r2Keys(`sites/${site.id}/`)).length).toBe(3);
     expect((await env.DB.prepare("SELECT COUNT(*) AS n FROM kv WHERE site_id = ?").bind(site.id).first<{ n: number }>())!.n).toBe(1);
     expect((await env.DB.prepare("SELECT COUNT(*) AS n FROM secrets WHERE site_id = ?").bind(site.id).first<{ n: number }>())!.n).toBe(1);

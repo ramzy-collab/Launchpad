@@ -56,7 +56,9 @@
       "delete": function (key) { return call("DELETE", "kv/" + enc(key)); }
     },
     secrets: {
-      set: function (name, value) { return call("PUT", "secrets/" + enc(name), { value: value }); },
+      set: function (name, value, opts) {
+        return call("PUT", "secrets/" + enc(name), { value: value, hosts: opts && opts.hosts });
+      },
       list: function () { return call("GET", "secrets"); },
       "delete": function (name) { return call("DELETE", "secrets/" + enc(name)); },
       proxy: function (name, req) {

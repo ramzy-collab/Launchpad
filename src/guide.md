@@ -91,14 +91,22 @@ await formelab.kv.delete("settings");
 Only the app's owner and editors can set or delete secrets. Anyone who can view the app can *use*
 them through the proxy, but nobody can read them back.
 
+Every secret names the **hosts** it may be sent to. The proxy refuses any other host, so a viewer
+can't point a secret at a server of their own. List exact host names (`api.example.com`), or
+`*.example.com` for any subdomain of `example.com` (not `example.com` itself). Use the API's real
+host, with no scheme or path.
+
 ```js
-await formelab.secrets.set("weather_key", "abc123");                         // a string
-await formelab.secrets.set("stripe", { public: "pk_...", secret: "sk_..." });  // an object
+await formelab.secrets.set("weather_key", "abc123", { hosts: ["api.openweathermap.org"] });  // a string
+await formelab.secrets.set("stripe", { public: "pk_...", secret: "sk_..." }, { hosts: ["api.stripe.com"] });  // an object
 await formelab.secrets.list();                                                 // ["stripe", "weather_key"]
 await formelab.secrets.delete("weather_key");
 ```
 
 Names are 1–64 characters of `a-z 0-9 _ -`. Values are at most 8 KB; at most 50 secrets per app.
+Setting a secret again replaces both its value and its hosts. To add a host, set the secret again
+with the full list. A secret saved before host lists existed fails with `secret_needs_hosts` until it
+is set again.
 
 ### `formelab.secrets.proxy(name, { url, method, headers, body })`
 
@@ -130,7 +138,8 @@ await formelab.secrets.proxy("openai", {
 });
 ```
 
-Rules: `https` only; public hosts only (no localhost, private IPs or the platform itself);
+Rules: only the secret's own hosts (`host_not_allowed` otherwise); `https` only; public hosts only
+(no localhost, private IPs or the platform itself);
 GET/POST/PUT/PATCH/DELETE; body up to 1 MB; 20-second timeout; responses are returned as text up
 to 5 MB (`truncated: true` if cut); redirects are not followed (you get the 3xx and a `location`);
 60 calls per minute per app; an unknown placeholder is an error. If the API echoes the secret back,
@@ -193,7 +202,7 @@ Errors: `sheets_not_connected` (409), `sheets_reconnect` (the owner must reconne
 
 ### Dashboard over an external API
 
-1. A settings panel (shown to editors) calls `formelab.secrets.set("api_key", value)`.
+1. A settings panel (shown to editors) calls `formelab.secrets.set("api_key", value, { hosts: ["api.example.com"] })`.
 2. On load, render the last snapshot from `localStorage` immediately, then refresh via the proxy.
 3. Save the fresh snapshot to `localStorage` (and to KV if every viewer should share it).
 
@@ -277,7 +286,7 @@ visits, lets an editor store a key, and calls `https://httpbin.org/anything` thr
     $("keyform").addEventListener("submit", async (ev) => {
       ev.preventDefault();
       try {
-        await formelab.secrets.set("demo_key", $("key").value);
+        await formelab.secrets.set("demo_key", $("key").value, { hosts: ["httpbin.org"] });
         $("key").value = "";
         $("error").textContent = "Key saved.";
       } catch (e) { fail(e); }
@@ -335,7 +344,7 @@ The script calls `POST https://<DOMAIN>/_api/deploy/sites` (multipart: `file`, `
 
 - [ ] One self-contained `index.html` unless the user needs more files.
 - [ ] Has `<head>`; all asset URLs are relative; nothing points at `/_api/` or `/_platform/` except the SDK script tag.
-- [ ] No API keys or passwords anywhere in the code. Secrets go through `secrets.set` + `secrets.proxy`.
+- [ ] No API keys or passwords anywhere in the code. Secrets go through `secrets.set` (with `hosts`) + `secrets.proxy`.
 - [ ] Data loads on page load or user action (no background jobs). Fast first paint from a cache where it helps.
 - [ ] Every SDK call is wrapped in `try/catch`, and errors show `e.message` and `e.hint` to the user.
 - [ ] KV keys are namespaced (`"vote:" + email`), values stay well under 64 KB.

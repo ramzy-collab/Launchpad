@@ -10,7 +10,7 @@ project's own `vitest-pool-workers` harness. Findings marked **Confirmed** were 
 
 | # | Severity | Finding | Status |
 |---|---|---|---|
-| 1 | **Critical** | Any viewer of an app can send its secrets to a server they control through the secret proxy | Confirmed |
+| 1 | **Critical** | Any viewer of an app can send its secrets to a server they control through the secret proxy | **Fixed** |
 | 2 | **High** | All apps in a namespace share one origin, so apps aren't isolated from each other (restricted apps included) | Confirmed |
 | 3 | **High** | App KV has no write permissions: any viewer can read, overwrite, wipe or fill an app's data | Confirmed |
 | 4 | Medium | Untrusted app code is served from the same registrable domain as the dashboard and OAuth | Design |
@@ -27,6 +27,9 @@ project's own `vitest-pool-workers` harness. Findings marked **Confirmed** were 
 ---
 
 ## 1. Critical: secret exfiltration through the proxy
+
+> **Fixed:** secrets now carry a required `hosts` allow-list (migration `0010`), and the proxy
+> refuses any other host. Secrets saved before the fix are refused until they are set again.
 
 **Where:** `src/runtime.ts:90-101`, `src/secrets.ts:240-296`
 
