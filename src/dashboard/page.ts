@@ -16,6 +16,7 @@ import { sheetsConfigured, sheetsStatus } from "../sheets";
 import { ago, appBrowser, appName, fmtBytes, thumb } from "./apps";
 import { connectedAiApps, type AiApp } from "./aiapps";
 import { AI_LOGOS } from "./logos";
+import { PWA_HEAD } from "../pwa";
 
 export const fmtTime = (ms: number | null) => (ms ? new Date(ms).toISOString().replace("T", " ").slice(0, 16) + " UTC" : "never");
 
@@ -32,7 +33,7 @@ export function logoutControl(c: Context<AppEnv>): string {
     : `<a class="link" href="/cdn-cgi/access/logout">Log out</a>`;
 }
 
-export type Page = "apps" | "new" | "shared" | "spaces" | "connect" | "connected" | "keys" | "account";
+export type Page = "apps" | "new" | "shared" | "spaces" | "connect" | "connected" | "keys" | "account" | "install";
 
 const PAGES: Record<Page, { title: string; intro: string }> = {
   apps: { title: "My apps", intro: "Everything you've made, live on Formelab." },
@@ -43,7 +44,10 @@ const PAGES: Record<Page, { title: string; intro: string }> = {
   connected: { title: "Connected apps", intro: "Services your apps can use through Formelab, without putting keys in them." },
   keys: { title: "Access keys", intro: "For tools that publish without signing in, like Claude Code or a script. Treat a key like a password." },
   account: { title: "Password", intro: "Set a password to log in with your email and password instead of waiting for a code." },
+  install: { title: "Get the app", intro: "Put Formelab, and any app on it, on your phone's home screen or your computer's dock. It opens in its own window, like any other app." },
 };
+
+const PHONE_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="2" width="12" height="20" rx="3"/><path d="M11 18h2"/></svg>`;
 
 export const MENU_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>`;
 
@@ -52,6 +56,7 @@ export function shell(c: Context<AppEnv>, user: User, page: Page, body: string, 
   const current = (p: Page) => (p === page ? ' aria-current="page"' : "");
   const link = (p: Page, href: string) => `<a href="${href}"${current(p)}>${PAGES[p].title}</a>`;
   const head_ = PAGES[page];
+  const getApp = `<a class="get-app" href="/install"${current("install")}>${PHONE_ICON}<span>Get the app</span></a>`;
   const menu = user.active
     ? `<a class="new-app" href="/new"${current("new")}><span aria-hidden="true">+</span> New app</a>
     <nav class="side-nav" aria-label="Main">
@@ -62,15 +67,17 @@ export function shell(c: Context<AppEnv>, user: User, page: Page, body: string, 
       <p class="side-label">Connect</p>
       ${link("connect", "/connect")}
       <a href="/connected"${current("connected")}>Connected apps${c.get("features")?.has("connected_apps") ? "" : ` <span class="soon">Soon</span>`}</a>
-    </nav>`
+    </nav>
+    ${getApp}`
     : `<nav class="side-nav" aria-label="Main">
       ${link("shared", "/shared")}
       ${link("connect", "/connect")}
-    </nav>`;
+    </nav>
+    ${getApp}`;
   return htmlResponse(`<!doctype html>
 <html lang="en">
 <head>
-${head(title ? `${title} · Formelab` : `${head_.title} · Formelab`, ["dashboard.js"])}
+${head(title ? `${title} · Formelab` : `${head_.title} · Formelab`, ["dashboard.js", "install.js"], { extra: PWA_HEAD })}
 </head>
 <body class="dash">
 <div class="app-shell">
@@ -212,6 +219,12 @@ export async function appSettingsPage(c: Context<AppEnv>, id: string): Promise<R
 </section>
 
 <section>
+  <h2>Install on your devices</h2>
+  <p class="muted">Open the app on your phone or computer, then add it to your home screen or install it from your browser. It gets its own icon and opens in its own window, straight to the app. Everyone it's shared with can do the same.</p>
+  <p class="install-actions"><a class="ghost" href="${e(site.url)}" target="_blank" rel="noopener">Open app ↗</a> <a href="/install">How to install →</a></p>
+</section>
+
+<section>
   <h2>Publish a new version</h2>
   <p class="muted">Upload a new <code>.html</code> or <code>.zip</code>. It replaces the app's files; its data, secrets and sharing stay as they are.</p>
   <form class="inline" data-action="site-replace" data-namespace="${e(site.namespace)}" data-mount="${e(site.mountPath)}">
@@ -251,6 +264,68 @@ export async function dashboardPage(c: Context<AppEnv>): Promise<Response> {
   <p><a class="cta" href="/new">+ New app</a></p>
 </section>`;
   return shell(c, ctx.user, "apps", body);
+}
+
+/** How to install a web app, per device. install.js opens the one for the device in use. */
+function installSteps(name: string): string {
+  const n = e(name);
+  const steps = (platform: string, title: string, items: string[]) =>
+    `<details class="steps" data-steps="${platform}"><summary>${title}</summary><ol>${items.map((i) => `<li>${i}</li>`).join("")}</ol></details>`;
+  return `<div class="install-steps">
+    ${steps("ios", "iPhone and iPad", [
+      "Open it in <strong>Safari</strong>.",
+      "Tap the <strong>Share</strong> button (on newer iPhones it's in the <strong>•••</strong> menu).",
+      "Tap <strong>Add to Home Screen</strong>, then <strong>Add</strong>.",
+    ])}
+    ${steps("android", "Android", [
+      "Open it in <strong>Chrome</strong>.",
+      "Tap <strong>⋮</strong> at the top right.",
+      `Tap <strong>Install app</strong> (or <strong>Add to Home screen</strong>), then <strong>Install</strong>.`,
+    ])}
+    ${steps("desktop", "Windows, Mac, Linux or Chromebook, in Chrome or Edge", [
+      "Open it in <strong>Chrome</strong> or <strong>Edge</strong>.",
+      `Click the install icon at the right end of the address bar. Or, in Chrome, open <strong>⋮</strong> → <strong>Cast, save and share</strong> → <strong>Install ${n}</strong>; in Edge, <strong>…</strong> → <strong>Apps</strong> → <strong>Install this site as an app</strong>.`,
+      "It opens in its own window, and you'll find it with your other apps, in the Dock or on the taskbar.",
+    ])}
+    ${steps("mac", "Mac, in Safari", [
+      "Open it in <strong>Safari</strong>.",
+      "Choose <strong>File</strong> → <strong>Add to Dock</strong>, then click <strong>Add</strong>.",
+    ])}
+    <p class="muted small">Firefox on a computer can't install apps yet. Use Chrome, Edge or Safari.</p>
+  </div>`;
+}
+
+/** Get the app: install Formelab itself, and how to install the apps people make. */
+export async function installPage(c: Context<AppEnv>): Promise<Response> {
+  const ctx = ctxOf(c);
+  const [own, shared] = await Promise.all([ctx.user.active ? listOwnSites(ctx) : Promise.resolve([]), listSharedSites(ctx)]);
+  const apps = [...own, ...shared];
+  const rows = apps
+    .map(
+      (s) => `<li>${thumb(s, "sm")}<span class="name">${e(appName(s))}</span><a class="ghost small" href="${e(s.url)}" target="_blank" rel="noopener">Open to install ↗</a></li>`,
+    )
+    .join("");
+  const body = `<section class="install-hero">
+  <img class="install-icon" src="/_assets/icon-192.png" alt="" width="96" height="96">
+  <div>
+    <h2>Formelab</h2>
+    <p class="muted not-installed">Your lab, one tap away: new apps, shared apps and your AI connections.</p>
+    <p class="installed-note">You're using the Formelab app. You're all set.</p>
+    <p><button type="button" class="cta" data-install hidden>Install Formelab</button></p>
+  </div>
+</section>
+
+<section class="not-installed">
+  <h2>Install it on this device</h2>
+  ${installSteps("Formelab")}
+</section>
+
+<section>
+  <h2>Your apps, as apps</h2>
+  <p class="muted">Every app on Formelab installs the same way: open it, then follow the steps above. It gets its own icon on your home screen or dock, and opens straight to the app in its own window, always on its latest version.</p>
+  ${rows ? `<ul class="install-apps">${rows}</ul>` : `<p class="muted">No apps yet. Apps you make, and apps shared with you, show up here.</p>`}
+</section>`;
+  return shell(c, ctx.user, "install", body);
 }
 
 const IDEAS = [

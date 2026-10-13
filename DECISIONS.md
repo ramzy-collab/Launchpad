@@ -468,3 +468,36 @@ Choices made while building v1, including where the build differs from the spec 
   spreadsheets they already have. It's a sensitive scope, so Google's consent screen stays in
   **Testing** (named test users, 7-day connections) until it passes Google's verification.
 - Disconnecting revokes the token at Google (best effort) and deletes it.
+
+## Installing Formelab and its apps (Progressive Web Apps)
+
+- "Native" Formelab and native apps are **installable web apps (PWAs)**, not separate iOS,
+  Android or desktop builds: one codebase, no app stores, and every app is always its latest
+  published version. Phones get Add to Home Screen; Chrome and Edge install a desktop app with its
+  own window; Safari on a Mac has Add to Dock. Wrapping for the App Store or Play Store
+  (Capacitor, Tauri and the like) can come later if needed.
+- **The web app** (`APP_DOMAIN`) has `/manifest.webmanifest`, PNG icons (`src/dashboard/icons/`,
+  bundled as base64 by `gen-assets.mjs`; iOS only uses PNG home screen icons) and a service
+  worker at `/sw.js`, all public since browsers fetch them without cookies. The service worker
+  caches nothing: it only shows an offline page when a navigation fails, so nobody sees stale
+  data. `install.js` turns on the Install button when the browser offers one
+  (`beforeinstallprompt`) and opens the right steps on **Get the app** (`/install`).
+- **Published apps** need nothing from their makers. Every HTML page gets
+  `<link rel="manifest" href="/_platform/manifest.webmanifest?mount=…" crossorigin="use-credentials">`
+  after the injected `<base>`, unless the app ships its own manifest. The manifest uses the app's
+  mount path as its `id`, `scope` and `start_url`, so several apps on one space host install as
+  separate apps, and it needs the same sign-in and access as the app. Its icon is the app's own
+  when that's an SVG or a PNG of at least 144px, else the letter tile. A PNG icon is also added as
+  `apple-touch-icon` for iOS, unless the app has one.
+- **Icon URLs are signed** (`/_platform/app-icon/<id>/<version>/<icon|letter>/<hmac>`, HMAC keyed
+  with `SECRETS_KEK`) instead of needing a cookie, because browsers don't reliably send cookies
+  when they download icons to install an app. A signature only works for that app's current
+  version on its own host, and is only handed out in a manifest or page that already needed
+  access. Icons get the same sandboxing CSP as on the web app.
+- No service worker for published apps: current Chrome doesn't need one to install, and a
+  platform worker on a host shared by several apps could get in the way of their own.
+- The SDK gets `formelab.app.installed()`, `canInstall()` and `install()` (plus a
+  `formelab:installchange` event) for apps that want their own Install button. Its size budget
+  went from 5 KB to 6 KB for this.
+- On iPhone and iPad a home screen app keeps its own cookies, separate from Safari, so people sign
+  in once more the first time they open it there. Android and desktop share the browser's sign-in.

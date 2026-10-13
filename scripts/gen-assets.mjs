@@ -20,6 +20,15 @@ const assets = {
   CONSENT_JS: "src/dashboard/consent.js",
   SKILL_MD: "skill/SKILL.md",
   CHANGELOG_MD: "CHANGELOG.md",
+  INSTALL_JS: "src/dashboard/install.js",
+  SW_JS: "src/dashboard/sw.js",
+};
+// Images, bundled as base64 (the app icons for installing Formelab on a device).
+const binaryAssets = {
+  ICON_192_PNG: "src/dashboard/icons/icon-192.png",
+  ICON_512_PNG: "src/dashboard/icons/icon-512.png",
+  MASKABLE_512_PNG: "src/dashboard/icons/maskable-512.png",
+  APPLE_TOUCH_ICON_PNG: "src/dashboard/icons/apple-touch-icon.png",
 };
 
 export function generateAssets() {
@@ -29,6 +38,11 @@ export function generateAssets() {
     const body = readFileSync(join(root, rel), "utf8");
     hash.update(body);
     out += `export const ${name} = ${JSON.stringify(body)};\n`;
+  }
+  for (const [name, rel] of Object.entries(binaryAssets)) {
+    const body = readFileSync(join(root, rel));
+    hash.update(body);
+    out += `export const ${name} = ${JSON.stringify(body.toString("base64"))};\n`;
   }
   // Added to asset URLs (?v=...) so browsers fetch new scripts and styles right after a deploy.
   out += `export const ASSET_VERSION = ${JSON.stringify(hash.digest("hex").slice(0, 10))};\n`;

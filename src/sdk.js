@@ -36,6 +36,12 @@
 
   var enc = encodeURIComponent;
 
+  // Installing the app (formelab.app): keeps the browser's install dialog for app.install().
+  var bip = null;
+  function changed() { window.dispatchEvent(new Event("formelab:installchange")); }
+  addEventListener("beforeinstallprompt", function (e) { e.preventDefault(); bip = e; changed(); });
+  addEventListener("appinstalled", function () { bip = null; changed(); });
+
   var formelab = {
     mount: mount,
     me: function () { return call("GET", "me"); },
@@ -103,6 +109,17 @@
         return formelab.sheets.request("POST", "spreadsheets", { body: { properties: { title: title } } }).then(function (d) {
           return { id: d.spreadsheetId, url: d.spreadsheetUrl };
         });
+      }
+    },
+    app: {
+      installed: function () { return navigator.standalone === true || matchMedia("(display-mode: standalone)").matches; },
+      canInstall: function () { return !!bip; },
+      install: function () {
+        var p = bip;
+        bip = null;
+        if (!p) return Promise.resolve("manual");
+        p.prompt();
+        return p.userChoice.then(function (c) { changed(); return c.outcome; });
       }
     },
     // Google Gemini through the app owner's connected key (Formelab: Connected apps).

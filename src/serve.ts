@@ -2,6 +2,7 @@ import { canViewSite } from "./auth";
 import type { Env, User } from "./env";
 import { extOf, contentTypeFor, isHtmlPath } from "./mime";
 import { getNamespace, resolveSiteForPath, type SiteRow } from "./sites";
+import { appPwaTags } from "./pwa";
 import { escapeHtml } from "./util";
 
 const BASE_HEADERS = {
@@ -17,10 +18,13 @@ export function plainPage(status: number, title: string, message: string): Respo
   });
 }
 
-/** Inserts <base href="/<mount>/"> as the first child of <head> (or synthesizes one). */
-async function injectBase(res: Response, baseHref: string): Promise<Response> {
-  const tag = `<base href="${escapeHtml(baseHref)}">`;
+/**
+ * Inserts <base href="/<mount>/"> as the first child of <head> (or synthesizes one), followed by
+ * the tags that let the app be installed on a device (see pwa.ts).
+ */
+async function injectHead(res: Response, env: Env, site: SiteRow, baseHref: string): Promise<Response> {
   const text = await res.text();
+  const tag = `<base href="${escapeHtml(baseHref)}">` + (await appPwaTags(env, site, text));
   if (/<head[\s>]/i.test(text)) {
     return new HTMLRewriter()
       .on("head", {
@@ -104,7 +108,7 @@ async function serveFromSite(req: Request, env: Env, site: SiteRow, rel: string,
       return new Response(null, { status: 200, headers });
     }
     const res = new Response(obj.body, { status: 200, headers });
-    return html ? injectBase(res, baseHref) : res;
+    return html ? injectHead(res, env, site, baseHref) : res;
   }
   return plainPage(404, "Not found", "This app has no file at this address.");
 }

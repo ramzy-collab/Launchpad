@@ -7,12 +7,12 @@ import { SERVICES_SPRITE } from "./dashboard/services";
 import { appIcon } from "./icons";
 import { sheetsCallback, sheetsConnect } from "./sheets";
 import { enabledFlags, withFlags } from "./flags";
-import { accountPage, appActivityPage, appSettingsPage, connectedPage, dashboardPage, keysPage, newAppPage, sharedPage, spacesPage } from "./dashboard/page";
+import { accountPage, appActivityPage, appSettingsPage, connectedPage, dashboardPage, installPage, keysPage, newAppPage, sharedPage, spacesPage } from "./dashboard/page";
 import { homePage } from "./dashboard/home";
 import { forgotGet, forgotPost, resetGet, resetPost, signInCode, signInGet, signInPost } from "./signin";
 import type { AppEnv, Env } from "./env";
 import { forbidden, jsonError, onError, unauthorized } from "./errors";
-import { ASSET_VERSION, CONSENT_JS, DASHBOARD_JS, FORMELAB_CSS, GUIDE_MD, HOME_CSS, SDK_JS, SIGNIN_JS, SITE_JS, THEME_JS } from "./generated/assets";
+import { ASSET_VERSION, CONSENT_JS, DASHBOARD_JS, FORMELAB_CSS, GUIDE_MD, HOME_CSS, INSTALL_JS, SDK_JS, SIGNIN_JS, SITE_JS, THEME_JS } from "./generated/assets";
 import { apexOrigin, AUTHORIZE_PATH, authorizeGet, authorizePost, oauthProvider } from "./oauth";
 import { runtimeApi } from "./runtime";
 import { appCallback, appHandoff, loginCallback, loginStart, logout, safeReturn, workosEnabled } from "./login";
@@ -20,6 +20,7 @@ import { plainPage, serveAppFile } from "./serve";
 import { readCookie, SESSION_COOKIE } from "./session";
 import { adminOrigin, aiOrigin, appOrigin, hostKind, legacyNamespaceOf, namespaceOf, nsOrigin } from "./hosts";
 import { joinWaitlist } from "./waitlist";
+import { appManifest, appPwaIcon, pwaRoutes } from "./pwa";
 
 const text = (body: string, type: string, cache = "no-cache") =>
   new Response(body, {
@@ -46,6 +47,7 @@ const assetRoutes: [string, (c: Context<AppEnv>) => Response][] = [
   ["/_assets/signin.js", asset(SIGNIN_JS, "text/javascript; charset=utf-8")],
   ["/_assets/dashboard.js", asset(DASHBOARD_JS, "text/javascript; charset=utf-8")],
   ["/_assets/consent.js", asset(CONSENT_JS, "text/javascript; charset=utf-8")],
+  ["/_assets/install.js", asset(INSTALL_JS, "text/javascript; charset=utf-8")],
   ["/_assets/services.svg", asset(SERVICES_SPRITE, "image/svg+xml")],
 ];
 
@@ -190,7 +192,11 @@ function signedInHost(requireSignIn: MiddlewareHandler<AppEnv>, routes: (app: Ho
 }
 
 // The web app: My apps, New app, Shared with me, Spaces, Connect your AI, Connected apps, Access keys.
-const webApp = signedInHost(requireSignIn, (app) => app.get("/_auth/callback", appCallback));
+// Its manifest, icons and service worker (pwa.ts) are public, since browsers fetch them without cookies.
+const webApp = signedInHost(requireSignIn, (app) => {
+  app.get("/_auth/callback", appCallback);
+  for (const [path, handler] of pwaRoutes) app.get(path, handler);
+});
 webApp.get("/", async (c) => dashboardPage(c));
 webApp.get("/shared", async (c) => sharedPage(c));
 webApp.get("/new", (c) => newAppPage(c));
@@ -206,6 +212,7 @@ webApp.get("/services/google-sheets/connect", sheetsConnect);
 webApp.get("/services/google-sheets/callback", sheetsCallback);
 webApp.get("/keys", (c) => keysPage(c));
 webApp.get("/account", (c) => accountPage(c));
+webApp.get("/install", (c) => installPage(c));
 webApp.get("/apps/:id", (c) => appSettingsPage(c, c.req.param("id")));
 webApp.get("/apps/:id/icon", (c) => appIcon(ctxOf(c), c.req.param("id")));
 webApp.get("/apps/:id/activity", (c) => appActivityPage(c, c.req.param("id")));
@@ -242,6 +249,8 @@ nsApp.get("/healthz", () => text("ok", "text/plain; charset=utf-8", "no-store"))
 
 // Namespace hosts get their own session from the apex (see login.ts).
 nsApp.get("/_auth/callback", appCallback);
+// App icons for installing an app: signed addresses from its manifest, so no sign-in (see pwa.ts).
+nsApp.get("/_platform/app-icon/:id/:version/:kind/:sig", appPwaIcon);
 
 nsApp.use("*", async (c, next) => {
   c.set("namespace", namespaceOf(new URL(c.req.url).hostname, c.env)!);
@@ -259,6 +268,7 @@ nsApp.use("*", async (c, next) => {
 
 nsApp.get("/_platform/sdk.js", () => text(SDK_JS, "text/javascript; charset=utf-8", "public, max-age=300"));
 nsApp.get("/_platform/guide.md", guide);
+nsApp.get("/_platform/manifest.webmanifest", appManifest);
 nsApp.all("/_platform/*", () => plainPage(404, "Not found", "There is nothing here."));
 nsApp.route("/_api", runtimeApi());
 nsApp.all("/_api", () => jsonError(forbidden("Not an API endpoint.")));
