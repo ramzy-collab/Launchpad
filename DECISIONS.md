@@ -413,3 +413,9 @@ Choices made while building v1, including where the build differs from the spec 
   `connectedApps`, and the build guide drops its Gemini sections (marked
   `<!-- flag:connected_apps -->` in `guide.md`). For apps the flag follows the app's owner,
   since it's their key. Turning it off deletes nothing; changes are in the admin activity log.
+
+## Changelog
+
+- `CHANGELOG.md` lists every change in plain language, newest first, one `## YYYY-MM-DD` heading
+  per day and one `- ` item per change. It's bundled at build time and shown in the admin panel's
+  **Changelog** tab. Add an entry with every change.

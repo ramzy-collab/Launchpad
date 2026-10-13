@@ -372,6 +372,12 @@ th[aria-sort="descending"] .arrow::after { content: "↓"; color: var(--fl-accen
 .soon-card p { max-width: 30rem; margin-left: auto; margin-right: auto; }
 @keyframes wall-drift { from { transform: rotate(-8deg) translateY(0); } to { transform: rotate(-8deg) translateY(-90px); } }
 
+/* ---------- Admin: changelog ---------- */
+.changelog { margin: 0; padding-left: 1.2rem; display: flex; flex-direction: column; gap: 10px; }
+.changelog li { color: var(--fl-ink-soft); line-height: 1.55; }
+.changelog li strong { color: var(--fl-ink); }
+.changelog-day h2 { font-size: 1.25rem !important; }
+
 /* ---------- Consent ---------- */
 .consent h1 { font-size: 1.75rem; line-height: 1.15; letter-spacing: -.02em; margin: 0 0 16px; }
 .consent .inline { margin-top: 20px; }

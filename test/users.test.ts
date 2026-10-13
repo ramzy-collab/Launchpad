@@ -128,3 +128,18 @@ describe("admin: people let in who haven't logged in yet", () => {
     expect(after.slice(after.indexOf('id="not-signed-in"'))).not.toContain(email);
   });
 });
+
+describe("admin: changelog", () => {
+  it("shows every day of changes, newest first, to admins only", async () => {
+    const res = await call("https://admin.example.com/changelog", { as: OWNER });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain('<a href="/changelog" aria-current="page">Changelog</a>');
+    expect(html).toContain('<time datetime="2026-10-02">October 2, 2026</time>');
+    expect(html).toContain("<strong>Formelab launches.</strong>");
+    expect(html).toContain("<code>formelab.gemini.generate</code>");
+    expect(html.indexOf("2026-10-13")).toBeLessThan(html.indexOf("2026-10-02"));
+    expect(html).not.toContain("**");
+    expect((await call("https://admin.example.com/changelog", { as: `nope-${uniq()}@example.com` })).status).toBe(404);
+  });
+});

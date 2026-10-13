@@ -18,6 +18,7 @@ const assets = {
   SITE_JS: "src/dashboard/site.js",
   CONSENT_JS: "src/dashboard/consent.js",
   SKILL_MD: "skill/SKILL.md",
+  CHANGELOG_MD: "CHANGELOG.md",
 };
 
 export function generateAssets() {

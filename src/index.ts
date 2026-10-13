@@ -206,6 +206,7 @@ adminApp.get("/users", (c) => adminPage(c, "users"));
 adminApp.get("/waitlist", (c) => adminPage(c, "waitlist"));
 adminApp.get("/activity", (c) => adminPage(c, "activity"));
 adminApp.get("/features", (c) => adminPage(c, "features"));
+adminApp.get("/changelog", (c) => adminPage(c, "changelog"));
 adminApp.notFound(() => plainPage(404, "Not found", "There is nothing here."));
 // ---------------------------------------------------------------------------
 // Namespace hosts: <ns>.APP_DOMAIN

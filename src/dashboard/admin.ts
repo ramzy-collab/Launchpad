@@ -2,6 +2,7 @@
 import type { Context } from "hono";
 import { describeActivity, platformActivity } from "../audit";
 import { listFlags, STATE_LABEL } from "../flags";
+import { CHANGELOG_MD } from "../generated/assets";
 import { isOwnerEmail } from "../auth";
 import type { AppEnv } from "../env";
 import { aiOrigin } from "../hosts";
@@ -12,7 +13,7 @@ import { listWaitlist } from "../waitlist";
 import { head, htmlResponse, nav } from "./layout";
 import { fmtTime, logoutControl } from "./page";
 
-type Tab = "overview" | "users" | "waitlist" | "features" | "activity";
+type Tab = "overview" | "users" | "waitlist" | "features" | "activity" | "changelog";
 
 function adminShell(c: Context<AppEnv>, tab: Tab, body: string): Response {
   const user = c.get("user");
@@ -35,7 +36,7 @@ ${nav(
   <h1>Run Formelab</h1>
   <p>People, the waitlist and admin access. Changes here affect everyone on Formelab.</p>
 </div>
-<nav class="tabs" aria-label="Admin sections"><a href="/"${current("overview")}>Overview</a><a href="/users"${current("users")}>Users</a><a href="/waitlist"${current("waitlist")}>Waitlist</a><a href="/features"${current("features")}>Features</a><a href="/activity"${current("activity")}>Activity</a></nav>
+<nav class="tabs" aria-label="Admin sections"><a href="/"${current("overview")}>Overview</a><a href="/users"${current("users")}>Users</a><a href="/waitlist"${current("waitlist")}>Waitlist</a><a href="/features"${current("features")}>Features</a><a href="/activity"${current("activity")}>Activity</a><a href="/changelog"${current("changelog")}>Changelog</a></nav>
 <div id="flash" role="status" hidden></div>
 ${body}
 </main>
@@ -51,6 +52,7 @@ export async function adminPage(c: Context<AppEnv>, tab: Tab): Promise<Response>
   if (tab === "waitlist") return adminShell(c, tab, await waitlistBody(c));
   if (tab === "activity") return adminShell(c, tab, await activityBody(c));
   if (tab === "features") return adminShell(c, tab, await featuresBody(c));
+  if (tab === "changelog") return adminShell(c, tab, changelogBody());
   return adminShell(c, tab, await overviewBody(c));
 }
 
@@ -132,6 +134,22 @@ async function usersBody(c: Context<AppEnv>): Promise<string> {
       : `<p class="muted">Everyone you've let in has logged in.</p>`
   }
 </section>`;
+}
+
+/** CHANGELOG.md as HTML. It's our own file, in a small fixed format: "## YYYY-MM-DD" days and "- " items. */
+export function changelogBody(): string {
+  const inline = (s: string) => e(s).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>").replace(/`([^`]+)`/g, "<code>$1</code>");
+  const day = (iso: string) => new Date(iso + "T12:00:00Z").toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric", timeZone: "UTC" });
+  const sections = CHANGELOG_MD.split(/^## /m).slice(1).map((chunk) => {
+    const [date, ...lines] = chunk.split("\n");
+    const items = lines.filter((l) => l.startsWith("- ")).map((l) => `<li>${inline(l.slice(2))}</li>`).join("");
+    return `<section class="changelog-day">
+  <h2><time datetime="${e(date!.trim())}">${e(day(date!.trim()))}</time></h2>
+  <ul class="changelog">${items}</ul>
+</section>`;
+  });
+  return `<p class="muted">Everything that has changed in Formelab, newest first.</p>
+${sections.join("\n")}`;
 }
 
 async function featuresBody(c: Context<AppEnv>): Promise<string> {
