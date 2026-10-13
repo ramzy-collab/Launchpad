@@ -107,6 +107,10 @@ export function buildServer(ctx: Ctx): McpServer {
         spa: z.boolean().optional().describe("Serve index.html for unknown extensionless paths (client-side routing)"),
         visibility: z.enum(["all", "restricted"]).optional().describe("Default \"restricted\": only the owner, editors and allowed_emails can open it. \"all\": every Formelab member (people let in, not those still on the waitlist)"),
         allowed_emails: emails,
+        data_writes: z
+          .enum(["editors", "everyone"])
+          .optional()
+          .describe("Who can change the app's shared data (formelab.kv): \"editors\" (owner and editors; the default for a new app) or \"everyone\" who can open it (polls, sign-ups, shared counters). Each person's own data goes in formelab.kv.mine either way."),
       },
     },
     (args) =>
@@ -120,6 +124,7 @@ export function buildServer(ctx: Ctx): McpServer {
           spa: args.spa,
           visibility: args.visibility,
           allowedEmails: args.allowed_emails,
+          dataWrites: args.data_writes,
           requireIcon: true,
         });
         return { url: r.url, replaced: r.replaced, site: r.site, ...(r.note ? { note: r.note } : {}) };
@@ -139,6 +144,10 @@ export function buildServer(ctx: Ctx): McpServer {
         visibility: z.enum(["all", "restricted"]).optional(),
         allowed_emails: emails,
         editors: emails,
+        data_writes: z
+          .enum(["editors", "everyone"])
+          .optional()
+          .describe("Who can change the app's shared data (formelab.kv): \"editors\" (owner and editors; the default for a new app) or \"everyone\" who can open it (polls, sign-ups, shared counters). Each person's own data goes in formelab.kv.mine either way."),
         sheets: z
           .array(z.string())
           .optional()

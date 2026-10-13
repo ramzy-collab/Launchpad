@@ -44,6 +44,8 @@ const FIELD_LABEL: Record<string, string> = {
   visibility: "who can open it",
   allowed_emails: "who it's shared with",
   editors: "editors",
+  kv_writes: "who can change its data",
+  sheets: "Google Sheets it can use",
 };
 
 const list = (v: unknown) => (Array.isArray(v) ? v.map(String).join(", ") : "");
@@ -83,6 +85,10 @@ export function describeActivity(row: AuditRow): string {
       if (d.visibility) {
         explained.add("visibility");
         parts.push(`set who can open it to ${d.visibility === "all" ? "all Formelab members" : "only people it's shared with"}`);
+      }
+      if (d.dataWrites) {
+        explained.add("kv_writes");
+        parts.push(`let ${d.dataWrites === "everyone" ? "everyone who can open it" : "only the owner and editors"} change its data`);
       }
       if (typeof d.title === "string") {
         explained.add("title");

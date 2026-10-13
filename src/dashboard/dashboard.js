@@ -76,6 +76,7 @@
         title: el.title.value,
         visibility: el.visibility.value,
         allowed_emails: el.allowed_emails.value,
+        data_writes: el.data_writes.value,
         spa: el.spa.checked,
         hidden: el.hidden.checked
       };

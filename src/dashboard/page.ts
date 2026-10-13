@@ -187,6 +187,10 @@ export async function appSettingsPage(c: Context<AppEnv>, id: string): Promise<R
   <form class="stack wide" data-action="site-update" data-id="${e(site.id)}">
     <label>Title <input name="title" value="${e(site.title ?? "")}" placeholder="${e(appName(site))}"></label>
     <label>Who can open it <select name="visibility">${visibilityOptions(site.visibility)}</select></label>
+    <label>Who can change its data <select name="data_writes">
+      <option value="editors"${site.dataWrites === "editors" ? " selected" : ""}>Only the owner and editors</option>
+      <option value="everyone"${site.dataWrites === "everyone" ? " selected" : ""}>Everyone who can open it (polls, sign-ups)</option>
+    </select></label>
     <label>Share with (can open) <input name="allowed_emails" value="${e(site.allowedEmails.join(", "))}" placeholder="friend@example.com, ..."></label>
     ${
       site.canEditEditors

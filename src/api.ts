@@ -101,6 +101,7 @@ export function managementApi(kind: "admin" | "deploy") {
       visibility: fields.visibility,
       allowedEmails: fields.allowed_emails,
       editors: fields.editors,
+      dataWrites: fields.data_writes,
     });
     return c.json(result, result.replaced ? 200 : 201);
   });

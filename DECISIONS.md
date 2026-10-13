@@ -63,6 +63,13 @@ Choices made while building v1, including where the build differs from the spec 
 
 ## Publishing and serving
 
+- **Who can change an app's data (audit finding #3).** Shared KV is readable by everyone who can
+  open the app; writing depends on `sites.kv_writes`: `editors` (owner, site editors, namespace
+  editors) or `all` (everyone who can open it). New apps start as `editors`; apps that existed
+  before migration `0012` default to `all`, so nothing that worked stops working. Each person's
+  private data (`formelab.kv.mine`, `/_api/me/kv`) lives in its own table, `kv_user`, keyed by
+  site and email: only that person reads or changes it (not even the owner), it doesn't count
+  against the 1,000 shared keys, and each person may keep 200 keys per app.
 - **"all" means members, not everyone signed in (audit finding N2).** Anyone can sign in with
   WorkOS and land on the waitlist, so `canViewSite` only opens `all` apps to active accounts.
   Waitlisted people can still open apps shared with them by name (`allowed_emails`, editors). Every

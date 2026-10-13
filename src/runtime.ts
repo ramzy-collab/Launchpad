@@ -50,23 +50,56 @@ export function runtimeApi() {
   });
 
   // Keys may contain "/" (sent percent-encoded); take the raw remainder of the path.
-  const keyFrom = (path: string) => {
-    const raw = path.slice(path.indexOf("/_api/kv/") + "/_api/kv/".length);
+  const keyFrom = (path: string, base: string) => {
+    const raw = path.slice(path.indexOf(base) + base.length);
     try {
       return decodeURIComponent(raw);
     } catch {
       throw badRequest("The key is not correctly URL-encoded.", "Use the SDK, which encodes keys for you.");
     }
   };
-
-  api.get("/kv", async (c) => c.json(await kvList(c.env, c.get("site").id, c.req.query("prefix") ?? "")));
-  api.get("/kv/*", async (c) => c.json(await kvGet(c.env, c.get("site").id, keyFrom(new URL(c.req.url).pathname))));
-  api.put("/kv/*", async (c) => {
+  type Ctx = { env: AppEnv["Bindings"]; get: <K extends keyof AppEnv["Variables"]>(k: K) => AppEnv["Variables"][K]; req: { url: string; text(): Promise<string> } };
+  const sharedKey = (c: Ctx) => keyFrom(new URL(c.req.url).pathname, "/_api/kv/");
+  const myKey = (c: Ctx) => keyFrom(new URL(c.req.url).pathname, "/_api/me/kv/");
+  const readValue = async (c: Ctx) => {
     const body = await c.req.text();
     if (body.length > 64 * 1024 * 4) throw err(413, "value_too_large", "Values can be at most 64 KB of JSON.", "Split the data across several keys.");
-    return c.json(await kvSet(c.env, c.get("site").id, keyFrom(new URL(c.req.url).pathname), body));
+    return body;
+  };
+  const shared = (c: Ctx) => ({ siteId: c.get("site").id });
+  const mine = (c: Ctx) => ({ siteId: c.get("site").id, email: c.get("user").email });
+
+  /** Shared data: everyone who can open the app reads it; who may change it is the app's kv_writes setting. */
+  const requireDataWrite = async (c: Ctx) => {
+    const site = c.get("site");
+    if (site.kv_writes !== "editors") return;
+    const nsRow = await getNamespace(c.env, c.get("namespace"));
+    if (!nsRow || !canManageSite(c.get("user"), site, nsRow)) {
+      throw err(
+        403,
+        "read_only_data",
+        "Only this app's owner and editors can change its shared data.",
+        "Keep each person's own data in formelab.kv.mine, or ask the owner to let everyone change the app's data (its settings, or update_site's data_writes).",
+      );
+    }
+  };
+
+  api.get("/kv", async (c) => c.json(await kvList(c.env, shared(c), c.req.query("prefix") ?? "")));
+  api.get("/kv/*", async (c) => c.json(await kvGet(c.env, shared(c), sharedKey(c))));
+  api.put("/kv/*", async (c) => {
+    await requireDataWrite(c);
+    return c.json(await kvSet(c.env, shared(c), sharedKey(c), await readValue(c)));
   });
-  api.delete("/kv/*", async (c) => c.json(await kvDelete(c.env, c.get("site").id, keyFrom(new URL(c.req.url).pathname))));
+  api.delete("/kv/*", async (c) => {
+    await requireDataWrite(c);
+    return c.json(await kvDelete(c.env, shared(c), sharedKey(c)));
+  });
+
+  // Each person's private data in this app: only they can read or change it.
+  api.get("/me/kv", async (c) => c.json(await kvList(c.env, mine(c), c.req.query("prefix") ?? "")));
+  api.get("/me/kv/*", async (c) => c.json(await kvGet(c.env, mine(c), myKey(c))));
+  api.put("/me/kv/*", async (c) => c.json(await kvSet(c.env, mine(c), myKey(c), await readValue(c))));
+  api.delete("/me/kv/*", async (c) => c.json(await kvDelete(c.env, mine(c), myKey(c))));
 
   const requireManage = async (c: { env: AppEnv["Bindings"]; get: <K extends keyof AppEnv["Variables"]>(k: K) => AppEnv["Variables"][K] }) => {
     const nsRow = await getNamespace(c.env, c.get("namespace"));

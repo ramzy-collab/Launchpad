@@ -229,6 +229,9 @@ Then smoke-test the live domain (section 2.2).
 - **`0011_site_sheets`** gives each app a list of the Google spreadsheets it may use. Apps that
   already use Google Sheets get `sheet_not_allowed` until their owner lists the spreadsheets in the
   app's settings (or with `update_site`'s `sheets`).
+- **`0012_kv_access`** adds "Who can change its data" to each app and a private per-person data
+  table. Existing apps keep letting everyone who can open them change their data; new apps start
+  as owner-and-editors only. Nothing to do for existing apps.
 
 ### 2.2 Smoke test
 

@@ -381,3 +381,79 @@ describe("secret host allow-lists", () => {
     expect(JSON.parse(row!.detail).hosts).toEqual(["api.test"]);
   });
 });
+
+describe("who can change an app's data", () => {
+  const V = "kv-viewer@example.com";
+  const ED = "kv-editor@example.com";
+  const code = async (r: Response) => (await r.json<{ error: { code: string } }>()).error.code;
+
+  it("new apps let only the owner and editors change shared data; viewers can read it", async () => {
+    const s = await newSite({ allowed_emails: V, editors: ED });
+    expect((await s.api("kv/config", { method: "PUT", body: '{"title":"Hi"}' })).status).toBe(200);
+    expect(await (await s.api("kv/config", { as: V })).json()).toEqual({ value: { title: "Hi" } });
+    expect((await s.api("kv", { as: V })).status).toBe(200);
+
+    const put = await s.api("kv/config", { as: V, method: "PUT", body: "null" });
+    expect(put.status).toBe(403);
+    expect(await code(put)).toBe("read_only_data");
+    expect((await s.api("kv/config", { as: V, method: "DELETE" })).status).toBe(403);
+    expect(await (await s.api("kv/config")).json()).toEqual({ value: { title: "Hi" } });
+    expect((await s.api("kv/config", { as: ED, method: "PUT", body: '"by editor"' })).status).toBe(200);
+  });
+
+  it("the owner can let everyone change it, and apps from before keep that", async () => {
+    const s = await newSite({ allowed_emails: V });
+    const patch = (json: unknown, as = OWNER) => call(`/_api/admin/sites/${s.id}`, { as, method: "PATCH", json });
+    expect((await patch({ data_writes: "sometimes" })).status).toBe(400);
+    const r = await patch({ data_writes: "everyone" });
+    expect((await r.json<{ dataWrites: string }>()).dataWrites).toBe("everyone");
+    expect((await s.api("kv/votes", { as: V, method: "PUT", body: "1" })).status).toBe(200);
+    expect((await patch({ data_writes: "editors" })).status).toBe(200);
+    expect((await s.api("kv/votes", { as: V, method: "PUT", body: "2" })).status).toBe(403);
+    // Apps that existed before the setting get "all" from the migration's column default.
+    await E.DB.prepare("UPDATE sites SET kv_writes = 'all' WHERE id = ?").bind(s.id).run();
+    expect((await s.api("kv/votes", { as: V, method: "PUT", body: "3" })).status).toBe(200);
+  });
+
+  it("publish can set it for a new app", async () => {
+    const s = await newSite({ allowed_emails: V, data_writes: "everyone" });
+    expect((await s.api("kv/x", { as: V, method: "PUT", body: "1" })).status).toBe(200);
+  });
+
+  it("kv.mine is private to each person, whatever the setting", async () => {
+    const W = "kv-other@example.com";
+    const s = await newSite({ allowed_emails: `${V}, ${W}` });
+    expect((await s.api("me/kv/prefs", { as: V, method: "PUT", body: '{"theme":"dark"}' })).status).toBe(200);
+    expect(await (await s.api("me/kv/prefs", { as: V })).json()).toEqual({ value: { theme: "dark" } });
+    // Nobody else sees it: not another viewer, not the owner, not through shared KV.
+    expect((await s.api("me/kv/prefs", { as: W })).status).toBe(404);
+    expect((await s.api("me/kv/prefs")).status).toBe(404);
+    expect(await (await s.api("me/kv", { as: W })).json()).toEqual([]);
+    expect((await s.api("kv/prefs")).status).toBe(404);
+    expect(await (await s.api("kv")).json()).toEqual([]);
+    // Each person has their own copy of a key, and can delete only their own.
+    await s.api("me/kv/prefs", { as: W, method: "PUT", body: '"w"' });
+    await s.api("me/kv/prefs", { as: W, method: "DELETE" });
+    expect(await (await s.api("me/kv/prefs", { as: V })).json()).toEqual({ value: { theme: "dark" } });
+  });
+
+  it("caps each person's private keys without touching the shared limit", async () => {
+    const s = await newSite({ allowed_emails: V });
+    const stmts = [];
+    for (let i = 0; i < 200; i++) stmts.push(E.DB.prepare("INSERT INTO kv_user (site_id, email, key, value, updated_at) VALUES (?, ?, ?, '1', 0)").bind(s.id, V, `k${i}`));
+    await E.DB.batch(stmts);
+    const over = await s.api("me/kv/one-more", { as: V, method: "PUT", body: "1" });
+    expect(over.status).toBe(409);
+    expect(await code(over)).toBe("too_many_keys");
+    expect((await s.api("me/kv/k1", { as: V, method: "PUT", body: "2" })).status).toBe(200);
+    expect((await s.api("kv/shared", { method: "PUT", body: "1" })).status).toBe(200);
+  });
+
+  it("deleting the app deletes everyone's private data", async () => {
+    const s = await newSite({ allowed_emails: V });
+    await s.api("me/kv/prefs", { as: V, method: "PUT", body: "1" });
+    expect((await call(`/_api/admin/sites/${s.id}`, { as: OWNER, method: "DELETE" })).status).toBe(200);
+    const n = await E.DB.prepare("SELECT COUNT(*) AS n FROM kv_user WHERE site_id = ?").bind(s.id).first<{ n: number }>();
+    expect(n!.n).toBe(0);
+  });
+});

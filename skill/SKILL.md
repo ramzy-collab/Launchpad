@@ -6,7 +6,7 @@ description: Build and publish a small web app to the user's Formelab host (http
 # Formelab app builder
 
 Formelab hosts self-contained HTML/CSS/JS apps behind single sign-on, with a browser SDK for
-identity (`formelab.me()`), per-app key/value storage (`formelab.kv`), and secrets with a
+identity (`formelab.me()`), per-app key/value storage (`formelab.kv`, plus `formelab.kv.mine` for each person's private data), and secrets with a
 server-side proxy (`formelab.secrets.proxy`). Apps are published through the `formelab` MCP
 server.
 
