@@ -204,6 +204,44 @@ Errors: `sheets_not_connected` (409), `sheet_not_allowed` (403: not on the app's
 `sheets_owner_only` (403: only the owner can create), `sheets_reconnect` (the owner must reconnect),
 `sheets_forbidden`, `sheets_not_found`, `rate_limited`. Show `e.message` and `e.hint`.
 
+#### Combining several spreadsheets
+
+An app can list several spreadsheets (up to 50) and combine them, for example sales, stock and
+staffing into one dashboard. List every one in the app's settings or with `update_site`'s
+`sheets`. Each spreadsheet read is one call against the app's 60 calls a minute, shared by
+everyone using the app, so **don't re-read every sheet for every visitor**. Cache the combined
+result in KV and refresh it only when it's a few minutes old:
+
+```js
+const SOURCES = [SALES_ID, STOCK_ID, STAFF_ID];   // the ids listed for this app (or keep them in KV)
+const MAX_AGE = 5 * 60 * 1000;                     // refresh at most every 5 minutes
+
+async function combined() {
+  const cached = await formelab.kv.get("combined");
+  if (cached && Date.now() - cached.at < MAX_AGE) return cached.data;
+  try {
+    const [sales, stock, staff] = await Promise.all([
+      formelab.sheets.read(SOURCES[0], "Sheet1!A:F"),
+      formelab.sheets.read(SOURCES[1], "Sheet1!A:D"),
+      formelab.sheets.read(SOURCES[2], "Roster!A:C"),
+    ]);
+    const data = summarize(sales, stock, staff);    // keep only what the page shows
+    await formelab.kv.set("combined", { at: Date.now(), data });
+    return data;
+  } catch (e) {
+    if (cached) return cached.data;                 // rate-limited or offline: show the last good result
+    throw e;
+  }
+}
+```
+
+- Read several ranges of **one** spreadsheet in a single call with
+  `formelab.sheets.request("GET", "spreadsheets/" + id + "/values:batchGet", { query: { ranges: ["A!A:C", "B!A:C"] } })`.
+- A KV value holds at most 64 KB, so store the summary the page needs, not every raw row. For more,
+  split it across keys (`combined:sales`, `combined:stock`).
+- Show when the data was last refreshed (`cached.at`), and offer a "Refresh" button that skips the
+  cache, for the owner only, so viewers can't use up the limit.
+
 <!-- /flag:connected_apps -->
 ## 4. Patterns
 
