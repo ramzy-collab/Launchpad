@@ -44,10 +44,10 @@ describe("dashboard", () => {
     await call("/_api/admin/tokens", { as: OWNER, method: "POST", json: { name: "laptop-token" } });
     const html = await (await call("/app", { as: OWNER })).text();
     expect(html).toContain(`https://${ns}.example.app/listed/`);
-    expect(html).toContain(`<a href="https://${ns}.example.app/listed/" target="_blank" rel="noopener">`); // apps open in a new tab
+    expect(html).toContain(`<a class="tile-link" href="https://${ns}.example.app/listed/" target="_blank" rel="noopener">`); // a tile opens the app in a new tab
     expect(html).toContain("Listed app");
     expect(html).not.toContain("Recent activity");
-    expect(html).toMatch(/href="\/apps\/[^"]+\/activity">Activity<\/a>/);
+    expect(html).toMatch(/<a class="gear" href="\/apps\/[^"]+" aria-label="Settings for Listed app"/);
     expect(await (await call("/app/spaces", { as: OWNER })).text()).toContain(`>${ns}</a>`);
     expect(await (await call("/app/keys", { as: OWNER })).text()).toContain("laptop-token");
   });
@@ -168,7 +168,8 @@ describe("app activity logs", () => {
 
     // Editors see it (and get a link under Shared with me); viewers and strangers get a 404.
     expect((await call(url, { as: editor })).status).toBe(200);
-    expect(await (await call("/app/shared", { as: editor })).text()).toContain(`href="/apps/${id}/activity"`);
+    expect(await (await call("/app/shared", { as: editor })).text()).toContain(`<a class="gear" href="/apps/${id}"`);
+    expect(await (await call("/app/shared", { as: viewer })).text()).not.toContain(`href="/apps/${id}"`); // viewers get no settings
     expect((await call(url, { as: viewer })).status).toBe(404);
     expect((await call(url, { as: `x-${uniq()}@example.com` })).status).toBe(404);
     expect((await call("/app/apps/nope/activity", { as: OWNER })).status).toBe(404);
@@ -185,5 +186,50 @@ describe("app activity logs", () => {
     expect(html).toContain(`Invited ${email}`);
     expect(html).toContain(`Created the space ${ns}`);
     expect((await call("https://admin.example.com/activity", { as: `nope-${uniq()}@example.com` })).status).toBe(404);
+  });
+});
+
+describe("app browser and app settings page", () => {
+  it("shows tiles grouped by space by default, and a sortable list", async () => {
+    const [a, b] = [uniq(), uniq()];
+    await publishHtml(OWNER, a, "one", PAGE("x"), { title: "Alpha tool" });
+    await publishHtml(OWNER, a, "two", PAGE("x"), { title: "Beta tool" });
+    await publishHtml(OWNER, b, "", PAGE("x"), { title: "Gamma home" });
+    const html = await (await call("/app", { as: OWNER })).text();
+    expect(html).toContain('<div class="browser" data-browser data-view="tiles">');
+    expect(html).toContain('<div class="view-list" hidden>');
+    expect(html).toContain(`<div class="group" data-group="${a}">`);
+    expect(html).toContain(`<div class="group" data-group="${b}">`);
+    const groupA = html.slice(html.indexOf(`data-group="${a}"`), html.indexOf("</div>\n</div>", html.indexOf(`data-group="${a}"`)));
+    expect(groupA).toContain("Alpha tool");
+    expect(groupA).toContain("Beta tool");
+    expect(groupA).not.toContain("Gamma home");
+    for (const key of ["name", "space", "vis", "updated", "size"]) expect(html).toContain(`data-sort="${key}"`);
+    expect(html).toContain("data-q");
+    expect(html).toContain('data-filter="space"');
+    expect(html).toContain('data-name="alpha tool"');
+  });
+
+  it("has a settings page per app with its details and every edit option", async () => {
+    const ns = uniq();
+    const editor = `sed-${uniq()}@example.com`;
+    await publishHtml(OWNER, ns, "cfg", PAGE("x"), { title: "Configured app", editors: editor });
+    const site = await env.DB.prepare("SELECT id FROM sites WHERE namespace = ? AND mount_path = 'cfg'").bind(ns).first<{ id: string }>();
+    const res = await call(`/app/apps/${site!.id}`, { as: OWNER });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("<h1>Configured app</h1>");
+    for (const fact of ["<dt>Space</dt>", "<dt>Path</dt>", "<dt>Owner</dt>", "<dt>Size</dt>", "<dt>Last updated</dt>"]) expect(html).toContain(fact);
+    expect(html).toContain('data-action="site-update"');
+    expect(html).toContain('name="editors"');
+    expect(html).toContain('data-action="site-replace"');
+    expect(html).toContain('data-action="site-delete"');
+    expect(html).toContain('data-next="/"');
+    expect(html).toContain(`href="/apps/${site!.id}/activity"`);
+    // Editors can manage it but not change who the editors are; strangers get a 404.
+    const asEditor = await (await call(`/app/apps/${site!.id}`, { as: editor })).text();
+    expect(asEditor).toContain('data-action="site-update"');
+    expect(asEditor).not.toContain('name="editors"');
+    expect((await call(`/app/apps/${site!.id}`, { as: `nobody-${uniq()}@example.com` })).status).toBe(404);
   });
 });

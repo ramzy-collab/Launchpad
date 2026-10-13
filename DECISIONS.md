@@ -359,3 +359,18 @@ Choices made while building v1, including where the build differs from the spec 
   button shows Connected, or links to that app's setup on Connect your AI. Gemini has no reliable
   prefill link, so it isn't offered here. A built-in builder (Formelab calling a model itself)
   is the planned next step.
+
+## Browsing apps
+
+- My apps and Shared with me share one app browser (`src/dashboard/apps.ts`): **tiles grouped by
+  space** (the default) or a **list** whose column headers sort (click again to reverse), plus
+  search (name, address, space, owner), filters (space; who can open it on My apps, your access
+  on Shared with me) and a sort menu. The server renders every app in both views; `dashboard.js`
+  filters, sorts and switches views without reloading, and remembers the view in localStorage.
+- Clicking a tile opens the app in a new tab. The gear (only on apps you can manage) opens the
+  app's own page, `/apps/<id>`: its details (space, path, owner, who can open it, dates, size,
+  options), settings and sharing, publishing a new version, recent activity (with a link to the
+  full log) and Delete. Editors who aren't the owner don't see the editors field (only the owner
+  or the space's owner can change it) or Delete.
+- Thumbnails are a colored square with the app's first letter; the color comes from the app id
+  through one of eight classes, since the CSP allows no inline styles.

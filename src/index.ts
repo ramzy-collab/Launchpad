@@ -4,7 +4,7 @@ import { identifyBearer, identifyBrowser } from "./auth";
 import { adminPage } from "./dashboard/admin";
 import { connectPage } from "./dashboard/connect";
 import { SERVICES_SPRITE } from "./dashboard/services";
-import { appActivityPage, connectedPage, dashboardPage, keysPage, newAppPage, sharedPage, spacesPage } from "./dashboard/page";
+import { appActivityPage, appSettingsPage, connectedPage, dashboardPage, keysPage, newAppPage, sharedPage, spacesPage } from "./dashboard/page";
 import { homePage, loginPage } from "./dashboard/home";
 import type { AppEnv, Env } from "./env";
 import { forbidden, jsonError, onError, unauthorized } from "./errors";
@@ -179,6 +179,7 @@ webApp.get("/spaces", (c) => spacesPage(c));
 webApp.get("/connect", (c) => connectPage(c));
 webApp.get("/connected", (c) => connectedPage(c));
 webApp.get("/keys", (c) => keysPage(c));
+webApp.get("/apps/:id", (c) => appSettingsPage(c, c.req.param("id")));
 webApp.get("/apps/:id/activity", (c) => appActivityPage(c, c.req.param("id")));
 webApp.notFound(() => plainPage(404, "Not found", "There is nothing here."));
 

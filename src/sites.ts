@@ -592,9 +592,9 @@ export async function updateSite(ctx: Ctx, id: string, patch: SitePatch) {
 }
 
 /** A site the signed-in person may manage (owner, editor or namespace owner); 404 for others. */
-export async function getManageableSite(ctx: Ctx, id: string): Promise<SiteView> {
-  const { site } = await requireManageableSite(ctx, id);
-  return siteView(ctx.env, site, ctx.requestUrl);
+export async function getManageableSite(ctx: Ctx, id: string): Promise<SiteView & { canEditEditors: boolean }> {
+  const { site, ns } = await requireManageableSite(ctx, id);
+  return { ...siteView(ctx.env, site, ctx.requestUrl), canEditEditors: site.owner_email === ctx.user.email || isNamespaceOwner(ctx.user, ns) };
 }
 
 /** Removes a site's files, KV rows, secret rows and the site row itself. */

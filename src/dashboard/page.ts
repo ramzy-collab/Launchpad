@@ -2,7 +2,7 @@ import type { Context } from "hono";
 import { describeActivity, siteActivity } from "../audit";
 import { listTokens } from "../auth";
 import type { AppEnv, User } from "../env";
-import { getManageableSite, listNamespaces, listOwnSites, listSharedSites, type SiteView } from "../sites";
+import { getManageableSite, listNamespaces, listOwnSites, listSharedSites } from "../sites";
 import { escapeHtml as e } from "../util";
 import { ApiError } from "../errors";
 import { plainPage } from "../serve";
@@ -10,11 +10,11 @@ import { adminOrigin } from "../hosts";
 import { ctxOf } from "../api";
 import { head, htmlResponse } from "./layout";
 import { SERVICE_ICONS, SPRITE_URL } from "./services";
+import { ago, appBrowser, appName, fmtBytes, hueClass, initial } from "./apps";
 import { connectedAiApps, type AiApp } from "./aiapps";
 import { AI_LOGOS } from "./logos";
 
 export const fmtTime = (ms: number | null) => (ms ? new Date(ms).toISOString().replace("T", " ").slice(0, 16) + " UTC" : "never");
-const fmtBytes = (n: number) => (n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`);
 
 const VISIBILITY_LABEL = { restricted: "Only people you share with", all: "Anyone signed in to Formelab" } as const;
 
@@ -110,44 +110,37 @@ const waitlistedNotice = `<section class="notice">
 export async function sharedPage(c: Context<AppEnv>): Promise<Response> {
   const ctx = ctxOf(c);
   const sites = await listSharedSites(ctx);
-  const rows = sites.map((s) => sharedRow(s)).join("");
   const body = `${ctx.user.active ? "" : waitlistedNotice}
 <section>
   ${
     sites.length
-      ? `<div class="scroll"><table><thead><tr><th>App</th><th>Owner</th><th>Your access</th><th>Updated</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`
+      ? appBrowser(sites, { shared: true, appDomain: c.env.APP_DOMAIN })
       : `<p class="muted">Nothing yet. When someone adds your email to one of their apps, it shows up here.</p>`
   }
 </section>`;
   return shell(c, ctx.user, "shared", body);
 }
 
-function sharedRow(s: SiteView & { canManage: boolean }): string {
-  return `<tr>
-  <td><a href="${e(s.url)}" target="_blank" rel="noopener">${e(s.title || s.url)}</a>${s.title ? `<div class="muted">${e(s.url)}</div>` : ""}</td>
-  <td>${e(s.ownerEmail)}</td>
-  <td>${s.canManage ? "Can edit" : "Can open"}</td>
-  <td class="nowrap">${e(fmtTime(s.updatedAt))}</td>
-  <td>${s.canManage ? `<a href="/apps/${e(encodeURIComponent(s.id))}/activity">Activity</a>` : ""}</td>
-</tr>`;
+/** Loads an app the person can manage, or answers 404 like any unknown page. */
+async function manageable(c: Context<AppEnv>, id: string) {
+  try {
+    return await getManageableSite(ctxOf(c), id);
+  } catch (err) {
+    if (err instanceof ApiError) return null;
+    throw err;
+  }
 }
 
 /** An app's activity log: everything done to or in the app, for the people who can manage it. */
 export async function appActivityPage(c: Context<AppEnv>, id: string): Promise<Response> {
-  const ctx = ctxOf(c);
-  let site: SiteView;
-  try {
-    site = await getManageableSite(ctx, id);
-  } catch (err) {
-    if (err instanceof ApiError) return plainPage(404, "Not found", "There is nothing here.");
-    throw err;
-  }
+  const site = await manageable(c, id);
+  if (!site) return plainPage(404, "Not found", "There is nothing here.");
+  const user = c.get("user");
   const rows = (await siteActivity(c.env, site.id))
     .map((a) => `<tr><td class="nowrap">${e(fmtTime(a.at))}</td><td>${e(a.actor)}</td><td>${e(describeActivity(a))}</td></tr>`)
     .join("");
-  const mine = site.ownerEmail === ctx.user.email;
   const body = `<section>
-  <p><a href="${mine ? "/" : "/shared"}">← ${mine ? "My apps" : "Shared with me"}</a></p>
+  <p><a href="/apps/${e(encodeURIComponent(site.id))}">← ${e(appName(site))} settings</a></p>
   <p class="muted"><a href="${e(site.url)}" target="_blank" rel="noopener">${e(site.url)}</a>. Everything people have done to this app: publishing, sharing and settings, secrets, and calls made with its secrets. Newest first.</p>
   ${
     rows
@@ -155,47 +148,89 @@ export async function appActivityPage(c: Context<AppEnv>, id: string): Promise<R
       : `<p class="muted">Nothing yet.</p>`
   }
 </section>`;
-  return shell(c, ctx.user, mine ? "apps" : "shared", body, `Activity: ${site.title || `${site.namespace}/${site.mountPath}`}`);
+  return shell(c, user, site.ownerEmail === user.email ? "apps" : "shared", body, `Activity: ${appName(site)}`);
 }
 
-/** My apps: the apps you own, with their settings. */
+/** An app's own page: everything about it, its settings, a new version, recent activity, delete. */
+export async function appSettingsPage(c: Context<AppEnv>, id: string): Promise<Response> {
+  const site = await manageable(c, id);
+  if (!site) return plainPage(404, "Not found", "There is nothing here.");
+  const user = c.get("user");
+  const mine = site.ownerEmail === user.email;
+  const activity = (await siteActivity(c.env, site.id, 5))
+    .map((a) => `<tr><td class="nowrap">${e(fmtTime(a.at))}</td><td>${e(a.actor)}</td><td>${e(describeActivity(a))}</td></tr>`)
+    .join("");
+  const fact = (label: string, value: string) => `<div><dt>${e(label)}</dt><dd>${value}</dd></div>`;
+  const body = `<section class="app-head">
+  <p><a href="${mine ? "/" : "/shared"}">← ${mine ? "My apps" : "Shared with me"}</a></p>
+  <div class="app-title">
+    <span class="thumb lg ${hueClass(site.id)}" aria-hidden="true">${e(initial(site))}</span>
+    <div><p class="app-url"><a href="${e(site.url)}" target="_blank" rel="noopener">${e(site.url)}</a></p></div>
+    <a class="cta open-app" href="${e(site.url)}" target="_blank" rel="noopener">Open app ↗</a>
+  </div>
+  <dl class="facts">
+    ${fact("Space", e(site.namespace))}
+    ${fact("Path", e(site.mountPath ? `/${site.mountPath}/` : "/ (the space's root)"))}
+    ${fact("Owner", e(site.ownerEmail))}
+    ${fact("Who can open it", e(VISIBILITY_LABEL[site.visibility]))}
+    ${fact("Published", e(fmtTime(site.createdAt)))}
+    ${fact("Last updated", e(`${fmtTime(site.updatedAt)} (${ago(site.updatedAt)})`))}
+    ${fact("Size", e(`${fmtBytes(site.totalBytes)} in ${site.fileCount} file${site.fileCount === 1 ? "" : "s"}`))}
+    ${fact("Options", e([site.spa ? "SPA fallback" : "", site.hidden ? "Hidden from listings" : ""].filter(Boolean).join(", ") || "None"))}
+  </dl>
+</section>
+
+<section>
+  <h2>Settings and sharing</h2>
+  <form class="stack wide" data-action="site-update" data-id="${e(site.id)}">
+    <label>Title <input name="title" value="${e(site.title ?? "")}" placeholder="${e(appName(site))}"></label>
+    <label>Who can open it <select name="visibility">${visibilityOptions(site.visibility)}</select></label>
+    <label>Share with (can open) <input name="allowed_emails" value="${e(site.allowedEmails.join(", "))}" placeholder="friend@example.com, ..."></label>
+    ${
+      site.canEditEditors
+        ? `<label>Editors (can update it) <input name="editors" value="${e(site.editors.join(", "))}" placeholder="teammate@example.com, ..."></label>`
+        : `<p class="muted">Editors: ${e(site.editors.join(", ") || "none")}. Only the owner can change them.</p>`
+    }
+    <label class="check"><input type="checkbox" name="spa"${site.spa ? " checked" : ""}> SPA fallback (send unknown addresses in the app to its index.html)</label>
+    <label class="check"><input type="checkbox" name="hidden"${site.hidden ? " checked" : ""}> Hidden from listings</label>
+    <div><button>Save</button></div>
+  </form>
+</section>
+
+<section>
+  <h2>Publish a new version</h2>
+  <p class="muted">Upload a new <code>.html</code> or <code>.zip</code>. It replaces the app's files; its data, secrets and sharing stay as they are.</p>
+  <form class="inline" data-action="site-replace" data-namespace="${e(site.namespace)}" data-mount="${e(site.mountPath)}">
+    <input type="file" name="file" accept=".html,.htm,.zip" required aria-label="New version">
+    <button>Publish</button>
+  </form>
+</section>
+
+<section>
+  <h2>Recent activity</h2>
+  ${activity ? `<div class="scroll"><table><tbody>${activity}</tbody></table></div>` : `<p class="muted">Nothing yet.</p>`}
+  <p><a href="/apps/${e(encodeURIComponent(site.id))}/activity">See all activity →</a></p>
+</section>
+
+${
+  mine || site.canEditEditors
+    ? `<section class="danger-zone">
+  <h2>Delete this app</h2>
+  <p class="muted">Removes its files, data and secrets for good. Its address stops working.</p>
+  <button class="danger" data-action="site-delete" data-id="${e(site.id)}" data-mount="${e(site.mountPath)}" data-namespace="${e(site.namespace)}" data-next="/">Delete app</button>
+</section>`
+    : ""
+}`;
+  return shell(c, user, mine ? "apps" : "shared", body, appName(site));
+}
+
+/** My apps: the apps you own, as tiles grouped by space or a list. */
 export async function dashboardPage(c: Context<AppEnv>): Promise<Response> {
   const ctx = ctxOf(c);
   if (!ctx.user.active) return sharedPage(c);
   const sites = await listOwnSites(ctx);
-  const siteRows = sites
-    .map(
-      (s) => `<tr>
-  <td><a href="${e(s.url)}" target="_blank" rel="noopener">${e(s.title || s.url)}</a>${s.title ? `<div class="muted">${e(s.url)}</div>` : ""}${s.hidden ? ' <span class="tag">hidden</span>' : ""}${s.spa ? ' <span class="tag">spa</span>' : ""}</td>
-  <td>${e(VISIBILITY_LABEL[s.visibility])}${s.allowedEmails.length ? `<div class="muted">${e(s.allowedEmails.join(", "))}</div>` : ""}</td>
-  <td class="nowrap">${e(fmtTime(s.updatedAt))}</td>
-  <td>${e(fmtBytes(s.totalBytes))} · ${e(s.fileCount)} files</td>
-  <td class="actions">
-    <form class="inline" data-action="site-replace" data-namespace="${e(s.namespace)}" data-mount="${e(s.mountPath)}">
-      <input type="file" name="file" accept=".html,.htm,.zip" required aria-label="Replacement file">
-      <button>Replace</button>
-    </form>
-    <details><summary>Settings</summary>
-      <form class="stack" data-action="site-update" data-id="${e(s.id)}">
-        <label>Title <input name="title" value="${e(s.title ?? "")}"></label>
-        <label>Who can open it <select name="visibility">${visibilityOptions(s.visibility)}</select></label>
-        <label>Share with (can open) <input name="allowed_emails" value="${e(s.allowedEmails.join(", "))}" placeholder="friend@example.com, ..."></label>
-        <label>Editors (can update) <input name="editors" value="${e(s.editors.join(", "))}"></label>
-        <label class="check"><input type="checkbox" name="spa"${s.spa ? " checked" : ""}> SPA fallback</label>
-        <label class="check"><input type="checkbox" name="hidden"${s.hidden ? " checked" : ""}> Hidden from listings</label>
-        <button>Save settings</button>
-      </form>
-    </details>
-    <a class="action-link" href="/apps/${e(encodeURIComponent(s.id))}/activity">Activity</a>
-    <button class="danger" data-action="site-delete" data-id="${e(s.id)}" data-mount="${e(s.mountPath)}" data-namespace="${e(s.namespace)}">Delete</button>
-  </td>
-</tr>`,
-    )
-    .join("");
   const body = sites.length
-    ? `<section>
-  <div class="scroll"><table><thead><tr><th>App</th><th>Who can open it</th><th>Updated</th><th>Size</th><th>Actions</th></tr></thead><tbody>${siteRows}</tbody></table></div>
-</section>`
+    ? `<section>${appBrowser(sites.map((s) => ({ ...s, canManage: true })), { shared: false, appDomain: c.env.APP_DOMAIN })}</section>`
     : `<section class="empty">
   <h2>What do you want to make?</h2>
   <p>A budget tracker, a sign-up sheet for your team, a tiny game. Describe it to your AI and it lands here, live.</p>

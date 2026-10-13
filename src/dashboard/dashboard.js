@@ -60,14 +60,16 @@
     },
     "site-update": function (form) {
       var el = form.elements;
-      return api("PATCH", "/sites/" + encodeURIComponent(form.dataset.id), {
+      var patch = {
         title: el.title.value,
         visibility: el.visibility.value,
         allowed_emails: el.allowed_emails.value,
-        editors: el.editors.value,
         spa: el.spa.checked,
         hidden: el.hidden.checked
-      }).then(function () {
+      };
+      // Only the owner sees (and may change) the editors field.
+      if (el.editors) patch.editors = el.editors.value;
+      return api("PATCH", "/sites/" + encodeURIComponent(form.dataset.id), patch).then(function () {
         show("Settings saved.");
         reloadSoon();
       });
@@ -147,6 +149,88 @@
     window.open(MAKE_URLS[make.dataset.make] + encodeURIComponent(prompt), "_blank", "noopener");
   });
 
+  // App browser (My apps, Shared with me): search, filters, sort, and tiles or list.
+  var VIEW_KEY = "formelab:apps-view";
+  function initBrowser(root) {
+    var state = { key: "updated", dir: "desc", view: "tiles" };
+    try { if (localStorage.getItem(VIEW_KEY) === "list") state.view = "list"; } catch (e) {}
+    var q = root.querySelector("[data-q]");
+    var sortSel = root.querySelector("[data-sort-select]");
+    var filters = root.querySelectorAll("[data-filter]");
+
+    function value(el, key) {
+      var v = el.dataset[key] || "";
+      return key === "updated" || key === "size" ? Number(v) : v;
+    }
+    function matches(el) {
+      var text = (q.value || "").trim().toLowerCase();
+      if (text && el.dataset.search.indexOf(text) === -1) return false;
+      for (var i = 0; i < filters.length; i++) {
+        var f = filters[i];
+        if (f.value && el.dataset[f.dataset.filter] !== f.value) return false;
+      }
+      return true;
+    }
+    function compare(a, b) {
+      var x = value(a, state.key), y = value(b, state.key);
+      var c = typeof x === "number" ? x - y : String(x).localeCompare(String(y));
+      if (c === 0 && state.key !== "name") c = value(a, "name").localeCompare(value(b, "name"));
+      return state.dir === "asc" ? c : -c;
+    }
+    function sortChildren(container) {
+      var items = Array.prototype.slice.call(container.querySelectorAll(":scope > [data-app]"));
+      items.sort(compare).forEach(function (el) { container.appendChild(el); });
+    }
+    function apply() {
+      var shown = 0;
+      root.querySelectorAll("[data-app]").forEach(function (el) {
+        var ok = matches(el);
+        el.hidden = !ok;
+        if (ok && el.tagName !== "TR") shown++;
+      });
+      root.querySelectorAll(".tiles, tbody").forEach(sortChildren);
+      root.querySelectorAll("[data-group]").forEach(function (g) { g.hidden = !g.querySelector(".tile:not([hidden])"); });
+      root.querySelector("[data-no-match]").hidden = shown > 0;
+      root.querySelectorAll("th[aria-sort]").forEach(function (th) {
+        var k = th.querySelector("[data-sort]").dataset.sort;
+        th.setAttribute("aria-sort", k === state.key ? (state.dir === "asc" ? "ascending" : "descending") : "none");
+      });
+      var opt = state.key + ":" + state.dir;
+      sortSel.value = sortSel.querySelector('option[value="' + opt + '"]') ? opt : sortSel.value;
+      root.dataset.view = state.view;
+      root.querySelector(".view-tiles").hidden = state.view !== "tiles";
+      root.querySelector(".view-list").hidden = state.view !== "list";
+      root.querySelectorAll("[data-view]").forEach(function (b) {
+        if (b !== root) b.setAttribute("aria-pressed", b.dataset.view === state.view ? "true" : "false");
+      });
+    }
+    q.addEventListener("input", apply);
+    filters.forEach(function (f) { f.addEventListener("change", apply); });
+    sortSel.addEventListener("change", function () {
+      var parts = sortSel.value.split(":");
+      state.key = parts[0]; state.dir = parts[1];
+      apply();
+    });
+    root.addEventListener("click", function (ev) {
+      var head = ev.target.closest("[data-sort]");
+      if (head) {
+        var k = head.dataset.sort;
+        if (state.key === k) state.dir = state.dir === "asc" ? "desc" : "asc";
+        else { state.key = k; state.dir = k === "updated" || k === "size" ? "desc" : "asc"; }
+        apply();
+        return;
+      }
+      var v = ev.target.closest("button[data-view]");
+      if (v) {
+        state.view = v.dataset.view;
+        try { localStorage.setItem(VIEW_KEY, state.view); } catch (e) {}
+        apply();
+      }
+    });
+    apply();
+  }
+  document.querySelectorAll("[data-browser]").forEach(initBrowser);
+
   // The left menu on narrow screens.
   document.addEventListener("click", function (ev) {
     var toggle = ev.target.closest("[data-menu-toggle]");
@@ -174,7 +258,11 @@
       var typed = prompt("This permanently deletes " + btn.dataset.namespace + "/" + mount + " with its files, data and secrets.\nType the mount path (" + label + ") to confirm:");
       if (typed === null) return;
       if (typed.trim() !== label) { show("The mount path did not match; nothing was deleted.", true); return; }
-      p = api("DELETE", "/sites/" + encodeURIComponent(btn.dataset.id)).then(function () { show("Site deleted."); reloadSoon(); });
+      var after = btn.dataset.next;
+      p = api("DELETE", "/sites/" + encodeURIComponent(btn.dataset.id)).then(function () {
+        show("App deleted.");
+        setTimeout(function () { if (after) location.href = after; else location.reload(); }, 900);
+      });
     } else if (action === "ns-delete") {
       var typedNs = prompt("This permanently deletes the space " + btn.dataset.label + " and EVERY app in it.\nType the space name to confirm:");
       if (typedNs === null) return;

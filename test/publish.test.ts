@@ -114,7 +114,7 @@ describe("publish and serve", () => {
     expect(body.site.id).toBe(id);
     expect(await (await call(`https://${ns}.example.app/r/`, { as: OWNER })).text()).toContain("v2");
     const v2 = (await env.DB.prepare("SELECT current_version FROM sites WHERE id = ?").bind(id).first<{ current_version: string }>())!.current_version;
-    expect(v2 > v1).toBe(true); // time-sortable
+    expect(v2).not.toBe(v1); // a new version, in its own folder (ids start with the time, but two publishes can share a millisecond)
     expect(await env.DB.prepare("SELECT value FROM kv WHERE site_id = ?").bind(id).first()).toEqual({ value: "1" });
     // The old version's files are removed in the background.
     for (let i = 0; i < 100 && (await r2Keys(`sites/${id}/${v1}/`)).length; i++) await new Promise((r) => setTimeout(r, 20));
