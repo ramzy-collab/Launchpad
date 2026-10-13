@@ -6,8 +6,8 @@ import { escapeHtml as e } from "../util";
 
 export type BrowserApp = SiteView & { canManage: boolean };
 
-const VIS = { restricted: "Only people you share with", all: "Anyone signed in" } as const;
-const VIS_SHORT = { restricted: "Private", all: "Anyone signed in" } as const;
+const VIS = { restricted: "Only people you share with", all: "All Formelab members" } as const;
+const VIS_SHORT = { restricted: "Private", all: "All members" } as const;
 
 export const fmtBytes = (n: number) => (n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`);
 
@@ -101,7 +101,7 @@ export function appBrowser(apps: BrowserApp[], opts: { shared: boolean; appDomai
     spaces.length > 1 ? `<select data-filter="space" aria-label="Space">${options([["", "All spaces"], ...spaces.map((s): [string, string] => [s, s])])}</select>` : "",
     shared
       ? `<select data-filter="access" aria-label="Your access">${options([["", "Any access"], ["edit", "Can edit"], ["open", "Can open"]])}</select>`
-      : `<select data-filter="vis" aria-label="Who can open it">${options([["", "Any visibility"], ["restricted", "Private"], ["all", "Anyone signed in"]])}</select>`,
+      : `<select data-filter="vis" aria-label="Who can open it">${options([["", "Any visibility"], ["restricted", "Private"], ["all", "All members"]])}</select>`,
   ].join("");
   return `<div class="browser" data-browser data-view="tiles">
   <div class="browser-bar">

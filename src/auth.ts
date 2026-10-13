@@ -209,9 +209,13 @@ export const canPublishTo = (u: User, ns: NamespaceRow) => isNamespaceEditor(u, 
 export const canManageSite = (u: User, site: SiteRow, ns: NamespaceRow) =>
   site.owner_email === u.email || has(site.editors, u.email) || isNamespaceEditor(u, ns);
 
-/** Viewing a site's files and using its KV and secret proxy. */
+/**
+ * Viewing a site's files and using its KV, secret proxy and connected services. "all" means every
+ * Formelab member: anyone can sign in and land on the waitlist, so waitlisted people only see apps
+ * shared with them by name.
+ */
 export const canViewSite = (u: User, site: SiteRow, ns: NamespaceRow) =>
-  site.visibility !== "restricted" || canManageSite(u, site, ns) || has(site.allowed_emails, u.email);
+  (site.visibility !== "restricted" && u.active) || canManageSite(u, site, ns) || has(site.allowed_emails, u.email);
 
 export const ownerOnly = () =>
   err(403, "owner_only", "Only the namespace owner can do that.", "Ask the namespace owner to make this change.");

@@ -161,7 +161,7 @@ describe("app activity logs", () => {
     expect(html).toContain("Published the app (1 file,");
     expect(html).toContain("Published a new version (1 file,");
     expect(html).toContain(`Shared it with ${viewer}; made ${editor} an editor`);
-    expect(html).toContain("Set who can open it to anyone signed in; renamed it to &quot;Renamed app&quot;");
+    expect(html).toContain("Set who can open it to all Formelab members; renamed it to &quot;Renamed app&quot;");
     expect(html).toContain("Saved the secret api-key");
     expect(html).not.toContain("shh");
     expect(html.match(/<tr><td class="nowrap">/g)).toHaveLength(5);

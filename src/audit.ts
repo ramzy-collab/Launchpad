@@ -82,7 +82,7 @@ export function describeActivity(row: AuditRow): string {
       }
       if (d.visibility) {
         explained.add("visibility");
-        parts.push(`set who can open it to ${d.visibility === "all" ? "anyone signed in" : "only people it's shared with"}`);
+        parts.push(`set who can open it to ${d.visibility === "all" ? "all Formelab members" : "only people it's shared with"}`);
       }
       if (typeof d.title === "string") {
         explained.add("title");
