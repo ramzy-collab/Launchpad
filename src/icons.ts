@@ -102,11 +102,17 @@ const ICON_HEADERS = {
 
 /** GET /apps/:id/icon on the web app host: the app's icon, for people who can open the app. */
 export async function appIcon(ctx: Ctx, id: string): Promise<Response> {
-  const notFound = () => new Response("Not found", { status: 404, headers: { "content-type": "text/plain; charset=utf-8" } });
   const site = (await getSiteById(ctx.env, id)) as (SiteRow & { icon_path?: string | null }) | null;
   const ns = site ? await getNamespace(ctx.env, site.namespace) : null;
-  if (!site || !ns || !canViewSite(ctx.user, site, ns)) return notFound();
-  const icon = await iconPathFor(ctx.env, site);
+  if (!site || !ns || !canViewSite(ctx.user, site, ns)) {
+    return new Response("Not found", { status: 404, headers: { "content-type": "text/plain; charset=utf-8" } });
+  }
+  return iconResponse(ctx.env, site);
+}
+
+/** The app's icon as a response (its own, or the letter tile). The caller checks who may see it. */
+export async function iconResponse(env: Ctx["env"], site: SiteRow & { icon_path?: string | null }): Promise<Response> {
+  const icon = await iconPathFor(env, site);
   if (icon.startsWith("data:")) {
     const m = /^data:([^;,]+)(;base64)?,(.*)$/s.exec(icon);
     if (m) {
@@ -119,8 +125,16 @@ export async function appIcon(ctx: Ctx, id: string): Promise<Response> {
       if (body.length) return new Response(body, { headers: { ...ICON_HEADERS, "content-type": m[1]! } });
     }
   } else if (icon) {
-    const obj = await ctx.env.BUCKET.get(`sites/${site.id}/${site.current_version}/${icon}`);
+    const obj = await env.BUCKET.get(`sites/${site.id}/${site.current_version}/${icon}`);
     if (obj && obj.size <= MAX_ICON_BYTES) return new Response(obj.body, { headers: { ...ICON_HEADERS, "content-type": contentTypeFor(icon) } });
   }
   return new Response(letterIcon(site), { headers: { ...ICON_HEADERS, "content-type": "image/svg+xml" } });
+}
+
+/** Width and height of a PNG, from its header; null for anything else. */
+export function pngSize(bytes: Uint8Array): { width: number; height: number } | null {
+  const sig = [137, 80, 78, 71, 13, 10, 26, 10];
+  if (bytes.length < 24 || sig.some((b, i) => bytes[i] !== b)) return null;
+  const v = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  return { width: v.getUint32(16), height: v.getUint32(20) };
 }

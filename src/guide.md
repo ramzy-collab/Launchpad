@@ -26,6 +26,9 @@ Apps get platform features through a small browser SDK, `window.formelab`:
 - **Key/value storage**: per-app JSON storage shared by everyone who can see the app.
 - **Secrets and a server-side proxy**: store an API key once; call the API through the proxy so
   the key never reaches the browser.
+- **Installing on a phone or computer**: every app can be added to a home screen or installed as
+  a desktop app, with its own icon and window. Formelab adds the manifest for you (see
+  "Installing your app" below).
 
 ## 2. Ground rules
 
@@ -161,6 +164,37 @@ GET/POST/PUT/PATCH/DELETE; body up to 1 MB; 20-second timeout; responses are ret
 to 5 MB (`truncated: true` if cut); redirects are not followed (you get the 3xx and a `location`);
 60 calls per minute per app; an unknown placeholder is an error. If the API echoes the secret back,
 the platform replaces it with `[redacted]`.
+
+### Installing your app: `formelab.app`
+
+Every app can be installed like a native app: **Add to Home Screen** on iPhone and Android,
+**Install** in Chrome and Edge on a computer, **Add to Dock** in Safari on a Mac. It then opens
+in its own window with its own icon, starting at the app. You don't need to do anything for this:
+Formelab adds a `<link rel="manifest">` to your pages, with the app's title, its icon and its
+mount path as the scope. (If your app ships its own `<link rel="manifest">`, Formelab leaves it
+alone.)
+
+To look good once installed:
+
+- Give it an icon (required anyway). For iPhones and iPads, which only use PNG home screen icons,
+  also include a 180×180 PNG as `<link rel="apple-touch-icon" href="apple-touch-icon.png">` in
+  the zip; otherwise iOS uses a screenshot. A PNG icon of 192px or more, or an SVG, is used on
+  Android and computers.
+- Add `<meta name="theme-color" content="#...">` for the title bar color.
+- Installed apps have no browser back button or address bar: give every screen a way back.
+
+To offer an **Install** button inside the app:
+
+```js
+formelab.app.installed();   // true when running as the installed app
+formelab.app.canInstall();  // true when the browser can show its install dialog (Chrome, Edge, Android)
+const result = await formelab.app.install(); // "accepted", "dismissed" or "manual"
+window.addEventListener("formelab:installchange", update); // canInstall() changed
+```
+
+`"manual"` means the browser has no install dialog (Safari on iPhone, iPad and Mac): show the
+steps instead, "Tap Share, then Add to Home Screen" on an iPhone or iPad, "File → Add to Dock" in
+Safari on a Mac. Hide the button when `installed()` is true.
 
 <!-- flag:connected_apps -->
 ### `formelab.gemini`: AI in your app
@@ -419,7 +453,7 @@ The script calls `POST https://<DOMAIN>/_api/deploy/sites` (multipart: `file`, `
 - [ ] Every SDK call is wrapped in `try/catch`, and errors show `e.message` and `e.hint` to the user.
 - [ ] KV keys are namespaced (`"vote:" + email`), values stay well under 64 KB. Each person's own
       data is in `formelab.kv.mine`; `data_writes: "everyone"` is set only if viewers must write shared KV.
-- [ ] Works on a phone (responsive layout, `<meta name="viewport">`).
+- [ ] Works on a phone (responsive layout, `<meta name="viewport">`), and as an installed app (every screen has a way back).
 - [ ] **Has an icon (required):** a small SVG that fits the app, linked in `<head>` as `<link rel="icon" href="data:image/svg+xml,...">` (URL-encoded SVG), or as `<link rel="icon" href="icon.svg">` with `icon.svg` in the zip. Formelab shows it on the app's tile, and the `publish` tool refuses apps without one (`icon_required`).
 - [ ] Apps are private by default (only the owner and editors). Add `allowed_emails` for the people who should open it; they see it under "Shared with me".
 - [ ] Published with the right `namespace` and `mount_path`; the URL was shared with the user.

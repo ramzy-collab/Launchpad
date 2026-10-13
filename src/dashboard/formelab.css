@@ -231,6 +231,36 @@ summary { cursor: pointer; color: var(--fl-accent); font-weight: 500; font-size:
 .empty { text-align: center; padding: 48px 24px !important; }
 .empty p { max-width: 30rem; margin-left: auto !important; margin-right: auto !important; }
 .empty .cta { display: inline-flex; align-items: center; min-height: 44px; padding: 0 22px; border-radius: 999px; background: var(--fl-accent); color: var(--fl-accent-ink); font-weight: 600; text-decoration: none; margin-top: 8px; }
+/* ---------- Get the app (installing Formelab and its apps; install.js sets the data-* flags) ---------- */
+.get-app { display: flex; align-items: center; gap: 10px; padding: 8px 10px; margin-bottom: 8px; border-radius: var(--fl-radius-sm); color: var(--fl-ink-soft); text-decoration: none; font-weight: 500; }
+.get-app svg { width: 18px; height: 18px; flex: none; }
+.get-app:hover { background: var(--fl-canvas); color: var(--fl-ink); }
+.get-app[aria-current="page"] { background: color-mix(in srgb, var(--fl-accent) 12%, transparent); color: var(--fl-accent); font-weight: 600; }
+:root[data-installed="yes"] .get-app:not([aria-current]) { display: none; }
+button.cta { border: 0; cursor: pointer; font: inherit; font-weight: 600; }
+.cta[hidden] { display: none; }
+.dash section.install-hero { display: flex; align-items: center; gap: 24px; }
+.install-hero h2 { margin: 0 0 4px; }
+.install-hero p { margin: 4px 0; }
+.install-icon { width: 96px; height: 96px; flex: none; }
+.installed-note { display: none; font-weight: 600; }
+:root[data-installed="yes"] .installed-note { display: block; }
+:root[data-installed="yes"] .not-installed { display: none; }
+.install-steps { display: flex; flex-direction: column; gap: 8px; }
+.steps { border: 1.5px solid var(--fl-line); border-radius: var(--fl-radius-md); padding: 4px 16px; }
+.steps summary { cursor: pointer; font-weight: 600; padding: 10px 0; }
+.steps[open] summary { border-bottom: 1px solid var(--fl-line); }
+.steps ol { margin: 12px 0; padding-left: 22px; display: flex; flex-direction: column; gap: 8px; }
+.install-steps .small { font-size: .875rem; margin: 4px 0 0; }
+.install-apps { list-style: none; margin: 16px 0 0; padding: 0; display: flex; flex-direction: column; }
+.install-apps li { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-top: 1px solid var(--fl-line); }
+.install-apps li:first-child { border-top: 0; }
+.install-apps .name { flex: 1; min-width: 0; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ghost.small { min-height: 36px; padding: 6px 14px; font-size: .875rem; white-space: nowrap; }
+.install-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; }
+@media (max-width: 560px) {
+  .dash section.install-hero { flex-direction: column; text-align: center; }
+}
 @media (max-width: 860px) {
   .app-shell { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto 1fr; }
   .topbar { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; background: var(--fl-surface); border-bottom: 1px solid var(--fl-line); position: sticky; top: 0; z-index: 20; }

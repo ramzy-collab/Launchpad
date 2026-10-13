@@ -21,7 +21,8 @@ describe("publish and serve", () => {
     expect(page.headers.get("x-content-type-options")).toBe("nosniff");
     expect(page.headers.get("referrer-policy")).toBe("strict-origin-when-cross-origin");
     const html = await page.text();
-    expect(html).toContain('<head><base href="/hello/"><title>');
+    // The base comes first, then the tags that let the app be installed (pwa.test.ts).
+    expect(html).toContain('<head><base href="/hello/"><link rel="manifest" href="/_platform/manifest.webmanifest?mount=hello" crossorigin="use-credentials">');
     expect(html).toContain("<p>hi</p>");
     // The SDK is never injected automatically.
     expect(html).not.toContain("sdk.js");
@@ -31,7 +32,9 @@ describe("publish and serve", () => {
     const ns = uniq();
     await publishHtml(OWNER, ns, "", "<!doctype html><html><body>bare</body></html>");
     const html = await (await call(`https://${ns}.example.app/`, { as: OWNER })).text();
-    expect(html).toBe('<!doctype html><html><head><base href="/"></head><body>bare</body></html>');
+    expect(html).toBe(
+      `<!doctype html><html><head><base href="/"><link rel="manifest" href="/_platform/manifest.webmanifest?mount=" crossorigin="use-credentials"><meta name="apple-mobile-web-app-title" content="${ns}"></head><body>bare</body></html>`,
+    );
   });
 
   it("publishes a zip, strips a single top-level folder, and serves assets with ETag caching", async () => {
