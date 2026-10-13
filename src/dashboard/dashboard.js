@@ -112,6 +112,13 @@
         reloadSoon();
       });
     },
+    "feature-user-add": function (form) {
+      var email = form.elements.email.value.trim();
+      return api("POST", "/features/" + encodeURIComponent(form.dataset.name) + "/users", { email: email }).then(function () {
+        show("Turned on for " + email + ". It applies right away.");
+        reloadSoon();
+      });
+    },
     "service-connect": function (form) {
       return api("PUT", "/services/" + encodeURIComponent(form.dataset.service), { apiKey: form.elements.apiKey.value.trim() }).then(function () {
         form.reset();
@@ -310,6 +317,12 @@
       if (!confirm(grant ? "Make " + btn.dataset.email + " an admin? They'll be able to manage everyone on Formelab." : "Remove admin access from " + btn.dataset.email + "?")) return;
       p = api("POST", "/users/" + encodeURIComponent(btn.dataset.email) + "/admin", { admin: grant }).then(function () {
         show(grant ? btn.dataset.email + " is now an admin." : btn.dataset.email + " is no longer an admin.");
+        reloadSoon();
+      });
+    } else if (action === "feature-user-remove") {
+      if (!confirm("Stop turning this feature on for " + btn.dataset.email + "? They keep it if it's on for everyone (or for admins, and they're one).")) return;
+      p = api("DELETE", "/features/" + encodeURIComponent(btn.dataset.name) + "/users/" + encodeURIComponent(btn.dataset.email)).then(function () {
+        show("Removed " + btn.dataset.email + ".");
         reloadSoon();
       });
     } else if (action === "waitlist-approve") {

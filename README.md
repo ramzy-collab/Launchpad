@@ -232,6 +232,8 @@ Then smoke-test the live domain (section 2.2).
 - **`0012_kv_access`** adds "Who can change its data" to each app and a private per-person data
   table. Existing apps keep letting everyone who can open them change their data; new apps start
   as owner-and-editors only. Nothing to do for existing apps.
+- **`0013_feature_flag_users`** lets admins turn a feature on for specific people (admin panel →
+  Features). Nothing to do: no one has a feature by name until an admin adds them.
 
 ### 2.2 Smoke test
 

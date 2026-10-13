@@ -21,7 +21,7 @@ const TABS: Record<Tab, { title: string; intro: string }> = {
   users: { title: "Users", intro: "Everyone with an account, and people let in who haven't logged in yet." },
   waitlist: { title: "Waitlist", intro: "People waiting to get in." },
   activity: { title: "Activity", intro: "Formelab-level changes, newest first." },
-  features: { title: "Features", intro: "Turn new features on for admins, then for everyone." },
+  features: { title: "Features", intro: "Turn new features on for admins, for specific people, then for everyone." },
   changelog: { title: "Changelog", intro: "Everything that has changed in Formelab, newest first." },
   vendors: { title: "Vendors", intro: "Every service, AI app and open-source project Formelab uses, or used." },
 };
@@ -221,11 +221,30 @@ async function featuresBody(c: Context<AppEnv>): Promise<string> {
       .join("")}</select>
     <button>Save</button>
   </form></td>
+</tr>
+<tr class="flag-people">
+  <td colspan="3">
+    <p class="muted">Also on for${f.users.length ? "" : " nobody else yet"}:</p>
+    ${
+      f.users.length
+        ? `<ul class="flag-users">${f.users
+            .map(
+              (u) => `<li><span>${e(u.email)}</span> <span class="muted">${e(fmtTime(u.addedAt))}${u.addedBy ? ` · ${e(u.addedBy)}` : ""}</span>
+      <button class="danger" data-action="feature-user-remove" data-name="${e(f.name)}" data-email="${e(u.email)}">Remove</button></li>`,
+            )
+            .join("")}</ul>`
+        : ""
+    }
+    <form class="inline" data-action="feature-user-add" data-name="${e(f.name)}">
+      <input name="email" type="email" required placeholder="someone@example.com" aria-label="Turn ${e(f.label)} on for (email)">
+      <button class="secondary">Turn on for this person</button>
+    </form>
+  </td>
 </tr>`,
     )
     .join("");
   return `<section>
-  <p class="muted">New features ship turned off. Turn one on for <strong>Admins only</strong> to try it yourself, then for <strong>Everyone</strong>. Turning a feature off hides it again right away; nothing people set up is deleted.</p>
+  <p class="muted">New features ship turned off. Turn one on for <strong>Admins only</strong> to try it yourself, then for <strong>Everyone</strong>. To let a few people try it first, turn it on for them by email: they get it whatever <strong>Who gets it</strong> says. Turning a feature off hides it again right away; nothing people set up is deleted.</p>
   <div class="scroll"><table><thead><tr><th>Feature</th><th>Last changed</th><th>Who gets it</th></tr></thead><tbody>${rows}</tbody></table></div>
 </section>`;
 }

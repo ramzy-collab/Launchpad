@@ -109,6 +109,10 @@ export function describeActivity(row: AuditRow): string {
       return d.status === 200 ? `Asked Gemini${d.tokens ? ` (${d.tokens} tokens)` : ""}` : `Asked Gemini, which failed (${d.status === "timeout" ? "no answer" : `HTTP ${d.status}`})`;
     case "feature_flag":
       return `Set ${d.feature ?? t} to ${d.state === "on" ? "on for everyone" : d.state === "admins" ? "admins only" : "off"}`;
+    case "feature_flag_user_add":
+      return `Turned ${d.feature ?? t} on for ${d.email}`;
+    case "feature_flag_user_remove":
+      return `Stopped turning ${d.feature ?? t} on for ${d.email} by name`;
     case "sheets": {
       const what = d.method === "GET" ? "Read from" : "Wrote to";
       return typeof d.status === "number" && d.status < 300 ? `${what} Google Sheets` : `${what} Google Sheets, which failed (${d.status === "timeout" ? "no answer" : `HTTP ${d.status}`})`;
