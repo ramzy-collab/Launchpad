@@ -39,22 +39,30 @@
   var formelab = {
     mount: mount,
     me: function () { return call("GET", "me"); },
-    kv: {
-      get: function (key) {
-        return call("GET", "kv/" + enc(key)).then(
-          function (r) { return r.value; },
-          function (e) { if (e.status === 404) return null; throw e; }
-        );
-      },
-      set: function (key, value) {
-        if (value === undefined) value = null;
-        return call("PUT", "kv/" + enc(key), JSON.stringify(value), true);
-      },
-      list: function (prefix) {
-        return call("GET", "kv" + (prefix ? "?prefix=" + enc(prefix) : ""));
-      },
-      "delete": function (key) { return call("DELETE", "kv/" + enc(key)); }
-    },
+    // Shared data (kv) and each person's private data (kv.mine) have the same calls.
+    kv: (function () {
+      function store(base) {
+        return {
+          get: function (key) {
+            return call("GET", base + "/" + enc(key)).then(
+              function (r) { return r.value; },
+              function (e) { if (e.status === 404) return null; throw e; }
+            );
+          },
+          set: function (key, value) {
+            if (value === undefined) value = null;
+            return call("PUT", base + "/" + enc(key), JSON.stringify(value), true);
+          },
+          list: function (prefix) {
+            return call("GET", base + (prefix ? "?prefix=" + enc(prefix) : ""));
+          },
+          "delete": function (key) { return call("DELETE", base + "/" + enc(key)); }
+        };
+      }
+      var kv = store("kv");
+      kv.mine = store("me/kv");
+      return kv;
+    })(),
     secrets: {
       set: function (name, value, opts) {
         return call("PUT", "secrets/" + enc(name), { value: value, hosts: opts && opts.hosts });

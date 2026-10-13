@@ -47,8 +47,10 @@ Apps get platform features through a small browser SDK, `window.formelab`:
 7. **Apps in one namespace share a browser origin**, so they are only cooperatively isolated from
    each other: they share `localStorage` and cookies. Prefix your `localStorage` keys with your
    mount path. KV and secrets are always scoped to one app.
-8. KV is visible to **everyone who can view the app**. Don't store private data there unless the
-   app is `restricted` to the right people.
+8. Shared KV (`formelab.kv`) is visible to **everyone who can view the app**, and by default only
+   the owner and editors can change it. If viewers must write to it (votes, sign-ups, shared
+   counters), publish with `data_writes: "everyone"`. Each person's own data (preferences, drafts,
+   their answers) goes in `formelab.kv.mine`, which nobody else can read or change.
 <!-- flag:connected_apps -->
 9. **For AI features, use `formelab.gemini`** (Google Gemini 3.5 Flash-Lite through the owner's
    connected key). Don't ask the user for an AI API key or put one in a secret: they connect
@@ -77,7 +79,7 @@ const me = await formelab.me(); // { email: "ana@example.com", name: null }
 ### `formelab.kv`
 
 Per-app JSON storage. Keys are 1–256 characters; values are any JSON up to 64 KB; at most 1,000
-keys per app.
+shared keys per app.
 
 ```js
 await formelab.kv.set("settings", { theme: "dark", city: "Boston" });
@@ -85,6 +87,20 @@ const settings = await formelab.kv.get("settings");   // the value itself, or nu
 const all = await formelab.kv.list();                  // [{ key, value, updatedAt }] sorted by key
 const votes = await formelab.kv.list("vote:");         // only keys starting with "vote:"
 await formelab.kv.delete("settings");
+```
+
+**Who can change it.** Everyone who can open the app can read shared KV. Changing it depends on
+the app's `data_writes` setting: `"editors"` (the default for new apps) lets only the owner and
+editors write; `"everyone"` lets every viewer write. Writing without permission fails with
+`read_only_data` (403). Set it with `publish` (new apps) or `update_site`.
+
+**`formelab.kv.mine`: each person's private data.** The same calls (`get`, `set`, `list`,
+`delete`), but the data belongs to the person using the app: nobody else, not even the owner, can
+read or change it, whatever `data_writes` says. Up to 200 keys per person per app.
+
+```js
+const prefs = (await formelab.kv.mine.get("prefs")) ?? {};
+await formelab.kv.mine.set("prefs", { ...prefs, theme: "dark" });
 ```
 
 ### `formelab.secrets`
@@ -237,6 +253,7 @@ async function combined() {
 
 - Read several ranges of **one** spreadsheet in a single call with
   `formelab.sheets.request("GET", "spreadsheets/" + id + "/values:batchGet", { query: { ranges: ["A!A:C", "B!A:C"] } })`.
+- Viewers write the cache, so publish the app with `data_writes: "everyone"`.
 - A KV value holds at most 64 KB, so store the summary the page needs, not every raw row. For more,
   split it across keys (`combined:sales`, `combined:stock`).
 - Show when the data was last refreshed (`cached.at`), and offer a "Refresh" button that skips the
@@ -266,23 +283,29 @@ try {
 
 ### Shared counter or config in KV
 
+Viewers write to this, so publish the app with `data_writes: "everyone"`.
+
 ```js
 const n = (await formelab.kv.get("count")) ?? 0;
 await formelab.kv.set("count", n + 1); // last write wins; fine for small teams
 ```
 
+Config only the owner should change (titles, settings) works with the default
+`data_writes: "editors"`: viewers can read it but not change it.
+
 ### Per-viewer data
 
 ```js
 const { email } = await formelab.me();
-const mine = (await formelab.kv.get("prefs:" + email)) ?? {};
-await formelab.kv.set("prefs:" + email, { ...mine, lastSeen: Date.now() });
+const mine = (await formelab.kv.mine.get("prefs")) ?? {};   // only this person can read or change it
+await formelab.kv.mine.set("prefs", { ...mine, lastSeen: Date.now() });
 ```
 
 ## 5. Starter app
 
 A complete single-file app that uses `me`, `kv` and `secrets.proxy`. It greets the viewer, counts
 visits, lets an editor store a key, and calls `https://httpbin.org/anything` through the proxy.
+Every visitor updates the visit counter, so publish it with `data_writes: "everyone"`.
 
 ```html
 <!doctype html>
@@ -363,12 +386,14 @@ edited version to the same `namespace` and `mount_path`:
 1. `list_namespaces` to see where you can publish. If there are none, pick a short namespace
    name; publishing to a free namespace creates it.
 2. `publish` with `html` (a complete document as a string) or `zip_base64`, plus `namespace` and
-   `mount_path`. Optional: `title`, `spa`, `visibility`, `allowed_emails`.
+   `mount_path`. Optional: `title`, `spa`, `visibility`, `allowed_emails`, `data_writes`
+   (`"everyone"` if viewers write to shared KV; the default `"editors"` otherwise).
 3. Give the user the returned `url`.
 
 Publishing to an existing path replaces the app atomically; its KV data, secrets and sharing
-settings (who can open and edit it) are kept. `visibility` and `allowed_emails` only apply when
-an app is first published; change them later with `update_site`.
+settings (who can open and edit it, who can change its data) are kept. `visibility`,
+`allowed_emails` and `data_writes` only apply when an app is first published; change them later
+with `update_site`.
 `update_site` changes settings without re-uploading; `delete_site` is permanent.
 
 ### With `scripts/publish.sh` and a deploy token
@@ -392,7 +417,8 @@ The script calls `POST https://<DOMAIN>/_api/deploy/sites` (multipart: `file`, `
 - [ ] No API keys or passwords anywhere in the code. Secrets go through `secrets.set` (with `hosts`) + `secrets.proxy`.
 - [ ] Data loads on page load or user action (no background jobs). Fast first paint from a cache where it helps.
 - [ ] Every SDK call is wrapped in `try/catch`, and errors show `e.message` and `e.hint` to the user.
-- [ ] KV keys are namespaced (`"vote:" + email`), values stay well under 64 KB.
+- [ ] KV keys are namespaced (`"vote:" + email`), values stay well under 64 KB. Each person's own
+      data is in `formelab.kv.mine`; `data_writes: "everyone"` is set only if viewers must write shared KV.
 - [ ] Works on a phone (responsive layout, `<meta name="viewport">`).
 - [ ] **Has an icon (required):** a small SVG that fits the app, linked in `<head>` as `<link rel="icon" href="data:image/svg+xml,...">` (URL-encoded SVG), or as `<link rel="icon" href="icon.svg">` with `icon.svg` in the zip. Formelab shows it on the app's tile, and the `publish` tool refuses apps without one (`icon_required`).
 - [ ] Apps are private by default (only the owner and editors). Add `allowed_emails` for the people who should open it; they see it under "Shared with me".

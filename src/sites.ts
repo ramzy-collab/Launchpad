@@ -55,6 +55,8 @@ export interface SiteRow {
   icon_path?: string | null;
   /** JSON array of the Google spreadsheet ids the app may use (see src/sheets.ts). */
   sheets?: string;
+  /** Who may change the app's shared data (KV): "all" who can open it, or its owner and "editors". */
+  kv_writes?: "all" | "editors";
 }
 
 /** Everything a service call needs: bindings, the acting user, and a way to defer work. */
@@ -177,6 +179,8 @@ export interface SiteView {
   iconUrl: string | null;
   /** Google spreadsheet ids the app may use through its owner's Sheets connection. */
   sheets: string[];
+  /** Who may change the app's shared data: "everyone" who can open it, or only its owner and "editors". */
+  dataWrites: "everyone" | "editors";
 }
 
 export const siteView = (env: Env, s: SiteRow, requestUrl?: string): SiteView => ({
@@ -197,7 +201,16 @@ export const siteView = (env: Env, s: SiteRow, requestUrl?: string): SiteView =>
   updatedAt: s.updated_at,
   iconUrl: s.icon_path ? `/apps/${encodeURIComponent(s.id)}/icon?v=${s.current_version}` : null,
   sheets: parseJsonArray(s.sheets),
+  dataWrites: s.kv_writes === "editors" ? "editors" : "everyone",
 });
+
+/** "everyone" | "editors" (also "all") → the stored kv_writes value. */
+export function parseDataWrites(raw: unknown): "all" | "editors" | undefined {
+  if (raw === undefined || raw === null || raw === "") return undefined;
+  if (raw === "editors") return "editors";
+  if (raw === "everyone" || raw === "all") return "all";
+  throw badRequest(`data_writes must be "editors" or "everyone".`, "\"editors\" lets only the owner and editors change the app's shared data; \"everyone\" lets everyone who can open it.");
+}
 
 export const MAX_SITE_SHEETS = 50;
 const SHEET_ID = /^[A-Za-z0-9_-]{20,128}$/;
@@ -436,6 +449,8 @@ export interface PublishInput {
   visibility?: unknown;
   allowedEmails?: unknown;
   editors?: unknown;
+  /** Who may change a new app's shared data (see parseDataWrites); new apps default to editors only. */
+  dataWrites?: unknown;
   /** Refuse an app without an icon (the MCP publish tool, so AI-made apps always have one). */
   requireIcon?: boolean;
 }
@@ -477,6 +492,7 @@ export async function publishSite(ctx: Ctx, input: PublishInput) {
   const spa = parseBool(input.spa);
   const visibility = parseVisibility(input.visibility);
   const allowed = input.allowedEmails === undefined ? undefined : emailList(input.allowedEmails, "allowed_emails");
+  const dataWrites = parseDataWrites(input.dataWrites);
   const editors = input.editors === undefined ? undefined : emailList(input.editors, "editors");
   if (!input.files.has("index.html")) throw badRequest("The upload has no index.html.", "Include an index.html at the root.");
   // The app's icon for the web app's tiles (see icons.ts).
@@ -541,8 +557,8 @@ export async function publishSite(ctx: Ctx, input: PublishInput) {
     } else {
       await env.DB.prepare(
         `INSERT INTO sites (id, namespace, mount_path, title, owner_email, editors, visibility, allowed_emails,
-                            hidden, spa, current_version, file_count, total_bytes, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?)`,
+                            hidden, spa, current_version, file_count, total_bytes, created_at, updated_at, kv_writes)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)`,
       )
         .bind(
           id,
@@ -559,6 +575,7 @@ export async function publishSite(ctx: Ctx, input: PublishInput) {
           totalBytes,
           t,
           t,
+          dataWrites ?? "editors",
         )
         .run();
     }
@@ -600,6 +617,7 @@ export interface SitePatch {
   allowed_emails?: unknown;
   editors?: unknown;
   sheets?: unknown;
+  data_writes?: unknown;
 }
 
 export async function updateSite(ctx: Ctx, id: string, patch: SitePatch) {
@@ -654,6 +672,11 @@ export async function updateSite(ctx: Ctx, id: string, patch: SitePatch) {
       detail.editorsRemoved = gone;
     }
   }
+  const dataWrites = parseDataWrites(patch.data_writes);
+  if (dataWrites) {
+    set("kv_writes", dataWrites);
+    if (changed.includes("kv_writes")) detail.dataWrites = dataWrites === "all" ? "everyone" : "editors";
+  }
   if (patch.sheets !== undefined) {
     // The spreadsheets are reached with the owner's own Google account, so only the owner chooses them.
     const list = sheetIdList(patch.sheets);
@@ -687,6 +710,7 @@ export async function getManageableSite(ctx: Ctx, id: string): Promise<SiteView 
 export async function removeSite(env: Env, site: SiteRow) {
   await env.DB.batch([
     env.DB.prepare("DELETE FROM kv WHERE site_id = ?").bind(site.id),
+    env.DB.prepare("DELETE FROM kv_user WHERE site_id = ?").bind(site.id),
     env.DB.prepare("DELETE FROM secrets WHERE site_id = ?").bind(site.id),
     env.DB.prepare("DELETE FROM rate_counters WHERE bucket LIKE ?").bind(site.id + ":%"),
     env.DB.prepare("DELETE FROM sites WHERE id = ?").bind(site.id),
