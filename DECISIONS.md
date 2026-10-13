@@ -346,4 +346,4 @@ Choices made while building v1, including where the build differs from the spec 
   on **Connect your AI**: a tile per AI app with a **Connected** badge when one of the person's
   OAuth connections matches it by client name (Claude, ChatGPT, Gemini, Claude Code), and the
   setup steps, connection details and Disconnect in a dialog. `/connect#claude` (or `#chatgpt`,
-  `#gemini`, `#claude-code`) opens that dialog directly. The logos are simple inline SVG marks.
+  `#gemini`, `#claude-code`) opens that dialog directly. The logos are the official marks, inlined from LobeHub Icons (`@lobehub/icons-static-svg`, MIT) in `src/dashboard/logos.ts`.

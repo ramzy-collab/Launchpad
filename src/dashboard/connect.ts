@@ -5,19 +5,8 @@ import type { AppEnv } from "../env";
 import { escapeHtml as e } from "../util";
 import { aiOrigin } from "../hosts";
 import { listConnections } from "../oauth";
+import { AI_LOGOS } from "./logos";
 import { fmtTime, shell } from "./page";
-
-// Simple marks for each AI app, drawn inline so the page keeps its strict CSP.
-const LOGOS: Record<string, string> = {
-  claude: `<svg viewBox="0 0 48 48" aria-hidden="true"><g stroke="#D97757" stroke-width="4.5" stroke-linecap="round">${[0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330]
-    .map((a, i) => `<line x1="24" y1="${i % 2 ? 15 : 12}" x2="24" y2="4" transform="rotate(${a} 24 24)"/>`)
-    .join("")}</g></svg>`,
-  chatgpt: `<svg viewBox="0 0 48 48" aria-hidden="true"><rect width="48" height="48" rx="12" fill="#0D0D0D"/><g fill="none" stroke="#fff" stroke-width="2.6">${[0, 60, 120]
-    .map((a) => `<ellipse cx="24" cy="24" rx="6.5" ry="13" transform="rotate(${a} 24 24)"/>`)
-    .join("")}</g></svg>`,
-  gemini: `<svg viewBox="0 0 48 48" aria-hidden="true"><defs><linearGradient id="gem" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#4285F4"/><stop offset=".55" stop-color="#9B72CB"/><stop offset="1" stop-color="#D96570"/></linearGradient></defs><path fill="url(#gem)" d="M24 3c1.6 11 10 19.4 21 21-11 1.6-19.4 10-21 21-1.6-11-10-19.4-21-21 11-1.6 19.4-10 21-21z"/></svg>`,
-  "claude-code": `<svg viewBox="0 0 48 48" aria-hidden="true"><rect width="48" height="48" rx="12" fill="#D97757"/><path d="M14 17l8 7-8 7M25 32h10" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
-};
 
 const APPS = [
   { id: "claude", name: "Claude", where: "claude.ai, desktop and mobile" },
@@ -128,7 +117,7 @@ export async function connectPage(c: Context<AppEnv>): Promise<Response> {
   const tiles = APPS.map((a) => {
     const on = (byTile.get(a.id) ?? []).length > 0;
     return `<button type="button" class="ai-tile" data-dialog="dlg-${a.id}" aria-haspopup="dialog">
-    <span class="ai-logo">${LOGOS[a.id]}</span>
+    <span class="ai-logo">${AI_LOGOS[a.id]}</span>
     <span class="ai-name">${e(a.name)}</span>
     <span class="ai-where">${e(a.where)}</span>
     ${on ? `<span class="badge on"><span class="dot" aria-hidden="true"></span>Connected</span>` : `<span class="badge">Set up</span>`}
@@ -139,7 +128,7 @@ export async function connectPage(c: Context<AppEnv>): Promise<Response> {
     (a) => `<dialog id="dlg-${a.id}" class="howto-dialog" aria-labelledby="dlg-${a.id}-title">
   <form method="dialog" class="dialog-close"><button aria-label="Close">×</button></form>
   <div class="howto">
-    <div class="dialog-head"><span class="ai-logo">${LOGOS[a.id]}</span><h2 id="dlg-${a.id}-title">${e(a.name)}</h2></div>
+    <div class="dialog-head"><span class="ai-logo">${AI_LOGOS[a.id]}</span><h2 id="dlg-${a.id}-title">${e(a.name)}</h2></div>
     ${status(byTile.get(a.id) ?? [])}
     ${a.id === "claude-code" ? "" : `<p class="muted">Connector URL</p><div class="copyrow"><pre id="mcp-url-${a.id}">${e(url)}</pre><button type="button" data-copy="#mcp-url-${a.id}">Copy</button></div>`}
     ${STEPS[a.id]}
