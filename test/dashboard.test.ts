@@ -1,3 +1,4 @@
+import { env } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
 import { ASSET_VERSION } from "../src/generated/assets";
 import { call, OWNER, PAGE, publishHtml, uniq } from "./helpers";
@@ -37,7 +38,7 @@ describe("dashboard", () => {
     expect(html).toContain("&lt;script&gt;tok()&lt;/script&gt;");
   });
 
-  it("shows sites, namespaces, tokens and recent activity", async () => {
+  it("shows sites, namespaces and tokens, with an activity log per app instead of a shared one", async () => {
     const ns = uniq();
     await publishHtml(OWNER, ns, "listed", PAGE("x"), { title: "Listed app" });
     await call("/_api/admin/tokens", { as: OWNER, method: "POST", json: { name: "laptop-token" } });
@@ -47,7 +48,8 @@ describe("dashboard", () => {
     expect(html).toContain("Listed app");
     expect(html).toContain(`>${ns}</a>`);
     expect(html).toContain("laptop-token");
-    expect(html).toContain(`${ns}/listed`); // audit row target
+    expect(html).not.toContain("Recent activity");
+    expect(html).toMatch(/href="\/apps\/[^"]+\/activity">Activity<\/a>/);
   });
 
   it("does not show other people's sites or activity", async () => {
@@ -87,5 +89,60 @@ describe("dashboard", () => {
     expect(new TextEncoder().encode(js).length).toBeLessThan(5 * 1024);
     expect(js).toContain("window.formelab = formelab");
     expect(js).toContain("window.archie = formelab");
+  });
+});
+
+describe("app activity logs", () => {
+  const activityUrl = async (as: string, ns: string, mount: string) => {
+    const site = await env.DB.prepare("SELECT id FROM sites WHERE namespace = ? AND mount_path = ?").bind(ns, mount).first<{ id: string }>();
+    return `/app/apps/${site!.id}/activity`;
+  };
+
+  it("records each action in the app, in plain words, for the people who manage it", async () => {
+    const ns = uniq();
+    const editor = `ed-${uniq()}@example.com`;
+    const viewer = `vw-${uniq()}@example.com`;
+    await publishHtml(OWNER, ns, "log", PAGE("v1"), { title: "Logged app" });
+    await publishHtml(OWNER, ns, "log", PAGE("v2"));
+    const url = await activityUrl(OWNER, ns, "log");
+    const id = url.split("/")[3]!;
+    const patch = (json: unknown, as = OWNER) => call(`/_api/admin/sites/${id}`, { as, method: "PATCH", json });
+    expect((await patch({ allowed_emails: [viewer], editors: [editor], title: "Logged app" })).status).toBe(200);
+    expect((await patch({ visibility: "all", title: "Renamed app" })).status).toBe(200);
+    // Saving the settings form unchanged logs nothing.
+    expect((await patch({ visibility: "all", title: "Renamed app", allowed_emails: [viewer], editors: [editor] })).status).toBe(200);
+    await call(`https://${ns}.example.app/_api/secrets/api-key`, { as: OWNER, mount: "/log/", method: "PUT", json: { value: "shh" } });
+
+    const res = await call(url, { as: OWNER });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("Activity: Renamed app");
+    expect(html).toContain("Published the app (1 file,");
+    expect(html).toContain("Published a new version (1 file,");
+    expect(html).toContain(`Shared it with ${viewer}; made ${editor} an editor`);
+    expect(html).toContain("Set who can open it to anyone signed in; renamed it to &quot;Renamed app&quot;");
+    expect(html).toContain("Saved the secret api-key");
+    expect(html).not.toContain("shh");
+    expect(html.match(/<tr><td class="nowrap">/g)).toHaveLength(5);
+
+    // Editors see it (and get a link under Shared with me); viewers and strangers get a 404.
+    expect((await call(url, { as: editor })).status).toBe(200);
+    expect(await (await call("/app/shared", { as: editor })).text()).toContain(`href="/apps/${id}/activity"`);
+    expect((await call(url, { as: viewer })).status).toBe(404);
+    expect((await call(url, { as: `x-${uniq()}@example.com` })).status).toBe(404);
+    expect((await call("/app/apps/nope/activity", { as: OWNER })).status).toBe(404);
+  });
+
+  it("keeps Formelab-level activity in the admin panel, for admins only", async () => {
+    const email = `act-${uniq()}@example.com`;
+    const ns = uniq();
+    await call("/_api/admin/waitlist/approve", { as: OWNER, method: "POST", json: { email } });
+    await call("/_api/admin/namespaces", { as: OWNER, method: "POST", json: { label: ns } });
+    const res = await call("https://admin.example.com/activity", { as: OWNER });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain(`Invited ${email}`);
+    expect(html).toContain(`Created the namespace ${ns}`);
+    expect((await call("https://admin.example.com/activity", { as: `nope-${uniq()}@example.com` })).status).toBe(404);
   });
 });

@@ -169,6 +169,7 @@ label.check { flex-direction: row !important; align-items: center; gap: 8px; min
 .inline { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 6px 0; }
 .actions { min-width: 18rem; }
 .actions details { margin: 6px 0; }
+.actions .action-link { display: inline-block; margin: 6px 0; font-weight: 600; }
 summary { cursor: pointer; color: var(--fl-accent); font-weight: 500; font-size: .875rem; }
 .copyrow { display: flex; gap: 10px; align-items: flex-start; background: var(--fl-canvas); border: 1.5px solid var(--fl-line); border-radius: var(--fl-radius-md); padding: 10px 10px 10px 14px; }
 .copyrow > :first-child { flex: 1; word-break: break-all; align-self: center; }

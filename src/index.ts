@@ -3,7 +3,7 @@ import { managementApi } from "./api";
 import { identifyBearer, identifyBrowser } from "./auth";
 import { adminPage } from "./dashboard/admin";
 import { connectPage } from "./dashboard/connect";
-import { dashboardPage, sharedPage } from "./dashboard/page";
+import { appActivityPage, dashboardPage, sharedPage } from "./dashboard/page";
 import { homePage, loginPage } from "./dashboard/home";
 import type { AppEnv, Env } from "./env";
 import { forbidden, jsonError, onError, unauthorized } from "./errors";
@@ -173,6 +173,7 @@ const webApp = signedInHost(requireSignIn, (app) => app.get("/_auth/callback", a
 webApp.get("/", async (c) => dashboardPage(c));
 webApp.get("/shared", async (c) => sharedPage(c));
 webApp.get("/connect", (c) => connectPage(c));
+webApp.get("/apps/:id/activity", (c) => appActivityPage(c, c.req.param("id")));
 webApp.notFound(() => plainPage(404, "Not found", "There is nothing here."));
 
 // The admin panel (admins only; adminPage answers 404 to everyone else).
@@ -188,6 +189,7 @@ const adminApp = signedInHost(requireAdminSignIn, (app) => {
 adminApp.get("/", (c) => adminPage(c, "overview"));
 adminApp.get("/users", (c) => adminPage(c, "users"));
 adminApp.get("/waitlist", (c) => adminPage(c, "waitlist"));
+adminApp.get("/activity", (c) => adminPage(c, "activity"));
 adminApp.notFound(() => plainPage(404, "Not found", "There is nothing here."));
 // ---------------------------------------------------------------------------
 // Namespace hosts: <ns>.APP_DOMAIN

@@ -1,5 +1,6 @@
 // Formelab admin: a separate area from anyone's own lab, for running Formelab itself. Admins only.
 import type { Context } from "hono";
+import { describeActivity, platformActivity } from "../audit";
 import { isOwnerEmail } from "../auth";
 import type { AppEnv } from "../env";
 import { aiOrigin } from "../hosts";
@@ -10,7 +11,7 @@ import { listWaitlist } from "../waitlist";
 import { head, htmlResponse, nav } from "./layout";
 import { fmtTime, logoutControl } from "./page";
 
-type Tab = "overview" | "users" | "waitlist";
+type Tab = "overview" | "users" | "waitlist" | "activity";
 
 function adminShell(c: Context<AppEnv>, tab: Tab, body: string): Response {
   const user = c.get("user");
@@ -33,7 +34,7 @@ ${nav(
   <h1>Run Formelab</h1>
   <p>People, the waitlist and admin access. Changes here affect everyone on Formelab.</p>
 </div>
-<nav class="tabs" aria-label="Admin sections"><a href="/"${current("overview")}>Overview</a><a href="/users"${current("users")}>Users</a><a href="/waitlist"${current("waitlist")}>Waitlist</a></nav>
+<nav class="tabs" aria-label="Admin sections"><a href="/"${current("overview")}>Overview</a><a href="/users"${current("users")}>Users</a><a href="/waitlist"${current("waitlist")}>Waitlist</a><a href="/activity"${current("activity")}>Activity</a></nav>
 <div id="flash" role="status" hidden></div>
 ${body}
 </main>
@@ -47,6 +48,7 @@ export async function adminPage(c: Context<AppEnv>, tab: Tab): Promise<Response>
   if (!c.get("user").isAdmin) return plainPage(404, "Not found", "There is nothing here.");
   if (tab === "users") return adminShell(c, tab, await usersBody(c));
   if (tab === "waitlist") return adminShell(c, tab, await waitlistBody(c));
+  if (tab === "activity") return adminShell(c, tab, await activityBody(c));
   return adminShell(c, tab, await overviewBody(c));
 }
 
@@ -127,6 +129,17 @@ async function usersBody(c: Context<AppEnv>): Promise<string> {
     .join("")}</tbody></table></div>`
       : `<p class="muted">Everyone you've let in has logged in.</p>`
   }
+</section>`;
+}
+
+async function activityBody(c: Context<AppEnv>): Promise<string> {
+  const rows = (await platformActivity(c.env, 300))
+    .map((a) => `<tr><td class="nowrap">${e(fmtTime(a.at))}</td><td>${e(a.actor)}</td><td>${e(describeActivity(a))}</td></tr>`)
+    .join("");
+  return `<section>
+  <h2>Activity</h2>
+  <p class="muted">Formelab-level changes, newest first: people let in and invited, admin access, deleted accounts, namespaces, and AI apps connected. What happens inside an app is in that app's own activity log, under <strong>Activity</strong> in its owner's lab.</p>
+  ${rows ? `<div class="scroll"><table><thead><tr><th>When</th><th>Who</th><th>What they did</th></tr></thead><tbody>${rows}</tbody></table></div>` : `<p class="muted">Nothing yet.</p>`}
 </section>`;
 }
 

@@ -311,3 +311,19 @@ Choices made while building v1, including where the build differs from the spec 
   doesn't touch it (or the other way round). The panel has no link back to the lab.
 - With Cloudflare Access instead of WorkOS there is no session to hand over, so `/auth/app`
   answers with a sign-in page instead of looping; Access must then cover the other hosts itself.
+
+## Activity logs
+
+- There is no shared "Recent activity" list any more. Every row in the activity log (the `audit`
+  table) is either about one app or about Formelab itself:
+  - **App activity** (`audit.site_id` set, migration 0005): publishing, new versions, sharing and
+    settings changes, secrets saved or removed, and calls made with the app's secrets. It is on
+    the app's own page, `APP_DOMAIN/apps/<id>/activity`, linked as **Activity** from My apps (and
+    from Shared with me for editors). Only people who can manage the app see it; others get 404.
+  - **Formelab activity** (`site_id` NULL): people let in or invited, admin access granted or
+    removed, deleted accounts, namespaces, deleted apps (their own log goes with them) and AI apps
+    connected. It is the admin panel's **Activity** tab.
+- Each row is shown as a sentence describing the action that caused it ("Shared it with
+  a@example.com; made b@example.com an editor"), not as an action code and JSON.
+- Saving an app's settings only logs (and writes) the fields that actually changed, so saving
+  the settings form unchanged adds nothing to the log.

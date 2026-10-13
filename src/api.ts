@@ -121,7 +121,7 @@ export function managementApi(kind: "admin" | "deploy") {
       if (!c.get("user").isAdmin) throw err(403, "admin_only", "Only an admin can let people in.", "Ask the Formelab owner.");
       const email = String((await jsonBody(c)).email ?? "").trim();
       if (!isEmail(email)) throw badRequest("That email address is not valid.", "Check the address and try again.");
-      await approveWaitlist(c.env, email, { requestUrl: c.req.url, waitUntil: (p) => c.executionCtx.waitUntil(p) });
+      await approveWaitlist(c.env, email, { actor: c.get("user").email, requestUrl: c.req.url, waitUntil: (p) => c.executionCtx.waitUntil(p) });
       return c.json({ ok: true });
     });
     api.get("/users", async (c) => {

@@ -1,9 +1,11 @@
 import type { Context } from "hono";
-import { recentActivity } from "../audit";
+import { describeActivity, siteActivity } from "../audit";
 import { listTokens } from "../auth";
 import type { AppEnv, User } from "../env";
-import { listNamespaces, listOwnSites, listSharedSites, type SiteView } from "../sites";
+import { getManageableSite, listNamespaces, listOwnSites, listSharedSites, type SiteView } from "../sites";
 import { escapeHtml as e } from "../util";
+import { ApiError } from "../errors";
+import { plainPage } from "../serve";
 import { adminOrigin, aiOrigin } from "../hosts";
 import { ctxOf } from "../api";
 import { listConnections } from "../oauth";
@@ -72,7 +74,7 @@ export async function sharedPage(c: Context<AppEnv>): Promise<Response> {
   <h2>Shared with me<span class="count">${e(sites.length)}</span></h2>
   ${
     sites.length
-      ? `<div class="scroll"><table><thead><tr><th>App</th><th>Owner</th><th>Your access</th><th>Updated</th></tr></thead><tbody>${rows}</tbody></table></div>`
+      ? `<div class="scroll"><table><thead><tr><th>App</th><th>Owner</th><th>Your access</th><th>Updated</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`
       : `<p class="muted">Nothing yet. When someone adds your email to one of their apps, it shows up here.</p>`
   }
 </section>`;
@@ -85,18 +87,45 @@ function sharedRow(s: SiteView & { canManage: boolean }): string {
   <td>${e(s.ownerEmail)}</td>
   <td>${s.canManage ? "Can edit" : "Can open"}</td>
   <td class="nowrap">${e(fmtTime(s.updatedAt))}</td>
+  <td>${s.canManage ? `<a href="/apps/${e(encodeURIComponent(s.id))}/activity">Activity</a>` : ""}</td>
 </tr>`;
+}
+
+/** An app's activity log: everything done to or in the app, for the people who can manage it. */
+export async function appActivityPage(c: Context<AppEnv>, id: string): Promise<Response> {
+  const ctx = ctxOf(c);
+  let site: SiteView;
+  try {
+    site = await getManageableSite(ctx, id);
+  } catch (err) {
+    if (err instanceof ApiError) return plainPage(404, "Not found", "There is nothing here.");
+    throw err;
+  }
+  const rows = (await siteActivity(c.env, site.id))
+    .map((a) => `<tr><td class="nowrap">${e(fmtTime(a.at))}</td><td>${e(a.actor)}</td><td>${e(describeActivity(a))}</td></tr>`)
+    .join("");
+  const mine = site.ownerEmail === ctx.user.email;
+  const body = `<section>
+  <p><a href="${mine ? "/" : "/shared"}">← ${mine ? "My apps" : "Shared with me"}</a></p>
+  <h2>Activity: ${e(site.title || `${site.namespace}/${site.mountPath}`)}</h2>
+  <p class="muted"><a href="${e(site.url)}" target="_blank" rel="noopener">${e(site.url)}</a>. Everything people have done to this app: publishing, sharing and settings, secrets, and calls made with its secrets. Newest first.</p>
+  ${
+    rows
+      ? `<div class="scroll"><table><thead><tr><th>When</th><th>Who</th><th>What they did</th></tr></thead><tbody>${rows}</tbody></table></div>`
+      : `<p class="muted">Nothing yet.</p>`
+  }
+</section>`;
+  return shell(c, ctx.user, mine ? "mine" : "shared", body);
 }
 
 export async function dashboardPage(c: Context<AppEnv>): Promise<Response> {
   const ctx = ctxOf(c);
   const user = ctx.user;
   if (!user.active) return shell(c, user, "mine", waitlistedNotice);
-  const [namespaces, sites, tokens, activity, connections] = await Promise.all([
+  const [namespaces, sites, tokens, connections] = await Promise.all([
     listNamespaces(ctx),
     listOwnSites(ctx),
     listTokens(c.env, user),
-    recentActivity(c.env, user.email, 50),
     listConnections(c.env, user.email).catch(() => []),
   ]);
   const origin = aiOrigin(c.env, c.req.url);
@@ -143,6 +172,7 @@ export async function dashboardPage(c: Context<AppEnv>): Promise<Response> {
         <button>Save settings</button>
       </form>
     </details>
+    <a class="action-link" href="/apps/${e(encodeURIComponent(s.id))}/activity">Activity</a>
     <button class="danger" data-action="site-delete" data-id="${e(s.id)}" data-mount="${e(s.mountPath)}" data-namespace="${e(s.namespace)}">Delete</button>
   </td>
 </tr>`,
@@ -165,12 +195,6 @@ export async function dashboardPage(c: Context<AppEnv>): Promise<Response> {
   <td>${e(k.clientName)}</td><td class="nowrap">${e(fmtTime(k.createdAt))}</td><td class="nowrap">${e(k.expiresAt ? fmtTime(k.expiresAt) : "—")}</td>
   <td><button class="danger" data-action="connection-revoke" data-id="${e(k.id)}">Disconnect</button></td>
 </tr>`,
-    )
-    .join("");
-
-  const activityRows = activity
-    .map(
-      (a) => `<tr><td class="nowrap">${e(fmtTime(a.at))}</td><td>${e(a.actor)}</td><td>${e(a.action)}</td><td>${e(a.target ?? "")}</td><td class="muted">${e(a.detail ?? "")}</td></tr>`,
     )
     .join("");
 
@@ -249,14 +273,6 @@ export async function dashboardPage(c: Context<AppEnv>): Promise<Response> {
   }
 </section>
 
-<section>
-  <h2>Recent activity</h2>
-  ${
-    activity.length
-      ? `<div class="scroll"><table><thead><tr><th>When</th><th>Who</th><th>Action</th><th>Target</th><th>Detail</th></tr></thead><tbody>${activityRows}</tbody></table></div>`
-      : `<p class="muted">Nothing yet.</p>`
-  }
-</section>
 `;
 
   return shell(c, user, "mine", body);

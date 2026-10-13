@@ -6,6 +6,7 @@
 // /auth/app. The admin panel (admin.DOMAIN) runs the same flow on its own host instead, so it
 // has a separate, shorter sign-in that only admins can complete.
 import type { Context } from "hono";
+import { audit } from "./audit";
 import { isOwnerEmail, upsertUser } from "./auth";
 import type { AppEnv, Env } from "./env";
 import { now } from "./env";
@@ -194,7 +195,11 @@ export async function appCallback(c: Context<AppEnv>): Promise<Response> {
 }
 
 /** Admin: let someone in from the waitlist, or invite a new address. Emails them the first time. */
-export async function approveWaitlist(env: Env, rawEmail: string, opts: { requestUrl?: string; waitUntil?: (p: Promise<unknown>) => void } = {}): Promise<void> {
+export async function approveWaitlist(
+  env: Env,
+  rawEmail: string,
+  opts: { actor?: string; requestUrl?: string; waitUntil?: (p: Promise<unknown>) => void } = {},
+): Promise<void> {
   const email = normEmail(rawEmail);
   const t = now();
   const before = await env.DB.prepare("SELECT approved_at FROM waitlist WHERE email = ?").bind(email).first<{ approved_at: number | null }>();
@@ -206,6 +211,7 @@ export async function approveWaitlist(env: Env, rawEmail: string, opts: { reques
     env.DB.prepare("UPDATE users SET status = 'active' WHERE email = ?").bind(email),
   ]);
   if (!before?.approved_at) {
+    if (opts.actor) await audit(env, opts.actor, "waitlist_approve", email, { invited: !before });
     const send = sendEmail(env, acceptedEmail(publicOrigin(env, opts.requestUrl), email));
     if (opts.waitUntil) opts.waitUntil(send);
     else await send;

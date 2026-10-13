@@ -533,40 +533,68 @@ export async function updateSite(ctx: Ctx, id: string, patch: SitePatch) {
   const sets: string[] = [];
   const binds: unknown[] = [];
   const changed: string[] = [];
+  const detail: Record<string, unknown> = { siteId: id };
+  // Only what actually changes is written and logged (the dashboard form sends every field).
   const set = (col: string, v: unknown) => {
+    if (String((site as unknown as Record<string, unknown>)[col] ?? "") === String(v ?? "")) return;
     sets.push(`${col} = ?`);
     binds.push(v);
     changed.push(col);
   };
   const title = parseTitle(patch.title);
-  if (title !== undefined) set("title", title);
+  if (title !== undefined) {
+    set("title", title);
+    if (changed.includes("title")) detail.title = title ?? "";
+  }
   const hidden = parseBool(patch.hidden);
   if (hidden !== undefined) set("hidden", hidden ? 1 : 0);
   const spa = parseBool(patch.spa);
   if (spa !== undefined) set("spa", spa ? 1 : 0);
   const visibility = parseVisibility(patch.visibility);
-  if (visibility) set("visibility", visibility);
+  if (visibility) {
+    set("visibility", visibility);
+    if (changed.includes("visibility")) detail.visibility = visibility;
+  }
   let newViewers: string[] = [];
   let newEditors: string[] = [];
   if (patch.allowed_emails !== undefined) {
     const list = emailList(patch.allowed_emails, "allowed_emails");
-    newViewers = added(list, parseJsonArray(site.allowed_emails));
-    set("allowed_emails", JSON.stringify(list));
+    const before = parseJsonArray(site.allowed_emails);
+    newViewers = added(list, before);
+    const gone = added(before, list);
+    if (newViewers.length || gone.length) {
+      set("allowed_emails", JSON.stringify(list));
+      detail.sharedWith = newViewers;
+      detail.unsharedWith = gone;
+    }
   }
   if (patch.editors !== undefined) {
     if (site.owner_email !== ctx.user.email && !isNamespaceOwner(ctx.user, ns)) throw ownerOnly();
     const list = emailList(patch.editors, "editors");
-    newEditors = added(list, parseJsonArray(site.editors));
-    set("editors", JSON.stringify(list));
+    const before = parseJsonArray(site.editors);
+    newEditors = added(list, before);
+    const gone = added(before, list);
+    if (newEditors.length || gone.length) {
+      set("editors", JSON.stringify(list));
+      detail.editorsAdded = newEditors;
+      detail.editorsRemoved = gone;
+    }
   }
   if (sets.length) {
+    const fields = [...changed];
     set("updated_at", now());
     await ctx.env.DB.prepare(`UPDATE sites SET ${sets.join(", ")} WHERE id = ?`).bind(...binds, id).run();
-    await audit(ctx.env, ctx.user.email, "update_site", `${site.namespace}/${site.mount_path}`, { siteId: id, fields: changed.slice(0, -1) });
+    await audit(ctx.env, ctx.user.email, "update_site", `${site.namespace}/${site.mount_path}`, { ...detail, fields });
   }
   const updated = (await getSiteById(ctx.env, id))!;
   notifyShared(ctx, updated, newViewers, newEditors);
   return siteView(ctx.env, updated, ctx.requestUrl);
+}
+
+/** A site the signed-in person may manage (owner, editor or namespace owner); 404 for others. */
+export async function getManageableSite(ctx: Ctx, id: string): Promise<SiteView> {
+  const { site } = await requireManageableSite(ctx, id);
+  return siteView(ctx.env, site, ctx.requestUrl);
 }
 
 /** Removes a site's files, KV rows, secret rows and the site row itself. */
@@ -583,7 +611,7 @@ export async function removeSite(env: Env, site: SiteRow) {
 export async function deleteSite(ctx: Ctx, id: string) {
   const { site } = await requireManageableSite(ctx, id);
   await removeSite(ctx.env, site);
-  await audit(ctx.env, ctx.user.email, "delete_site", `${site.namespace}/${site.mount_path}`, { siteId: id });
+  await audit(ctx.env, ctx.user.email, "delete_site", `${site.namespace}/${site.mount_path}`, { deletedSiteId: id });
   return { ok: true };
 }
 
