@@ -17,7 +17,7 @@ import { filesFromHtml, filesFromUpload, filesFromZip, MAX_UPLOAD_BYTES, type Fi
 import { listConnections, revokeConnection } from "./oauth";
 import { approveWaitlist } from "./login";
 import { connectGemini, disconnectGemini, geminiStatus } from "./gemini";
-import { flagOn, setFlag } from "./flags";
+import { addFlagUser, flagOn, removeFlagUser, setFlag } from "./flags";
 import { sheetsDisconnect, sheetsStatus } from "./sheets";
 import { deleteUser, listUsers, setAdmin } from "./users";
 import { b64decode, isEmail } from "./util";
@@ -145,6 +145,8 @@ export function managementApi(kind: "admin" | "deploy") {
     api.get("/services/google-sheets", async (c) => c.json(await sheetsStatus(c.env, c.get("user").email)));
     api.delete("/services/google-sheets", async (c) => c.json(await sheetsDisconnect(c.env, c.get("user"))));
     api.put("/features/:name", async (c) => c.json(await setFlag(c.env, c.get("user"), c.req.param("name"), (await jsonBody(c)).state)));
+    api.post("/features/:name/users", async (c) => c.json(await addFlagUser(c.env, c.get("user"), c.req.param("name"), (await jsonBody(c)).email)));
+    api.delete("/features/:name/users/:email", async (c) => c.json(await removeFlagUser(c.env, c.get("user"), c.req.param("name"), c.req.param("email"))));
     api.get("/connections", async (c) => c.json(await listConnections(c.env, c.get("user").email)));
     api.delete("/connections/:id", async (c) => {
       await revokeConnection(c.env, c.get("user").email, c.req.param("id"));

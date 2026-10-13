@@ -157,4 +157,35 @@ describe("the connected_apps feature flag", () => {
     expect(admin).toContain('<option value="on" selected>Everyone</option>');
     expect(await (await call("https://admin.example.com/activity", { as: OWNER })).text()).toContain("Set Connected apps to on for everyone");
   });
+
+  it("can be turned on for one person by email, whatever its state", async () => {
+    mockGoogle();
+    const person = `ff1-${uniq()}@example.com`;
+    const other = `ff2-${uniq()}@example.com`;
+    const addUser = (email: string, as = OWNER) => call("/_api/admin/features/connected_apps/users", { as, method: "POST", json: { email } });
+    const removeUser = (email: string, as = OWNER) => call(`/_api/admin/features/connected_apps/users/${encodeURIComponent(email)}`, { as, method: "DELETE" });
+    expect((await setFlag("off")).status).toBe(200);
+    expect((await addUser(person, other)).status).toBe(403);
+    expect((await addUser("not an email")).status).toBe(400);
+    expect((await call("/_api/admin/features/nope/users", { as: OWNER, method: "POST", json: { email: person } })).status).toBe(404);
+
+    expect((await addUser(` ${person.toUpperCase()} `)).status).toBe(200);
+    expect(await (await call("/app/connected", { as: person })).text()).toContain("dlg-gemini-service");
+    expect(await (await call("/app/connected", { as: other })).text()).not.toContain("dlg-gemini-service");
+    expect(await (await call("/_platform/guide.md", { as: person })).text()).toContain("formelab.gemini.generate");
+    // Their apps get it too, for whoever opens them.
+    expect((await connect(person, GOOD)).status).toBe(200);
+    const ns = uniq();
+    await publishHtml(person, ns, "ai", PAGE("x"), { allowed_emails: other });
+    expect((await ask(other, ns, "ai", { prompt: "hi" })).status).toBe(200);
+
+    const admin = await (await call("https://admin.example.com/features", { as: OWNER })).text();
+    expect(admin).toContain(`data-action="feature-user-remove" data-name="connected_apps" data-email="${person}"`);
+    expect(await (await call("https://admin.example.com/activity", { as: OWNER })).text()).toContain(`Turned Connected apps on for ${person}`);
+
+    expect((await removeUser(person)).status).toBe(200);
+    expect((await removeUser(person)).status).toBe(404);
+    expect(await (await call("/app/connected", { as: person })).text()).not.toContain("dlg-gemini-service");
+    expect((await ask(other, ns, "ai", { prompt: "hi" })).status).toBe(403);
+  });
 });

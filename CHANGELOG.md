@@ -4,6 +4,7 @@ Everything that has changed in Formelab, newest first. Shown in the admin panel 
 
 ## 2026-10-13
 
+- **Turn a feature on for one person.** In the admin panel's Features tab, each feature has a "Turn on for this person" box: enter someone's email and they get the feature right away, whether it's Off, Admins only or Everyone. Their apps get it too, since features follow an app's owner. Remove them to take it back. Both show up in Activity.
 - **Google Sheets, the first sign-in connected app.** Under Connected apps, people click Connect with Google and allow access to their spreadsheets; their apps can then read, add and update rows and create sheets through the SDK (`formelab.sheets`). No keys to copy: the sign-in is stored encrypted and refreshed automatically. Behind the Connected apps feature flag, and in Google's testing mode for now (test users only).
 - **Admin panel gets a left menu.** The Formelab Admin Panel now has the same left menu as the web app: Users (Overview, Users, Waitlist, Activity) and Formelab (Features, Changelog, Vendors), with a Settings menu at the bottom for dark mode and logging out.
 - **Changelog and Vendors in the admin panel.** A Changelog tab lists every change since launch, and a Vendors tab keeps track of every service, AI app and open-source project Formelab uses, or used and retired.
