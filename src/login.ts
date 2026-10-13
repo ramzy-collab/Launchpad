@@ -125,7 +125,19 @@ export async function loginCallback(c: Context<AppEnv>): Promise<Response> {
 export interface WorkosAuthentication {
   user: WorkosUser;
   access_token?: string;
+  /** How the person signed in: "Password", "MagicAuth", "GoogleOAuth", … */
+  authentication_method?: string;
 }
+
+/** The sign-in method this browser used last, for the login page's "Last used" label. */
+export const LAST_USED_COOKIE = "__Host-fl_last";
+export type LastUsed = "email" | "google";
+const lastUsedOf = (method: string | undefined): LastUsed | null =>
+  method === "GoogleOAuth" ? "google" : method === "Password" || method === "MagicAuth" ? "email" : null;
+
+/** Remembers that this person has a password, so the login page asks for it. */
+export const markHasPassword = (env: Env, email: string) =>
+  env.DB.prepare("UPDATE users SET has_password = 1 WHERE email = ?").bind(normEmail(email)).run();
 
 /**
  * Turns a WorkOS sign-in into a Formelab one: checks the email, creates or updates the account
@@ -134,7 +146,7 @@ export interface WorkosAuthentication {
  */
 export async function completeSignIn(
   c: Context<AppEnv>,
-  { user: wu, access_token }: WorkosAuthentication,
+  { user: wu, access_token, authentication_method }: WorkosAuthentication,
   respond: (headers: Headers) => Response,
 ): Promise<Response> {
   const env = c.env;
@@ -146,6 +158,9 @@ export async function completeSignIn(
   const workosSid = sessionIdOf(access_token);
   const name = [wu.first_name, wu.last_name].filter(Boolean).join(" ") || null;
   const headers = new Headers({ "cache-control": "no-store" });
+  const last = lastUsedOf(authentication_method);
+  if (last) headers.append("set-cookie", cookieHeader(LAST_USED_COOKIE, last, 365 * 24 * 3600));
+  const remember = () => (authentication_method === "Password" ? markHasPassword(env, email) : null);
 
   // The admin panel's own sign-in: admins only, nobody is added to the waitlist from here.
   if (onAdminHost(c)) {
@@ -154,12 +169,14 @@ export async function completeSignIn(
       return plainPage(403, "Not an admin", `${email} can't manage Formelab. Use your lab at ${aiOrigin(env, c.req.url)} instead.`);
     }
     await upsertUser(env, email, name, { workosId: wu.id });
+    await remember();
     headers.append("set-cookie", await createSession(env, email, new URL(c.req.url).hostname, { expiresAt: now() + ADMIN_SESSION_TTL_MS, workosSid }));
     return respond(headers);
   }
 
   const status = isOwnerEmail(env, email) || (await isApproved(env, email)) ? "active" : "waitlisted";
   const user = await upsertUser(env, email, name, { status, workosId: wu.id });
+  await remember();
   // Someone who signs in before being let in lands on the waitlist, so an admin can approve them.
   if (!user.active) {
     const added = await env.DB.prepare("INSERT INTO waitlist (email, created_at) VALUES (?, ?) ON CONFLICT(email) DO NOTHING").bind(email, now()).run();
@@ -345,5 +362,6 @@ export async function setPassword(env: Env, user: User, sessionId: string | unde
     }
     throw err(502, "upstream", "Couldn't save your password.", "Try again in a minute.");
   }
+  await markHasPassword(env, user.email);
   await audit(env, user.email, "password_set", user.email);
 }

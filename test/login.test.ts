@@ -92,16 +92,16 @@ afterEach(() => {
 });
 
 describe("login page and WorkOS redirect", () => {
-  it("is a Formelab page with Google, email and password, keeping where to return", async () => {
+  it("is a Formelab page asking for an email first, with Google below, keeping where to return", async () => {
     const res = await w("/login?return=%2Fapp%2Fshared");
     expect(res.status).toBe(200);
     const html = await res.text();
     expect(html).toContain('href="/auth/login?provider=google&amp;return=%2Fapp%2Fshared"');
     expect(html).toContain('<form method="post" action="/login"');
     expect(html).toContain('name="return" value="/app/shared"');
-    expect(html).toContain('type="password"');
-    expect(html).toContain("Email me a code instead");
-    expect(html).toContain('href="/login/forgot?return=%2Fapp%2Fshared"');
+    expect(html).toContain("Continue with email");
+    expect(html).not.toContain('type="password"');
+    expect(html).not.toContain("Last used");
     expect(html).not.toMatch(/\son[a-z]+=/i);
     expect((await (await w("/login?return=https%3A%2F%2Fevil.test%2F")).text())).toContain('name="return" value="/app"');
   });
@@ -540,8 +540,12 @@ describe("Formelab's own sign-in page", () => {
       return answer(new URL(req.url).pathname, body) ?? new Response("unexpected", { status: 599 });
     });
   }
-  const signedIn = (email: string) =>
-    Response.json({ user: { id: "user_" + email, email, email_verified: true, first_name: "Pat", last_name: null }, access_token: accessToken("session_" + email) });
+  const signedIn = (email: string, method = "MagicAuth") =>
+    Response.json({
+      user: { id: "user_" + email, email, email_verified: true, first_name: "Pat", last_name: null },
+      access_token: accessToken("session_" + email),
+      authentication_method: method,
+    });
 
   const post = (path: string, fields: Record<string, string>, opts: { origin?: string; cookie?: string; host?: string } = {}) => {
     const host = opts.host ?? "https://example.com";
@@ -550,10 +554,18 @@ describe("Formelab's own sign-in page", () => {
     return w(host + path, { method: "POST", headers, body: new URLSearchParams(fields).toString() });
   };
 
-  it("logs in with email and password, then moves on to where the person was going", async () => {
+  it("asks people with a password for it, and logs them in", async () => {
     const email = `pass-${uniq()}@example.com`;
-    mockApi((path, body) => (path === "/user_management/authenticate" && body.password === "right password!" ? signedIn(email) : undefined));
-    const res = await post("/login", { email: email.toUpperCase(), password: "right password!", action: "password", return: "/app/shared" });
+    await env.DB.prepare("INSERT INTO users (email, created_at, has_password) VALUES (?, 0, 1)").bind(email).run();
+    mockApi((path, body) => (path === "/user_management/authenticate" && body.password === "right password!" ? signedIn(email, "Password") : undefined));
+    const step = await post("/login", { email: email.toUpperCase(), action: "email", return: "/app/shared" });
+    const stepHtml = await step.text();
+    expect(stepHtml).toContain("Enter your password");
+    expect(stepHtml).toContain('autocomplete="current-password"');
+    expect(stepHtml).toContain(`value="${email}"`);
+    expect(calls).toHaveLength(0);
+
+    const res = await post("/login", { email, password: "right password!", action: "password", return: "/app/shared" });
     expect(res.status).toBe(200);
     expect(refreshTarget(await res.text())).toBe("/app/shared");
     const cookie = cookieFrom(res, "__Host-fl_session")!;
@@ -562,6 +574,30 @@ describe("Formelab's own sign-in page", () => {
     // A real session, recording the WorkOS session for logout.
     const row = await env.DB.prepare("SELECT workos_sid FROM sessions WHERE email = ?").bind(email).first<{ workos_sid: string }>();
     expect(row!.workos_sid).toBe(`session_${email}`);
+    // The next visit labels email as the way they logged in last time.
+    const last = cookieFrom(res, "__Host-fl_last")!;
+    expect(last).toBe("__Host-fl_last=email");
+    expect(await (await w("/login", { headers: { cookie: last } })).text()).toContain("Last used");
+  });
+
+  it("emails a code straight away to people without a password, who can switch to one", async () => {
+    const email = `new-${uniq()}@example.com`;
+    mockApi((path) => (path === "/user_management/magic_auth" ? Response.json({ id: "ma_1" }) : undefined));
+    const res = await post("/login", { email, action: "email" });
+    const html = await res.text();
+    expect(html).toContain("We sent a code to <b>" + email);
+    expect(calls[0]!.url).toBe("https://api.workos.com/user_management/magic_auth");
+    expect(html).toContain('value="use-password"');
+    const pw = await post("/login", { email, action: "use-password" });
+    expect(await pw.text()).toContain("Enter your password");
+  });
+
+  it("remembers that someone has a password once they log in with one", async () => {
+    const email = `remember-${uniq()}@example.com`;
+    mockApi(() => signedIn(email, "Password"));
+    await post("/login", { email, password: "a password here", action: "password" });
+    const row = await env.DB.prepare("SELECT has_password FROM users WHERE email = ?").bind(email).first<{ has_password: number }>();
+    expect(row!.has_password).toBe(1);
   });
 
   it("says so when the password is wrong, keeping the email", async () => {
@@ -569,7 +605,7 @@ describe("Formelab's own sign-in page", () => {
     const res = await post("/login", { email: "who@example.com", password: "nope", action: "password" });
     expect(res.status).toBe(400);
     const html = await res.text();
-    expect(html).toContain("That email and password don&#39;t match");
+    expect(html).toContain("That password isn&#39;t right");
     expect(html).toContain('value="who@example.com"');
     expect(cookieFrom(res, "__Host-fl_session")).toBeNull();
   });
@@ -648,6 +684,7 @@ describe("Formelab's own sign-in page", () => {
     expect(res.status).toBe(200);
     const html = await res.text();
     expect(html).toContain("Password saved");
+    expect(html).toContain("Enter your password");
     expect(html).toContain('value="reset@example.com"');
     expect(calls[0]!.body).toEqual({ token: "tok_1", new_password: "long enough pw" });
   });

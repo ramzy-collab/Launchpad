@@ -10,7 +10,18 @@
 // and the way back to the web app leads to another host.
 import type { Context } from "hono";
 import type { AppEnv, Env } from "./env";
-import { completeSignIn, homePath, onAdminHost, safeReturn, WORKOS_API, workosEnabled, type WorkosAuthentication } from "./login";
+import {
+  completeSignIn,
+  homePath,
+  LAST_USED_COOKIE,
+  markHasPassword,
+  onAdminHost,
+  safeReturn,
+  WORKOS_API,
+  workosEnabled,
+  type LastUsed,
+  type WorkosAuthentication,
+} from "./login";
 import { homeHead, loginPage, topNav } from "./dashboard/home";
 import { htmlResponse } from "./dashboard/layout";
 import { identifyBrowser } from "./auth";
@@ -32,11 +43,17 @@ const GOOGLE_G = `<svg width="20" height="20" viewBox="0 0 48 48" aria-hidden="t
 type WorkosResult<T> = { ok: true; data: T } | { ok: false; status: number; code: string; message: string; data: Record<string, unknown> };
 
 async function workos<T>(env: Env, path: string, body: Record<string, unknown>): Promise<WorkosResult<T>> {
-  const res = await fetch(`${WORKOS_API}${path}`, {
-    method: "POST",
-    headers: { authorization: `Bearer ${env.WORKOS_API_KEY}`, "content-type": "application/json" },
-    body: JSON.stringify(body),
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${WORKOS_API}${path}`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${env.WORKOS_API_KEY}`, "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  } catch {
+    console.error("workos unreachable", path);
+    return { ok: false, status: 503, code: "", message: "", data: {} };
+  }
   const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
   if (res.ok) return { ok: true, data: data as T };
   const str = (v: unknown) => (typeof v === "string" ? v : "");
@@ -71,6 +88,8 @@ const OTHER_STEPS = new Set(["mfa_enrollment", "mfa_challenge", "mfa_verificatio
 interface View {
   admin: boolean;
   returnTo: string;
+  /** The sign-in method this browser used last, labelled "Last used". */
+  last?: LastUsed | null;
   email?: string;
   error?: string;
   info?: string;
@@ -79,7 +98,8 @@ interface View {
 }
 
 function view(c: Context<AppEnv>, returnTo: string): View {
-  return { admin: onAdminHost(c), returnTo };
+  const last = readCookie(c.req.raw, LAST_USED_COOKIE);
+  return { admin: onAdminHost(c), returnTo, last: last === "email" || last === "google" ? last : null };
 }
 
 function frame(v: View, title: string, intro: string, body: string, status = 200): Response {
@@ -117,29 +137,50 @@ ${topNav(v.admin)}
 const returnField = (v: View) => `<input type="hidden" name="return" value="${e(v.returnTo)}">`;
 const withReturn = (path: string, v: View) => (v.returnTo === (v.admin ? "/" : "/app") ? path : `${path}?return=${encodeURIComponent(v.returnTo)}`);
 
-/** The sign-in page: Google, then email with a password or an emailed code. */
+const lastUsed = (v: View, method: LastUsed) => (v.last === method ? `<span class="last-used">Last used</span>` : "");
+
+/** Step one: an email address (then a password or a code), or Google. */
 function signInForm(v: View, status = 200): Response {
   const google = withReturn("/auth/login", v).replace("/auth/login?", "/auth/login?provider=google&").replace(/^\/auth\/login$/, "/auth/login?provider=google");
-  const body = `<a class="ghost provider" href="${e(google)}">${GOOGLE_G}Continue with Google</a>
-      <div class="or">or</div>
-      <form method="post" action="/login" class="signin">
+  const body = `<form method="post" action="/login" class="signin">
         ${returnField(v)}
         <label class="field">Email
-          <input type="email" name="email" autocomplete="username" required value="${e(v.email ?? "")}"${v.email ? "" : " autofocus"}>
+          <input type="email" name="email" autocomplete="username" placeholder="Your email address" required autofocus value="${e(v.email ?? "")}">
         </label>
+        <div class="badged">
+          <button class="btn w100" name="action" value="email">Continue with email</button>
+          ${lastUsed(v, "email")}
+        </div>
+      </form>
+      <div class="or">or</div>
+      <div class="badged">
+        <a class="ghost provider" href="${e(google)}">${GOOGLE_G}Continue with Google</a>
+        ${lastUsed(v, "google")}
+      </div>
+      ${
+        v.admin
+          ? `<p class="hint center-text">For Formelab admins only. This sign-in is separate from your lab and lasts 8 hours.</p>`
+          : `<div class="foot-row center-row"><span>Don't have an account?</span><a class="tlink" href="/#signup">Join the waitlist</a></div>`
+      }`;
+  return frame(v, v.admin ? "Formelab admin" : "Log in", v.admin ? "Log in to manage Formelab." : "Welcome back to your Formelab workspace.", body, status);
+}
+
+/** Step two for people with a password. */
+function passwordForm(v: View, email: string, status = 200): Response {
+  const body = `<form method="post" action="/login" class="signin">
+        ${returnField(v)}
+        <input type="email" name="email" autocomplete="username" value="${e(email)}" hidden readonly>
         <label class="field"><span class="field-row"><span>Password</span><a class="tlink" href="${e(withReturn("/login/forgot", v))}">Forgot password?</a></span>
-          <input type="password" name="password" autocomplete="current-password"${v.email ? " autofocus" : ""}>
+          <input type="password" name="password" autocomplete="current-password" required autofocus>
         </label>
         <button class="btn w100" name="action" value="password">Log in</button>
         <button class="ghost" name="action" value="code" formnovalidate>Email me a code instead</button>
-      </form>
-      ${
-        v.admin
-          ? `<p class="hint">For Formelab admins only. This sign-in is separate from your lab and lasts 8 hours.</p>`
-          : `<p class="hint">New to Formelab? Choose <b>Email me a code</b>. We'll save your spot on the waitlist and let you know when you can start building.</p>`
-      }`;
-  return frame(v, v.admin ? "Formelab admin" : "Welcome back", v.admin ? "Log in to manage Formelab." : "Log in to your Formelab workspace.", body, status);
+      </form>`;
+  return frame(v, "Enter your password", `${changeEmail(v, email)}`, body, status);
 }
+
+/** "<email> · Change", under a step's title. */
+const changeEmail = (v: View, email: string) => `<b>${e(email)}</b> · <a class="tlink" href="${e(withReturn("/login", v))}">Change</a>`;
 
 /** Enter the code WorkOS emailed: to log in, or to confirm the email address. */
 function codeForm(v: View, email: string, verifying: boolean, status = 200): Response {
@@ -154,8 +195,9 @@ function codeForm(v: View, email: string, verifying: boolean, status = 200): Res
         ${returnField(v)}
         <input type="hidden" name="email" value="${e(email)}">
         <button class="ghost" name="action" value="code">Send a new code</button>
+        ${verifying ? "" : `<button class="link-button" name="action" value="use-password">Use a password instead</button>`}
       </form>
-      <div class="foot-row"><span>Wrong address?</span><a class="tlink" href="${e(withReturn("/login", v))}">Start over</a></div>`;
+      <div class="foot-row"><span>Wrong address?</span><a class="tlink" href="${e(withReturn("/login", v))}">Change it</a></div>`;
   const intro = verifying
     ? `To confirm it's your email address, enter the code we sent to <b>${e(email)}</b>.`
     : `We sent a code to <b>${e(email)}</b>. It works once and expires in 10 minutes.`;
@@ -221,16 +263,25 @@ export async function signInPost(c: Context<AppEnv>): Promise<Response> {
   const v = { ...g.v, email };
   if (!isEmail(email)) return signInForm({ ...v, error: "Enter your email address." }, 400);
 
-  if (f.get("action") === "code") {
+  const action = String(f.get("action") ?? "email");
+  if (action === "use-password") return passwordForm(v, email);
+  // Step one: people Formelab knows have a password are asked for it; everyone else, new people
+  // included, gets an emailed code (and can switch to a password from there).
+  if (action === "email") {
+    const row = await c.env.DB.prepare("SELECT has_password FROM users WHERE email = ?").bind(email).first<{ has_password: number }>();
+    if (row?.has_password === 1) return passwordForm(v, email);
+  }
+
+  if (action === "email" || action === "code") {
     const sent = await workos(c.env, "/user_management/magic_auth", { email, ...visitor(c) });
-    if (!sent.ok) return signInForm({ ...v, error: sent.message || "Couldn't send a code. Try again in a minute." }, sent.status >= 500 ? 502 : 400);
+    if (!sent.ok) return signInForm({ ...v, error: (sent.status < 500 && sent.message) || "Couldn't send a code. Try again in a minute." }, sent.status >= 500 ? 502 : 400);
     const page = codeForm(v, email, false);
     page.headers.append("set-cookie", pendingCookie({ kind: "m", email }));
     return page;
   }
 
   const password = String(f.get("password") ?? "");
-  if (!password) return signInForm({ ...v, error: "Enter your password, or choose Email me a code." }, 400);
+  if (!password) return passwordForm({ ...v, error: "Enter your password, or choose Email me a code." }, email, 400);
   const res = await authenticate(c, { grant_type: "password", email, password });
   if (res.ok) return completeSignIn(c, res.data, moveOn(v.returnTo));
   return authProblem(c, v, email, res);
@@ -265,9 +316,9 @@ function authProblem(c: Context<AppEnv>, v: View, email: string, res: Extract<Wo
     const link = `<a class="tlink" href="${e(withReturn("/auth/login", v))}">Continue on the secure sign-in page</a>`;
     return signInForm({ ...v, error: "Your account needs another sign-in step.", extra: link }, 400);
   }
-  if (res.status >= 500 || res.status === 0) return signInForm({ ...v, error: "The sign-in service isn't answering. Try again in a minute." }, 502);
-  if (res.status === 429) return signInForm({ ...v, error: "Too many tries. Wait a minute, then try again." }, 429);
-  return signInForm({ ...v, error: "That email and password don't match. Try again, or choose Email me a code." }, 400);
+  if (res.status >= 500 || res.status === 0) return passwordForm({ ...v, error: "The sign-in service isn't answering. Try again in a minute." }, email, 502);
+  if (res.status === 429) return passwordForm({ ...v, error: "Too many tries. Wait a minute, then try again." }, email, 429);
+  return passwordForm({ ...v, error: "That password isn't right. Try again, or choose Email me a code." }, email, 400);
 }
 
 /** GET /login/forgot */
@@ -338,7 +389,10 @@ export async function resetPost(c: Context<AppEnv>): Promise<Response> {
     if (expired) return frame({ ...v, error: "This reset link has expired or was already used." }, "Reset your password", "", `<a class="btn w100" href="/login/forgot">Get a new link</a>`, 400);
     return resetForm({ ...v, error: res.message || "That password wasn't accepted. Try a longer one that's hard to guess." }, token, 400);
   }
-  return signInForm({ ...v, email: normEmail(res.data.user?.email ?? ""), info: "Password saved. Log in with it now." });
+  const email = normEmail(res.data.user?.email ?? "");
+  if (!isEmail(email)) return signInForm({ ...v, info: "Password saved. Log in with it now." });
+  await markHasPassword(c.env, email);
+  return passwordForm({ ...v, info: "Password saved. Log in with it now." }, email);
 }
 
 // ---------------------------------------------------------------------------
