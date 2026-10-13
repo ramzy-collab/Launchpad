@@ -235,6 +235,40 @@ summary { cursor: pointer; color: var(--fl-accent); font-weight: 500; font-size:
   .dash .content { padding-top: 20px; }
 }
 
+/* ---------- Connect your AI ---------- */
+.ai-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr)); gap: 12px; }
+.dash main button.ai-tile {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 4px; text-align: left; white-space: normal;
+  background: var(--fl-canvas); color: var(--fl-ink); border: 1.5px solid var(--fl-line); border-radius: var(--fl-radius-md);
+  padding: 16px; min-height: 0; font-weight: 400;
+}
+.dash main button.ai-tile:hover { border-color: var(--fl-accent); filter: none; }
+.ai-logo { width: 44px; height: 44px; display: inline-flex; margin-bottom: 6px; }
+.ai-logo svg { width: 100%; height: 100%; }
+.ai-name { font-family: var(--fl-display); font-weight: 700; font-size: 1.125rem; }
+.ai-where { font-size: .8125rem; color: var(--fl-ink-soft); }
+.badge { margin-top: 8px; display: inline-flex; align-items: center; gap: 6px; font-size: .75rem; font-weight: 600; padding: 2px 10px; border-radius: 999px; border: 1px solid var(--fl-line); color: var(--fl-ink-soft); background: var(--fl-surface); }
+.badge.on { background: var(--fl-ok-bg); color: var(--fl-ok-ink); border-color: transparent; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--fl-pop-3); display: inline-block; flex: none; }
+.soon { font-size: .6875rem; font-weight: 600; padding: 1px 7px; border-radius: 999px; background: var(--fl-canvas); border: 1px solid var(--fl-line); color: var(--fl-ink-soft); margin-left: 4px; vertical-align: 1px; }
+.howto-dialog {
+  width: min(40rem, calc(100vw - 32px)); max-height: calc(100vh - 48px); padding: clamp(20px, 3vw, 28px); border: 1px solid var(--fl-line);
+  border-radius: var(--fl-radius-lg); background: var(--fl-surface); color: var(--fl-ink); box-shadow: var(--fl-shadow);
+}
+.howto-dialog::backdrop { background: rgba(28, 27, 25, .45); }
+.howto-dialog p { color: var(--fl-ink-soft); }
+.howto-dialog p strong { color: var(--fl-ink); }
+.dialog-head { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+.dialog-head .ai-logo { margin: 0; width: 40px; height: 40px; }
+.dialog-head h2 { margin: 0 !important; }
+.dialog-close { position: sticky; top: 0; float: right; margin: -8px -8px 0 0; z-index: 1; }
+.dash main .dialog-close button { background: var(--fl-surface); color: var(--fl-ink); border-color: var(--fl-line); width: 40px; height: 40px; padding: 0; font-size: 1.375rem; line-height: 1; }
+.dash main .dialog-close button:hover { border-color: var(--fl-ink-soft); filter: none; }
+.conn-status { background: var(--fl-ok-bg); border-radius: var(--fl-radius-md); padding: 10px 14px; margin: 8px 0 14px; }
+.conn-status p { display: flex; align-items: center; gap: 8px; margin: 0 0 4px; color: var(--fl-ok-ink) !important; }
+.conn-status p strong { color: var(--fl-ok-ink) !important; }
+.conn-status .muted { color: var(--fl-ok-ink); }
+
 /* ---------- Consent ---------- */
 .consent h1 { font-size: 1.75rem; line-height: 1.15; letter-spacing: -.02em; margin: 0 0 16px; }
 .consent .inline { margin-top: 20px; }

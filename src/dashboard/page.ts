@@ -35,7 +35,7 @@ const PAGES: Record<Page, { title: string; intro: string }> = {
   shared: { title: "Shared with me", intro: "Apps other people have shared with you." },
   spaces: { title: "Spaces", intro: "A space is the first part of your apps' address, like yourname.formelab.app. Invite editors to publish into it with you." },
   connect: { title: "Connect your AI", intro: "Make and publish apps by asking Claude, ChatGPT or Gemini." },
-  connected: { title: "Connected apps", intro: "AI apps you've signed in to Formelab with." },
+  connected: { title: "Connected apps", intro: "Services your apps can use, like spreadsheets, payments and email." },
   keys: { title: "Access keys", intro: "For tools that publish without signing in, like Claude Code or a script. Treat a key like a password." },
 };
 
@@ -55,8 +55,7 @@ export function shell(c: Context<AppEnv>, user: User, page: Page, body: string, 
       ${link("spaces", "/spaces")}
       <p class="side-label">Connect</p>
       ${link("connect", "/connect")}
-      ${link("connected", "/connected")}
-      ${link("keys", "/keys")}
+      <a href="/connected"${current("connected")}>Connected apps <span class="soon">Soon</span></a>
     </nav>`
     : `<nav class="side-nav" aria-label="Main">
       ${link("shared", "/shared")}
@@ -76,9 +75,10 @@ ${head(title ? `${title} · Formelab` : `${head_.title} · Formelab`, ["dashboar
 <aside class="sidebar" id="sidebar">
   <a class="brand" href="/" aria-label="Formelab home"><span class="mark"></span>Formelab</a>
   ${menu}
-  <details class="account">
+  <details class="account"${page === "keys" ? " open" : ""}>
     <summary><span class="avatar" aria-hidden="true">${e(user.email.slice(0, 1).toUpperCase())}</span><span class="who">Signed in as <strong>${e(user.email)}</strong></span></summary>
     <div class="account-menu">
+      <a class="link" href="/keys"${current("keys")}>Access keys</a>
       <button type="button" class="link theme-item" data-theme-toggle><span class="to-dark">Dark mode</span><span class="to-light">Light mode</span></button>
       ${user.isAdmin ? `<a class="link" href="${e(adminOrigin(c.env, c.req.url))}/" target="_blank" rel="noopener">Admin panel ↗</a>` : ""}
       ${logoutControl(c)}
@@ -280,26 +280,15 @@ export async function spacesPage(c: Context<AppEnv>): Promise<Response> {
   return shell(c, ctx.user, "spaces", body);
 }
 
-/** Connected apps: AI apps signed in to Formelab through OAuth. */
-export async function connectedPage(c: Context<AppEnv>): Promise<Response> {
-  const ctx = ctxOf(c);
-  const connections = await listConnections(c.env, ctx.user.email).catch(() => []);
-  const rows = connections
-    .map(
-      (k) => `<tr>
-  <td>${e(k.clientName)}</td><td class="nowrap">${e(fmtTime(k.createdAt))}</td><td class="nowrap">${e(k.expiresAt ? fmtTime(k.expiresAt) : "—")}</td>
-  <td><button class="danger" data-action="connection-revoke" data-id="${e(k.id)}">Disconnect</button></td>
-</tr>`,
-    )
-    .join("");
-  const body = `<section>
-  ${
-    connections.length
-      ? `<div class="scroll"><table><thead><tr><th>App</th><th>Connected</th><th>Expires</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`
-      : `<p class="muted">Nothing connected yet. <a href="/connect">Connect Claude, ChatGPT or Gemini →</a></p>`
-  }
+/** Connected apps: services an app can use (coming soon). AI app connections live on Connect your AI. */
+export function connectedPage(c: Context<AppEnv>): Response {
+  const body = `<section class="empty">
+  <p class="eyebrow">Coming soon</p>
+  <h2>Plug your apps into the tools you already use</h2>
+  <p>Soon you'll connect services like Google Sheets, Stripe, Slack and email here, once, and any of your apps can use them. No keys to copy, no code to write.</p>
+  <p class="muted">Looking for Claude, ChatGPT or Gemini? They're under <a href="/connect">Connect your AI</a>.</p>
 </section>`;
-  return shell(c, ctx.user, "connected", body);
+  return shell(c, c.get("user"), "connected", body);
 }
 
 /** Access keys (deploy tokens) for tools that publish without signing in. */

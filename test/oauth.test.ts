@@ -270,9 +270,14 @@ describe("OAuth for MCP (Claude chat connector)", () => {
     const { tokens } = await connect(email);
     const list = await (await call("/_api/admin/connections", { as: email })).json<{ id: string; clientName: string }[]>();
     expect(list.map((c) => c.clientName)).toEqual(["Claude"]);
-    const html = await (await call("/app/connected", { as: email })).text();
-    expect(html).toContain("Connected apps");
-    expect(html).toContain(">Claude<");
+    const html = await (await call("/app/connect", { as: email })).text();
+    // The Claude tile says it's connected, and its dialog offers Disconnect.
+    const tile = html.slice(html.indexOf('data-dialog="dlg-claude"'), html.indexOf("</button>", html.indexOf('data-dialog="dlg-claude"')));
+    expect(tile).toContain("Connected</span>");
+    const chatgptTile = html.slice(html.indexOf('data-dialog="dlg-chatgpt"'), html.indexOf("</button>", html.indexOf('data-dialog="dlg-chatgpt"')));
+    expect(chatgptTile).not.toContain("Connected</span>");
+    const dialog = html.slice(html.indexOf('<dialog id="dlg-claude"'), html.indexOf("</dialog>", html.indexOf('<dialog id="dlg-claude"')));
+    expect(dialog).toContain(`data-action="connection-revoke" data-id="${list[0]!.id}"`);
 
     // Someone else can't disconnect it.
     expect((await call(`/_api/admin/connections/${list[0]!.id}`, { as: "mallory@example.com", method: "DELETE" })).status).toBe(404);

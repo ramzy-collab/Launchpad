@@ -340,3 +340,10 @@ Choices made while building v1, including where the build differs from the spec 
 - Plain words on the surface: namespaces are called **Spaces** and deploy tokens **Access keys**.
   The API, MCP tools and database keep the old names (`namespace`, `fl_` tokens).
 - People still on the waitlist only see Shared with me and Connect your AI.
+- **Later changes:** Access keys moved from the menu into the account menu (next to dark mode,
+  the admin panel and Log out). **Connected apps** is a "Soon" placeholder for connecting
+  services (Google Sheets, Stripe, Slack, email) that apps can use. AI app connections now live
+  on **Connect your AI**: a tile per AI app with a **Connected** badge when one of the person's
+  OAuth connections matches it by client name (Claude, ChatGPT, Gemini, Claude Code), and the
+  setup steps, connection details and Disconnect in a dialog. `/connect#claude` (or `#chatgpt`,
+  `#gemini`, `#claude-code`) opens that dialog directly. The logos are simple inline SVG marks.

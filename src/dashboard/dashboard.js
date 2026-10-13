@@ -111,6 +111,19 @@
       .then(function () { busy(form, false); });
   });
 
+  // Connect your AI: each tile opens its setup steps in a dialog; /connect#claude opens one directly.
+  function openDialog(id) {
+    var d = document.getElementById(id);
+    if (d && typeof d.showModal === "function" && !d.open) d.showModal();
+  }
+  document.addEventListener("click", function (ev) {
+    var tile = ev.target.closest("[data-dialog]");
+    if (tile) { openDialog(tile.dataset.dialog); return; }
+    // A click on the backdrop (outside the dialog's box) closes it.
+    if (ev.target.tagName === "DIALOG") ev.target.close();
+  });
+  if (location.hash.length > 1) openDialog("dlg-" + location.hash.slice(1));
+
   // The left menu on narrow screens.
   document.addEventListener("click", function (ev) {
     var toggle = ev.target.closest("[data-menu-toggle]");

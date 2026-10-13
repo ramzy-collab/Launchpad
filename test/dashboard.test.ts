@@ -65,8 +65,10 @@ describe("dashboard", () => {
       for (const href of ['href="/"', 'href="/shared"', 'href="/spaces"', 'href="/connect"', 'href="/connected"', 'href="/keys"']) expect(html, path).toContain(href);
       expect(html, path).toContain("data-theme-toggle");
       expect(html, path).toContain("Admin panel ↗");
+      expect(html, path).toContain('<a class="link" href="/keys"'); // Access keys sit in the account menu
       if (path !== "/app") expect(html, path).not.toMatch(/\son[a-z]+=/i); // My apps holds the escaped XSS titles from the test above
     }
+    expect(await (await call("/app/connected", { as: OWNER })).text()).toContain("Coming soon");
     // New app offers asking your AI first, then the upload form; publishing goes back to My apps.
     const page = await (await call("/app/new", { as: OWNER })).text();
     expect(page.indexOf("Ask your AI")).toBeLessThan(page.indexOf('data-action="upload"'));
@@ -87,7 +89,12 @@ describe("dashboard", () => {
     const html = await res.text();
     expect(html).toContain('<a href="/connect" aria-current="page">Connect your AI</a>');
     expect(html).toContain('<pre id="mcp-url">https://example.com/mcp</pre>');
-    for (const id of ['id="claude"', 'id="chatgpt"', 'id="gemini"', 'id="claude-code"']) expect(html).toContain(id);
+    // A tile per AI app, each opening its steps in a dialog; nothing is connected yet.
+    for (const id of ["claude", "chatgpt", "gemini", "claude-code"]) {
+      expect(html).toContain(`data-dialog="dlg-${id}"`);
+      expect(html).toContain(`<dialog id="dlg-${id}"`);
+    }
+    expect(html).not.toContain("Connected</span>");
     expect(html).toContain("&quot;httpUrl&quot;: &quot;https://example.com/mcp&quot;"); // Gemini CLI settings
     expect(html).toContain("claude mcp add --transport http formelab https://example.com/mcp");
     expect(html).not.toMatch(/\son[a-z]+=/i);

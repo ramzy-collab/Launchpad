@@ -1,27 +1,58 @@
-// "Connect your AI": how to add Formelab to Claude, ChatGPT and Claude Code.
+// "Connect your AI": a tile per AI app (with a Connected badge when it is), each opening its
+// setup steps in a dialog.
 import type { Context } from "hono";
 import type { AppEnv } from "../env";
 import { escapeHtml as e } from "../util";
 import { aiOrigin } from "../hosts";
-import { shell } from "./page";
+import { listConnections } from "../oauth";
+import { fmtTime, shell } from "./page";
 
-export function connectPage(c: Context<AppEnv>): Response {
+// Simple marks for each AI app, drawn inline so the page keeps its strict CSP.
+const LOGOS: Record<string, string> = {
+  claude: `<svg viewBox="0 0 48 48" aria-hidden="true"><g stroke="#D97757" stroke-width="4.5" stroke-linecap="round">${[0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330]
+    .map((a, i) => `<line x1="24" y1="${i % 2 ? 15 : 12}" x2="24" y2="4" transform="rotate(${a} 24 24)"/>`)
+    .join("")}</g></svg>`,
+  chatgpt: `<svg viewBox="0 0 48 48" aria-hidden="true"><rect width="48" height="48" rx="12" fill="#0D0D0D"/><g fill="none" stroke="#fff" stroke-width="2.6">${[0, 60, 120]
+    .map((a) => `<ellipse cx="24" cy="24" rx="6.5" ry="13" transform="rotate(${a} 24 24)"/>`)
+    .join("")}</g></svg>`,
+  gemini: `<svg viewBox="0 0 48 48" aria-hidden="true"><defs><linearGradient id="gem" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#4285F4"/><stop offset=".55" stop-color="#9B72CB"/><stop offset="1" stop-color="#D96570"/></linearGradient></defs><path fill="url(#gem)" d="M24 3c1.6 11 10 19.4 21 21-11 1.6-19.4 10-21 21-1.6-11-10-19.4-21-21 11-1.6 19.4-10 21-21z"/></svg>`,
+  "claude-code": `<svg viewBox="0 0 48 48" aria-hidden="true"><rect width="48" height="48" rx="12" fill="#D97757"/><path d="M14 17l8 7-8 7M25 32h10" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+};
+
+const APPS = [
+  { id: "claude", name: "Claude", where: "claude.ai, desktop and mobile" },
+  { id: "chatgpt", name: "ChatGPT", where: "Developer mode, paid plans" },
+  { id: "gemini", name: "Gemini", where: "Gemini CLI, Gemini Enterprise" },
+  { id: "claude-code", name: "Claude Code", where: "In your terminal" },
+] as const;
+
+/** Which tile a connected OAuth client belongs to, from the name it registered with. */
+function tileFor(clientName: string): string | null {
+  const n = clientName.toLowerCase();
+  if (n.includes("claude code") || n.includes("claude-code")) return "claude-code";
+  if (n.includes("claude")) return "claude";
+  if (n.includes("chatgpt") || n.includes("openai")) return "chatgpt";
+  if (n.includes("gemini") || n.includes("antigravity")) return "gemini";
+  return null;
+}
+
+export async function connectPage(c: Context<AppEnv>): Promise<Response> {
   const user = c.get("user");
   const origin = aiOrigin(c.env, c.req.url);
   const url = `${origin}/mcp`;
   const geminiConfig = JSON.stringify({ mcpServers: { formelab: { httpUrl: url } } }, null, 2);
   const cmd = `claude mcp add --transport http formelab ${url} \\\n  --header "Authorization: Bearer fl_..."`;
 
-  const body = `<section class="howto">
-  <h2>Your connector URL</h2>
-  <p>Claude, ChatGPT and Gemini all connect to Formelab with this address. You'll sign in to Formelab and click <strong>Allow</strong>; there's no key to copy.</p>
-  <div class="copyrow"><pre id="mcp-url">${e(url)}</pre><button type="button" data-copy="#mcp-url">Copy</button></div>
-  ${user.active ? "" : `<p class="note">Your account is still on the waitlist. You can connect now, but your AI can only create apps once you're let in.</p>`}
-</section>
+  const connections = await listConnections(c.env, user.email).catch(() => []);
+  const byTile = new Map<string, typeof connections>();
+  for (const k of connections) {
+    const t = tileFor(k.clientName);
+    if (t) byTile.set(t, [...(byTile.get(t) ?? []), k]);
+  }
+  const others = connections.filter((k) => !tileFor(k.clientName));
 
-<section class="howto" id="claude">
-  <h2>Claude</h2>
-  <p class="muted">claude.ai, the Claude desktop app, and the mobile apps. Works on every plan, including Free. Free accounts can add one custom connector, so if you already use yours, remove it first.</p>
+  const STEPS: Record<string, string> = {
+    claude: `  <p class="muted">claude.ai, the Claude desktop app, and the mobile apps. Works on every plan, including Free. Free accounts can add one custom connector, so if you already use yours, remove it first.</p>
   <h3>Free, Pro and Max plans</h3>
   <ol>
     <li>On <a href="https://claude.ai/settings/connectors" rel="noopener">claude.ai</a>, open <strong>Settings → Connectors</strong>.</li>
@@ -38,11 +69,8 @@ export function connectPage(c: Context<AppEnv>): Response {
   <h3>Use it</h3>
   <p>In a chat, open the <strong>+</strong> menu, choose <strong>Connectors</strong>, and make sure Formelab is on. Then ask, for example:</p>
   <p class="example">Build me a simple tracker for my 12 rental units and publish it to Formelab.</p>
-</section>
-
-<section class="howto" id="chatgpt">
-  <h2>ChatGPT</h2>
-  <p class="muted">Needs <strong>Developer mode</strong>, which is on paid plans (Plus and Pro; on Business and Enterprise an admin may have to allow it). ChatGPT on the web is the easiest place to set this up.</p>
+`,
+    chatgpt: `  <p class="muted">Needs <strong>Developer mode</strong>, which is on paid plans (Plus and Pro; on Business and Enterprise an admin may have to allow it). ChatGPT on the web is the easiest place to set this up.</p>
   <ol>
     <li>Open <strong>Settings → Apps &amp; Connectors → Advanced settings</strong> and turn on <strong>Developer mode</strong>. (If it isn't there, look under <strong>Settings → Security</strong>; OpenAI has moved it before.)</li>
     <li>Back in <strong>Apps &amp; Connectors</strong>, click <strong>Create</strong>.</li>
@@ -60,11 +88,8 @@ export function connectPage(c: Context<AppEnv>): Response {
   <p>In a new chat, open the <strong>+</strong> menu, pick <strong>Developer mode</strong>, and turn on Formelab. Then ask, for example:</p>
   <p class="example">Make a lunch poll for my team and publish it to Formelab.</p>
   <p class="muted">Without Developer mode, ChatGPT can still use Formelab's read-only tools to find your apps and read their code, but it can't publish.</p>
-</section>
-
-<section class="howto" id="gemini">
-  <h2>Gemini</h2>
-  <p class="muted">Gemini CLI is the dependable way to use Formelab with Gemini today.</p>
+`,
+    gemini: `  <p class="muted">Gemini CLI is the dependable way to use Formelab with Gemini today.</p>
   <h3>Gemini CLI (and Antigravity)</h3>
   <ol>
     <li>Add Formelab to <code>~/.gemini/settings.json</code> (merge it with anything already there):</li>
@@ -83,17 +108,60 @@ export function connectPage(c: Context<AppEnv>): Response {
   <p>Then mention Formelab in a chat, for example:</p>
   <p class="example">Use Formelab to build a sign-up sheet for our book club and publish it.</p>
   <p class="muted">Antigravity CLI, which Google is moving Gemini CLI users to, takes the same server URL as Gemini CLI.</p>
-</section>
-
-<section class="howto" id="claude-code">
-  <h2>Claude Code</h2>
-  <ol>
+`,
+    "claude-code": `  <ol>
     <li>Open <a href="/keys">Access keys</a>, create a key (30 days is fine for personal use) and copy it.</li>
     <li>Run this in your terminal, with your token in place of <code>fl_...</code>:</li>
   </ol>
   <div class="copyrow"><pre id="mcp-cmd">${e(cmd)}</pre><button type="button" data-copy="#mcp-cmd">Copy</button></div>
   <p class="muted">Agents can also read the build guide at <a href="/_platform/guide.md">/_platform/guide.md</a>.</p>
+`,
+  };
+
+  const status = (list: typeof connections) =>
+    list.length
+      ? `<div class="conn-status"><p><span class="dot" aria-hidden="true"></span><strong>Connected</strong> to your Formelab account.</p>${list
+          .map((k) => `<div class="inline"><span class="muted">${e(k.clientName)}, since ${e(fmtTime(k.createdAt))}</span><button class="danger" data-action="connection-revoke" data-id="${e(k.id)}">Disconnect</button></div>`)
+          .join("")}</div>`
+      : "";
+
+  const tiles = APPS.map((a) => {
+    const on = (byTile.get(a.id) ?? []).length > 0;
+    return `<button type="button" class="ai-tile" data-dialog="dlg-${a.id}" aria-haspopup="dialog">
+    <span class="ai-logo">${LOGOS[a.id]}</span>
+    <span class="ai-name">${e(a.name)}</span>
+    <span class="ai-where">${e(a.where)}</span>
+    ${on ? `<span class="badge on"><span class="dot" aria-hidden="true"></span>Connected</span>` : `<span class="badge">Set up</span>`}
+  </button>`;
+  }).join("");
+
+  const dialogs = APPS.map(
+    (a) => `<dialog id="dlg-${a.id}" class="howto-dialog" aria-labelledby="dlg-${a.id}-title">
+  <form method="dialog" class="dialog-close"><button aria-label="Close">×</button></form>
+  <div class="howto">
+    <div class="dialog-head"><span class="ai-logo">${LOGOS[a.id]}</span><h2 id="dlg-${a.id}-title">${e(a.name)}</h2></div>
+    ${status(byTile.get(a.id) ?? [])}
+    ${a.id === "claude-code" ? "" : `<p class="muted">Connector URL</p><div class="copyrow"><pre id="mcp-url-${a.id}">${e(url)}</pre><button type="button" data-copy="#mcp-url-${a.id}">Copy</button></div>`}
+    ${STEPS[a.id]}
+  </div>
+</dialog>`,
+  ).join("\n");
+
+  const body = `<section>
+  <h2>Pick your AI</h2>
+  <div class="ai-grid">${tiles}</div>
+  ${others.length ? `<h3>Other connected apps</h3>${status(others)}` : ""}
 </section>
+
+<section class="howto">
+  <h2>Your connector URL</h2>
+  <p>Claude, ChatGPT and Gemini all connect to Formelab with this address. You'll sign in to Formelab and click <strong>Allow</strong>; there's no key to copy.</p>
+  <div class="copyrow"><pre id="mcp-url">${e(url)}</pre><button type="button" data-copy="#mcp-url">Copy</button></div>
+  ${user.active ? "" : `<p class="note">Your account is still on the waitlist. You can connect now, but your AI can only create apps once you're let in.</p>`}
+</section>
+
+
+${dialogs}
 
 <section class="howto" id="help">
   <h2>If something's off</h2>
@@ -101,7 +169,7 @@ export function connectPage(c: Context<AppEnv>): Response {
     <li><strong>"Your account is still on the waitlist":</strong> your AI can connect but can't create apps until you're let in.</li>
     <li><strong>It asks you to sign in again:</strong> connections last up to 30 days, then the AI app asks you to reconnect.</li>
     <li><strong>Wrong account:</strong> the Formelab window shows who you're signed in as. Log out of Formelab and connect again with the right one.</li>
-    <li><strong>To disconnect:</strong> go to <a href="/">My apps → Connected apps</a> and click <strong>Disconnect</strong>.</li>
+    <li><strong>To disconnect:</strong> click the app above and choose <strong>Disconnect</strong>.</li>
     <li><strong>Who can see what your AI publishes:</strong> new apps are private to you. Share them from <a href="/">My apps</a>, under each app's <strong>Settings</strong>.</li>
   </ul>
 </section>`;
