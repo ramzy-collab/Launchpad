@@ -3,6 +3,7 @@ import { managementApi } from "./api";
 import { identifyBearer, identifyBrowser } from "./auth";
 import { adminPage } from "./dashboard/admin";
 import { connectPage } from "./dashboard/connect";
+import { SERVICES_SPRITE } from "./dashboard/services";
 import { appActivityPage, connectedPage, dashboardPage, keysPage, newAppPage, sharedPage, spacesPage } from "./dashboard/page";
 import { homePage, loginPage } from "./dashboard/home";
 import type { AppEnv, Env } from "./env";
@@ -33,6 +34,7 @@ const assetRoutes: [string, () => Response][] = [
   ["/_assets/site.js", asset(SITE_JS, "text/javascript; charset=utf-8")],
   ["/_assets/dashboard.js", asset(DASHBOARD_JS, "text/javascript; charset=utf-8")],
   ["/_assets/consent.js", asset(CONSENT_JS, "text/javascript; charset=utf-8")],
+  ["/_assets/services.svg", asset(SERVICES_SPRITE, "image/svg+xml")],
 ];
 
 const hasSignIn = (req: Request) => !!(readCookie(req, SESSION_COOKIE) || req.headers.get("cf-access-jwt-assertion"));

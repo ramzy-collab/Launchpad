@@ -71,7 +71,11 @@ describe("dashboard", () => {
     const soon = await (await call("/app/connected", { as: OWNER })).text();
     expect(soon).toContain("Coming soon");
     expect(soon).toContain('<div class="wall" aria-hidden="true">'); // the wall of service logos
-    expect(soon).toContain('<symbol id="svc-0"');
+    expect(soon).toMatch(/<use href="\/_assets\/services\.svg\?n=\d+#svc-0"\/>/);
+    const sprite = await call("/app/_assets/services.svg");
+    expect(sprite.headers.get("content-type")).toContain("image/svg+xml");
+    const symbols = (await sprite.text()).match(/<symbol id="svc-\d+"/g)!;
+    expect(symbols.length).toBeGreaterThan(120); // lots of different services, not a few repeated
     expect(soon).not.toMatch(/\sstyle="/); // strict CSP: no inline styles
     // New app offers asking your AI first, then the upload form; publishing goes back to My apps.
     const page = await (await call("/app/new", { as: OWNER })).text();

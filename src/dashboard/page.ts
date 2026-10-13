@@ -10,7 +10,7 @@ import { adminOrigin } from "../hosts";
 import { ctxOf } from "../api";
 import { listConnections } from "../oauth";
 import { head, htmlResponse } from "./layout";
-import { SERVICE_ICONS } from "./services";
+import { SERVICE_ICONS, SPRITE_URL } from "./services";
 
 export const fmtTime = (ms: number | null) => (ms ? new Date(ms).toISOString().replace("T", " ").slice(0, 16) + " UTC" : "never");
 const fmtBytes = (n: number) => (n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`);
@@ -283,17 +283,12 @@ export async function spacesPage(c: Context<AppEnv>): Promise<Response> {
 
 /** Connected apps: services an app can use (coming soon), over a wall of their logos. */
 export function connectedPage(c: Context<AppEnv>): Response {
-  // Each logo is drawn once as a <symbol> and reused, so the wall stays light.
-  // The brand color is part of the drawing: the page's CSP doesn't allow inline style attributes.
-  const symbols = SERVICE_ICONS.map(
-    ([, color, ink, path], i) => `<symbol id="svc-${i}" viewBox="0 0 48 48"><rect width="48" height="48" rx="12" fill="${color}"/><path transform="translate(12 12)" fill="${ink}" d="${path}"/></symbol>`,
-  ).join("");
-  const tiles = Array.from({ length: 140 }, (_, n) => {
-    const i = (n * 7) % SERVICE_ICONS.length; // spread neighbours so the same logo rarely repeats side by side
-    return `<svg class="svc" viewBox="0 0 48 48"><use href="#svc-${i}"/></svg>`;
+  // Every logo once (the list is already shuffled), topped up only if the wall needs more.
+  const tiles = Array.from({ length: Math.max(150, SERVICE_ICONS.length) }, (_, n) => {
+    const i = n % SERVICE_ICONS.length;
+    return `<svg class="svc" viewBox="0 0 48 48"><use href="${SPRITE_URL}#svc-${i}"/></svg>`;
   }).join("");
   const body = `<section class="soon-wall">
-  <svg class="sprite" aria-hidden="true">${symbols}</svg>
   <div class="wall" aria-hidden="true">${tiles}</div>
   <div class="soon-card">
     <p class="eyebrow">Coming soon</p>

@@ -274,7 +274,6 @@ summary { cursor: pointer; color: var(--fl-accent); font-weight: 500; font-size:
   position: relative; overflow: hidden; display: grid; place-items: center; padding: clamp(24px, 5vw, 64px) 16px;
   min-height: max(30rem, calc(100vh - 13rem)); background: #161514; border-color: #2E2C29;
 }
-.sprite { position: absolute; width: 0; height: 0; }
 .wall {
   position: absolute; inset: -12%; display: grid; grid-template-columns: repeat(auto-fill, 72px); gap: 18px;
   justify-content: center; align-content: center; transform: rotate(-8deg);
