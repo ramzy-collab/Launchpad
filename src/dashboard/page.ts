@@ -16,6 +16,7 @@ import { sheetsConfigured, sheetsStatus } from "../sheets";
 import { ago, appBrowser, appName, fmtBytes, thumb } from "./apps";
 import { connectedAiApps, type AiApp } from "./aiapps";
 import { AI_LOGOS } from "./logos";
+import { BUILDER_LABEL, BUILDERS, builderKeys, type Builder } from "../builder";
 import { PWA_HEAD } from "../pwa";
 
 export const fmtTime = (ms: number | null) => (ms ? new Date(ms).toISOString().replace("T", " ").slice(0, 16) + " UTC" : "never");
@@ -173,6 +174,28 @@ export async function appSettingsPage(c: Context<AppEnv>, id: string): Promise<R
     .map((a) => `<tr><td class="nowrap">${e(fmtTime(a.at))}</td><td>${e(a.actor)}</td><td>${e(describeActivity(a))}</td></tr>`)
     .join("");
   const fact = (label: string, value: string) => `<div><dt>${e(label)}</dt><dd>${value}</dd></div>`;
+  // Change it with AI: the person's own Claude or OpenAI key rewrites the app (app_builder flag).
+  const keys = c.get("features")?.has("app_builder") ? await builderKeys(c.env, user.email) : null;
+  const changeButtons = keys
+    ? (["claude", "openai", "gemini", "grok"] as Builder[])
+        .filter((b) => keys[b])
+        .map((b) => `<button type="button" class="make-btn" data-build="${b}" data-site="${e(site.id)}"><span class="ai-mini">${AI_LOGOS[b === "openai" ? "chatgpt" : b]}</span>Change it with ${BUILDER_LABEL[b]}</button>`)
+        .join("")
+    : "";
+  const changeSection = keys
+    ? `<section class="maker">
+  <h2>Change it with AI</h2>
+  ${
+    changeButtons
+      ? `<p class="muted">Say what to change, in your own words. Your AI rewrites the app and publishes the new version here; its data, sharing and settings stay as they are.</p>
+  <textarea rows="3" maxlength="4000" placeholder="Add a dark mode, and a button to export everything as a spreadsheet" aria-label="What should change?"></textarea>
+  <div class="make-row">${changeButtons}</div>`
+      : `<p class="muted">Add your Claude, OpenAI, Grok or free Gemini API key on <a href="/new">New app</a> (Add your API key), then come back to change this app by describing what you want.</p>`
+  }
+</section>
+
+`
+    : "";
   const body = `<section class="app-head">
   <p><a href="${mine ? "/" : "/shared"}">← ${mine ? "My apps" : "Shared with me"}</a></p>
   <div class="app-title">
@@ -224,7 +247,7 @@ export async function appSettingsPage(c: Context<AppEnv>, id: string): Promise<R
   <p class="install-actions"><a class="ghost" href="${e(site.url)}" target="_blank" rel="noopener">Open app ↗</a> <a href="/install">How to install →</a></p>
 </section>
 
-<section>
+${changeSection}<section>
   <h2>Publish a new version</h2>
   <p class="muted">Upload a new <code>.html</code> or <code>.zip</code>. It replaces the app's files; its data, secrets and sharing stay as they are.</p>
   <form class="inline" data-action="site-replace" data-namespace="${e(site.namespace)}" data-mount="${e(site.mountPath)}">
@@ -338,7 +361,13 @@ const IDEAS = [
 export async function newAppPage(c: Context<AppEnv>): Promise<Response> {
   const ctx = ctxOf(c);
   if (!ctx.user.active) return sharedPage(c);
-  const [namespaces, connected] = await Promise.all([listNamespaces(ctx), connectedAiApps(c.env, ctx.user)]);
+  // Building here with an API key is behind the app_builder flag (admin panel → Features).
+  const builderOn = !!c.get("features")?.has("app_builder");
+  const [namespaces, connected, keys] = await Promise.all([
+    listNamespaces(ctx),
+    connectedAiApps(c.env, ctx.user),
+    builderOn ? builderKeys(c.env, ctx.user.email) : Promise.resolve({} as Awaited<ReturnType<typeof builderKeys>>),
+  ]);
   const own = namespaces.filter((n) => n.isOwner || n.editors.includes(ctx.user.email));
   const nsOptions = own.map((n) => `<option value="${e(n.label)}">`).join("");
   const domain = c.env.APP_DOMAIN;
@@ -346,28 +375,110 @@ export async function newAppPage(c: Context<AppEnv>): Promise<Response> {
     connected.has(app)
       ? `<span class="badge on"><span class="dot" aria-hidden="true"></span>Connected</span>`
       : `<a class="muted" href="/connect#${app}">${setup}</a>`;
+  // Claude and ChatGPT: with the person's API key saved, "Make it" builds and publishes right here.
+  // Without one, the button asks for a key, unless their Claude or ChatGPT app is already
+  // connected to Formelab; then it opens that app with the idea typed in, as before.
+  const MAKERS: { b: Builder; app: AiApp; label: string }[] = [
+    { b: "claude", app: "claude", label: "Make it with Claude" },
+    { b: "openai", app: "chatgpt", label: "Make it with ChatGPT" },
+    { b: "gemini", app: "gemini", label: "Make it with Gemini" },
+    { b: "grok", app: "grok", label: "Make it with Grok" },
+  ];
+  // Gemini and Grok only build here (their apps can't be opened with an idea typed in), so they show only with the flag.
+  const buildsHereOnly = (b: Builder) => b === "gemini" || b === "grok";
+  const makers = MAKERS.filter(({ b }) => builderOn || !buildsHereOnly(b)).map(({ b, app, label }) => {
+    const key = keys[b];
+    // Opening the Claude or ChatGPT app with the idea typed in, for people who connected it.
+    const canOpen = !buildsHereOnly(b) && connected.has(app);
+    if (!builderOn) {
+      return `<div class="make"><button type="button" class="make-btn" data-make="${app}"><span class="ai-mini">${AI_LOGOS[app]}</span>${label}</button>${state(app, `Connect ${app === "claude" ? "Claude" : "ChatGPT"} first`)}</div>`;
+    }
+    const btn = key
+      ? `<button type="button" class="make-btn" data-build="${b}"><span class="ai-mini">${AI_LOGOS[app]}</span>${label}</button>`
+      : canOpen
+        ? `<button type="button" class="make-btn" data-make="${app}"><span class="ai-mini">${AI_LOGOS[app]}</span>${label}</button>`
+        : `<button type="button" class="make-btn" data-dialog="dlg-key-${b}" aria-haspopup="dialog"><span class="ai-mini">${AI_LOGOS[app]}</span>${label}</button>`;
+    const note = key
+      ? `<span class="badge on"><span class="dot" aria-hidden="true"></span>Your API key …${e(key.hint)}</span><button type="button" class="linkish muted" data-dialog="dlg-key-${b}" aria-haspopup="dialog">Change key</button>`
+      : canOpen
+        ? `${state(app, "")}<button type="button" class="linkish muted" data-dialog="dlg-key-${b}" aria-haspopup="dialog">Or build it here with an API key</button>`
+        : `<button type="button" class="linkish muted" data-dialog="dlg-key-${b}" aria-haspopup="dialog">${b === "gemini" ? "Add your free API key" : "Add your API key"}</button>`;
+    return `<div class="make">${btn}${note}</div>`;
+  }).join("\n    ");
+  const KEY_HELP: Record<Builder, { org: string; site: string; placeholder: string; intro: string; steps: string }> = {
+    claude: {
+      org: "Anthropic",
+      site: "console.anthropic.com",
+      placeholder: "sk-ant-…",
+      intro: "What it uses is billed to your own Anthropic account.",
+      steps: "<li>Make sure the account has credits. This is separate from a Claude Pro or Max plan.</li>",
+    },
+    openai: {
+      org: "OpenAI",
+      site: "platform.openai.com",
+      placeholder: "sk-…",
+      intro: "What it uses is billed to your own OpenAI account.",
+      steps: "<li>Make sure the account has credits or billing set up. This is separate from a ChatGPT Plus or Pro plan.</li>",
+    },
+    gemini: {
+      org: "Google",
+      site: "Google AI Studio",
+      placeholder: "AIza… or AQ.…",
+      intro: "Google's free tier is enough to build apps: no credit card needed. It allows a few builds a minute and a daily limit, and Google may use free-tier requests to improve its products.",
+      steps: "<li>Click <strong>Create API key</strong>. You don't need to set up billing.</li>",
+    },
+    grok: {
+      org: "xAI",
+      site: "console.x.ai",
+      placeholder: "xai-…",
+      intro: "What it uses is billed to your own xAI account.",
+      steps: "<li>Make sure the account has credits. This is separate from a SuperGrok or X Premium plan.</li><li>Open <strong>API Keys</strong>.</li>",
+    },
+  };
+  const keyDialogs = (builderOn ? MAKERS : []).map(({ b, app }) => {
+    const who = BUILDERS[b];
+    const help = KEY_HELP[b];
+    const name = BUILDER_LABEL[b];
+    return `<dialog id="dlg-key-${b}" class="howto-dialog" aria-labelledby="dlg-key-${b}-title">
+  <form method="dialog" class="dialog-close"><button aria-label="Close">×</button></form>
+  <div class="howto">
+    <div class="dialog-head"><span class="ai-logo">${AI_LOGOS[app]}</span><h2 id="dlg-key-${b}-title">Build with ${name} right here</h2></div>
+    <p>Paste an API key once. After that, <strong>Make it</strong> builds your app here and publishes it${buildsHereOnly(b) ? "" : `, with nothing to set up in the ${name} app`}. ${help.intro}</p>
+    <ol>
+      <li>Open <a href="${who.keyUrl}" target="_blank" rel="noopener">${help.site}</a> and sign in${b === "gemini" ? " with Google" : ""}.</li>
+      ${help.steps}
+      <li>${b === "gemini" ? "Copy the key" : "Create a key, copy it,"} and paste it below.</li>
+    </ol>
+    <form class="inline" data-action="builder-connect" data-provider="${b}">
+      <input name="apiKey" type="password" autocomplete="off" required placeholder="${help.placeholder}" aria-label="${help.org} API key">
+      <button>Save key</button>
+    </form>
+    <p class="muted">The key is encrypted and Formelab never shows it again.${
+      b === "gemini"
+        ? " It's the same key as Google Gemini under Connected apps: save or remove it in either place and it changes in both. Your apps can use it for AI features there."
+        : " It's only used when you press Make it or Change it."
+    }</p>
+    ${keys[b] ? `<p><button type="button" class="danger" data-action="builder-disconnect" data-provider="${b}">Remove my key …${e(keys[b]!.hint)}</button></p>` : ""}
+    ${keys[b] || buildsHereOnly(b) ? "" : `<p class="muted">Rather use the ${name} app? <button type="button" class="linkish" data-make="${app}">Open it with your idea typed in</button> (needs <a href="/connect#${app}">Formelab connected</a> there).</p>`}
+  </div>
+</dialog>`;
+  }).join("\n");
   const body = `<section class="maker">
   <p class="eyebrow">The easy way</p>
   <h2>What do you want to make?</h2>
-  <p>Describe it in your own words. We'll open your AI with it typed in; press send and it builds the app and publishes it here.</p>
+  <p>${builderOn ? "Describe it in your own words, then press Make it. With your API key saved, the app is built and published right here." : "Describe it in your own words. We'll open your AI with it typed in; press send and it builds the app and publishes it here."}</p>
   <textarea id="idea" rows="4" maxlength="4000" placeholder="${e(IDEAS[0]!)}" aria-label="Describe your app"></textarea>
   <div class="ideas" aria-label="Ideas to start from">${IDEAS.map((i) => `<button type="button" class="idea" data-idea="${e(i)}">${e(i)}</button>`).join("")}</div>
   <div class="make-row">
-    <div class="make">
-      <button type="button" class="make-btn" data-make="claude"><span class="ai-mini">${AI_LOGOS.claude}</span>Make it with Claude</button>
-      ${state("claude", "Connect Claude first")}
-    </div>
-    <div class="make">
-      <button type="button" class="make-btn" data-make="chatgpt"><span class="ai-mini">${AI_LOGOS.chatgpt}</span>Make it with ChatGPT</button>
-      ${state("chatgpt", "Connect ChatGPT first")}
-    </div>
+    ${makers}
     <div class="make">
       <button type="button" class="make-btn secondary" data-make="copy"><span class="ai-mini">${AI_LOGOS["claude-code"]}</span>Copy for Claude Code</button>
       ${state("claude-code", "Set up Claude Code")}
     </div>
   </div>
-  <p class="muted">Claude: make sure Formelab is on under the <strong>+</strong> menu → Connectors. ChatGPT: pick <strong>Developer mode</strong> in the <strong>+</strong> menu and turn on Formelab. New apps are private to you until you share them.</p>
+  <p class="muted">${builderOn ? "Building takes a minute or two." : "Claude: make sure Formelab is on under the <strong>+</strong> menu → Connectors. ChatGPT: pick <strong>Developer mode</strong> in the <strong>+</strong> menu and turn on Formelab."} New apps are private to you until you share them.</p>
 </section>
+${keyDialogs}
 
 <section>
   <p class="eyebrow">Already have the files?</p>
@@ -512,6 +623,7 @@ export async function connectedPage(c: Context<AppEnv>): Promise<Response> {
       <button>${gemini.connected ? "Replace key" : "Connect"}</button>
     </form>
     <p class="muted">Your key is encrypted and never shown to apps or to anyone. Apps you share use your key, so calls from people you share them with count toward your Google usage. Ask your AI for an app "that uses Gemini" and it will use this.</p>
+    ${c.get("features")?.has("app_builder") ? `<p class="muted">This is also the key behind <strong>Make it with Gemini</strong> on <a href="/new">New app</a>: save or remove it in either place and it changes in both.</p>` : ""}
     ${gemini.connected ? `<p><button class="danger" data-action="service-disconnect" data-service="gemini">Disconnect Gemini</button></p>` : ""}
   </div>
 </dialog>

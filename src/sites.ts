@@ -318,7 +318,7 @@ async function requireNamespace(env: Env, label: string) {
   return ns;
 }
 
-async function requireManageableSite(ctx: Ctx, id: string) {
+export async function requireManageableSite(ctx: Ctx, id: string) {
   const site = await getSiteById(ctx.env, id);
   if (!site) throw notFound("Site");
   const ns = await requireNamespace(ctx.env, site.namespace);

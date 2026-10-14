@@ -109,7 +109,7 @@ export const VENDORS: Vendor[] = [
   {
     name: "Google Gemini API",
     group: "service",
-    purpose: "The first connected app: people's apps call Gemini 3.5 Flash-Lite with the app owner's own key.",
+    purpose: "The first connected app: people's apps call Gemini 3.5 Flash-Lite with the app owner's own key. The same key builds and changes apps on New app with the newest free Gemini Flash model.",
     plan: "Paid by each person on their own Google account; Formelab pays nothing. Behind the connected_apps feature flag.",
     setup: "Nothing on Formelab's side; people add keys under Connected apps.",
     since: "2026-10-13",
@@ -181,10 +181,49 @@ export const VENDORS: Vendor[] = [
     url: "https://github.com/google-gemini/gemini-cli",
   },
 
+  {
+    name: "Anthropic API (Claude)",
+    group: "ai",
+    purpose: "Builds apps from a description on the New app page, with the person's own API key (Claude Opus 5.5).",
+    plan: "Paid by each person on their own Anthropic API account; Formelab pays nothing.",
+    setup: "Nothing on Formelab's side; people paste a key on New app.",
+    since: "2026-10-13",
+    url: "https://console.anthropic.com",
+  },
+  {
+    name: "OpenAI API",
+    group: "ai",
+    purpose: "Builds apps from a description on the New app page, with the person's own API key (newest GPT model).",
+    plan: "Paid by each person on their own OpenAI API account; Formelab pays nothing.",
+    setup: "Nothing on Formelab's side; people paste a key on New app.",
+    since: "2026-10-13",
+    url: "https://platform.openai.com",
+  },
+
+  {
+    name: "xAI API (Grok)",
+    group: "ai",
+    purpose: "Builds apps from a description on the New app page, with the person's own API key (newest Grok model).",
+    plan: "Paid by each person on their own xAI API account; Formelab pays nothing.",
+    setup: "Nothing on Formelab's side; people paste a key on New app.",
+    since: "2026-10-14",
+    url: "https://console.x.ai",
+  },
+  {
+    name: "Cursor",
+    group: "ai",
+    purpose: "People connect Cursor's agent to build and publish apps.",
+    plan: "People's own Cursor plan.",
+    setup: "Connector URL formelab.ai/mcp in ~/.cursor/mcp.json (OAuth sign-in).",
+    since: "2026-10-14",
+    url: "https://cursor.com",
+  },
+
   // Open source
   { name: "Hono", group: "open-source", purpose: "The web framework the Worker is built on.", plan: "MIT license.", setup: "package.json", since: "2026-10-02", url: "https://hono.dev" },
   { name: "MCP TypeScript SDK", group: "open-source", purpose: "The AI connector (Model Context Protocol server).", plan: "MIT license.", setup: "@modelcontextprotocol/sdk", since: "2026-10-02", url: "https://github.com/modelcontextprotocol/typescript-sdk" },
   { name: "workers-oauth-provider", group: "open-source", purpose: "OAuth sign-in for AI apps connecting to the connector.", plan: "MIT license (Cloudflare).", setup: "@cloudflare/workers-oauth-provider", since: "2026-10-07", url: "https://github.com/cloudflare/workers-oauth-provider" },
+  { name: "Anthropic TypeScript SDK", group: "open-source", purpose: "Calls Claude for building apps with people's own keys.", plan: "MIT license.", setup: "@anthropic-ai/sdk", since: "2026-10-13", url: "https://github.com/anthropics/anthropic-sdk-typescript" },
   { name: "Zod", group: "open-source", purpose: "Checks the inputs of the connector's tools.", plan: "MIT license.", setup: "zod", since: "2026-10-02", url: "https://zod.dev" },
   { name: "jose", group: "open-source", purpose: "Checks sign-in tokens (JWTs).", plan: "MIT license.", setup: "jose", since: "2026-10-02", url: "https://github.com/panva/jose" },
   { name: "fflate", group: "open-source", purpose: "Unzips uploaded apps.", plan: "MIT license.", setup: "fflate", since: "2026-10-02", url: "https://github.com/101arrowz/fflate" },

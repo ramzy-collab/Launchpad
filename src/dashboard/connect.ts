@@ -14,6 +14,7 @@ const APPS = [
   { id: "claude", name: "Claude", where: "claude.ai, desktop and mobile" },
   { id: "chatgpt", name: "ChatGPT", where: "Developer mode, paid plans" },
   { id: "gemini", name: "Gemini", where: "Gemini CLI, Gemini Enterprise" },
+  { id: "cursor", name: "Cursor", where: "The AI code editor" },
   { id: "claude-code", name: "Claude Code", where: "In your terminal" },
 ] as const;
 
@@ -22,9 +23,12 @@ export async function connectPage(c: Context<AppEnv>): Promise<Response> {
   const origin = aiOrigin(c.env, c.req.url);
   const url = `${origin}/mcp`;
   const geminiConfig = JSON.stringify({ mcpServers: { formelab: { httpUrl: url } } }, null, 2);
+  const cursorConfig = JSON.stringify({ mcpServers: { formelab: { url } } }, null, 2);
+  // Cursor's one-click install link: the server's config, base64-encoded.
+  const cursorInstall = `cursor://anysphere.cursor-deeplink/mcp/install?name=formelab&config=${encodeURIComponent(btoa(JSON.stringify({ url })))}`;
   const cmd = `claude mcp add --transport http formelab ${url} \\\n  --header "Authorization: Bearer fl_..."`;
 
-  // Connections are OAuth sign-ins (Claude, ChatGPT, Gemini) and access keys an AI app has
+  // Connections are OAuth sign-ins (Claude, ChatGPT, Gemini, Cursor) and access keys an AI app has
   // used over MCP (Claude Code), matched to a tile by the app's name.
   const [grants, tokens] = await Promise.all([listConnections(c.env, user.email).catch(() => []), listTokens(c.env, user)]);
   const t0 = Date.now();
@@ -104,6 +108,18 @@ export async function connectPage(c: Context<AppEnv>): Promise<Response> {
   <p>Then mention Formelab in a chat, for example:</p>
   <p class="example">Use Formelab to build a sign-up sheet for our book club and publish it.</p>
   <p class="muted">Antigravity CLI, which Google is moving Gemini CLI users to, takes the same server URL as Gemini CLI.</p>
+`,
+    cursor: `  <p class="muted">Cursor signs in to Formelab with your account; there's no key to copy.</p>
+  <p><a class="btn" href="${e(cursorInstall)}">Add to Cursor</a></p>
+  <p class="muted">Or add it by hand: in Cursor, open <strong>Settings → MCP &amp; Integrations → New MCP server</strong>, which opens <code>~/.cursor/mcp.json</code>, and merge this in:</p>
+  <div class="copyrow"><pre id="cursor-config">${e(cursorConfig)}</pre><button type="button" data-copy="#cursor-config">Copy</button></div>
+  <ol>
+    <li>Back in <strong>MCP &amp; Integrations</strong>, Formelab shows <strong>Needs login</strong>: click it. Your browser opens Formelab: log in and click <strong>Allow</strong>. Formelab warns that access goes to an app on your computer; that's expected here.</li>
+    <li>Cursor opens again and Formelab turns green.</li>
+  </ol>
+  <h3>Use it</h3>
+  <p>In Cursor's chat (Agent mode), ask, for example:</p>
+  <p class="example">Build a simple expense splitter and publish it to Formelab.</p>
 `,
     "claude-code": `  <ol>
     <li>Open <a href="/keys">Access keys</a>, create a key (30 days is fine for personal use) and copy it.</li>

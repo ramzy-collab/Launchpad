@@ -441,6 +441,87 @@ Choices made while building v1, including where the build differs from the spec 
   `<!-- flag:connected_apps -->` in `guide.md`). For apps the flag follows the app's owner,
   since it's their key. Turning it off deletes nothing; changes are in the admin activity log.
 
+## Building apps in Formelab with the person's own API key
+
+- "The easy way" used to open claude.ai or chatgpt.com with the idea typed in, which only works
+  once the Formelab connector is set up there (and in ChatGPT, Developer mode turned on). That
+  was the hard part for new people. Now a person can save an **Anthropic or OpenAI API key** on
+  the New app page; "Make it" then builds the app on the server (`src/builder.ts`) and publishes
+  it to their space, data writes set to everyone. Without a key, the old flow stays for people
+  whose Claude or ChatGPT app is already connected.
+- **API keys, not Claude/ChatGPT plans.** Claude Pro/Max and ChatGPT Plus/Pro subscriptions can't
+  be used by other apps; only API keys can, billed by usage on the person's own API account.
+  The key pop-up says so.
+- Keys live in `service_keys` next to Gemini's (services `anthropic` and `openai`), encrypted with
+  `SECRETS_KEK`, AAD `user:<email>:<service>`, last four characters in the clear. They're only
+  used for that person's own builds, never by apps.
+- **Behind its own feature flag**, `app_builder` (admin panel → Features), separate from
+  `connected_apps` since this isn't a service apps use. Off (the default), New app looks and works
+  as before, and `/_api/admin/builders/*` and `/_api/admin/build` answer 404. Keys already saved
+  stay saved while it's off.
+- Claude: Claude Opus 5.5 through the Anthropic SDK, streaming, adaptive thinking at medium
+  effort, the build guide as a cached system prompt, and Anthropic's server-side refusal
+  fallback. OpenAI: the Responses API, streaming, with the newest plain `gpt-N.N` model the key
+  can list (no `-mini`/dated variants), so it keeps up without code changes.
+- One HTML file comes back; Formelab names the app from its `<title>`, picks a free path
+  (`lunch-sign-up`, `lunch-sign-up-2`, ...) in the person's first own space (or makes one from
+  their email), and publishes. `POST /_api/admin/build` streams NDJSON progress lines so the
+  page shows progress and the connection stays busy; the build finishes and publishes even if
+  the page is closed. Limited to 5 builds a minute per person; each build is in the app's
+  activity log with the model and token count.
+
+### Gemini as a free builder
+
+- Anthropic and OpenAI keys need paid API credits; Gemini's API has a free tier (a key from
+  Google AI Studio, no billing). So Gemini is a third builder. It picks the newest plain
+  `gemini-N.N-flash` model the key lists (Flash is what the free tier covers; no `-lite`,
+  `-preview` or Pro), falling back to Flash-Lite, and streams with `streamGenerateContent?alt=sse`.
+  A 429 explains the free limits.
+- **One Gemini key, two uses.** The builder's key is the connected app's key: the same
+  `service_keys` row (service `gemini`, same encryption scope), saved and checked by
+  `connectGemini` and removed by `disconnectGemini` whichever page it's done from. So it moves
+  "both ways" with no copying, and there's never a stale second copy. Both pages say so, and
+  removing it warns that apps stop using Gemini too. Saving it from New app works even with
+  `connected_apps` off; apps only use it once that flag is on for the owner.
+
+### Grok as a fourth builder
+
+- xAI's API is OpenAI-compatible, so Grok checks keys the same way (`GET /v1/models`, though a
+  bad key answers 400, not 401) and builds through streaming Chat Completions at
+  `api.x.ai/v1`. Keys are service `xai` in `service_keys`. It picks the newest plain `grok-N` or
+  `grok-N-M`/`grok-N.M` model the key lists (no `-fast`, `-mini`, `-code` or dated variants), so
+  it keeps up without code changes. Like Gemini it only builds here: there's no Grok app to
+  open with the idea typed in.
+
+### Changing an existing app
+
+- The app's page gets a **Change it with AI** box (same `app_builder` flag). `POST
+  /_api/admin/build` with `site_id` and `change` sends the app's current `index.html` and the
+  requested change, and asks for the whole updated file back (no diffs: one complete document is
+  what models get right most reliably, and it's what publishing needs). Only `index.html` is
+  rewritten; the app's other files are copied into the new version unchanged, and publishing in
+  place keeps its data, secrets and sharing as always. The prompt asks to keep `formelab.kv`
+  keys and data shapes so saved data still loads.
+- Anyone who can manage the app (owner, editors, space owner) can change it, with **their own**
+  key. Apps whose `index.html` is over 400 KB are refused, with a pointer to the upload instead.
+  Each change is in the app's activity log with what was asked.
+
+## Connecting AI apps over OAuth: the consent page's form-action
+
+- The consent page's CSP `form-action` used to allow only the redirect URI's origin. Browsers
+  apply `form-action` to every redirect after the Allow POST, so a client whose callback
+  redirects on to another origin, or a native app's own scheme (`cursor://`, whose URL origin is
+  `"null"`), was blocked silently and the page sat there with Allow grayed out (reported with
+  Grok's custom MCP connector). It now allows `'self' https:` plus the redirect URI's loopback
+  origin or scheme. That only lets the browser follow a hand-off; which redirect URIs get a code
+  is still decided by the OAuth provider.
+- `allowPrivateUseRedirectUris` is on, so native apps like Cursor can get the code back on their
+  own scheme (RFC 8252). The consent page shows the warning that access goes to an app on this
+  computer for those, as for loopback redirects.
+- **Cursor** is a tile on Connect your AI: an `Add to Cursor` deep link
+  (`cursor://anysphere.cursor-deeplink/mcp/install`) or `~/.cursor/mcp.json` with the connector
+  URL, then OAuth from Cursor. Client names containing "cursor" map to its tile.
+
 ## Changelog
 
 - `CHANGELOG.md` lists every change in plain language, newest first, one `## YYYY-MM-DD` heading

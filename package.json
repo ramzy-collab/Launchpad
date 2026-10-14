@@ -12,6 +12,7 @@
     "db:migrate:remote": "wrangler d1 migrations apply launchpad --remote"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.133.0",
     "@cfworker/json-schema": "^4.1.1",
     "@cloudflare/workers-oauth-provider": "^1.2.2",
     "@modelcontextprotocol/sdk": "^1.32.0",

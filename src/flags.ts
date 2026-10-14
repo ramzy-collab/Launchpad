@@ -14,6 +14,11 @@ export const FLAGS = {
     description:
       "The Connected apps page and every service on it (Google Gemini so far): people connect a service once and their apps use it through the SDK. Off: the page only says \"Coming soon\" and apps can't use connected services.",
   },
+  app_builder: {
+    label: "Build apps with your own API key",
+    description:
+      "On New app, people save their own Claude (Anthropic) or OpenAI API key, and \"Make it\" builds and publishes the app right in Formelab, billed to their API account. Off: the Make it buttons open Claude or ChatGPT with the idea typed in, as before.",
+  },
 } as const;
 
 export type FlagName = keyof typeof FLAGS;
