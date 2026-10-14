@@ -6,6 +6,7 @@ import { call, onOutbound, OWNER, publishZip, uniq } from "./helpers";
 const GEMINI_KEY = "AIzaSyTESTKEY0123456789abcdefGEMI";
 const CLAUDE_KEY = "sk-ant-api03-TESTKEY0123456789abcdefWXYZ";
 const OPENAI_KEY = "sk-proj-TESTKEY0123456789abcdefOPEN";
+const XAI_KEY = "xai-TESTKEY0123456789abcdefGROK";
 const APP_HTML = `<!doctype html><html><head><title>Lunch Sign-up</title><link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'/%3E"></head><body><h1>Lunch</h1></body></html>`;
 
 type Seen = { url: string; method: string; headers: Headers; body: string };
@@ -30,7 +31,7 @@ function claudeStream(text: string, stop = "end_turn") {
   ]);
 }
 
-function mockAi(opts: { claudeText?: string; claudeStop?: string; openaiText?: string; geminiText?: string; geminiFinish?: string } = {}) {
+function mockAi(opts: { claudeText?: string; claudeStop?: string; openaiText?: string; geminiText?: string; geminiFinish?: string; grokFinish?: string } = {}) {
   seen.length = 0;
   onOutbound(async (req) => {
     const body = req.method === "POST" ? await req.text() : "";
@@ -54,6 +55,18 @@ function mockAi(opts: { claudeText?: string; claudeStop?: string; openaiText?: s
         ]
           .map((e) => `event: ${e.type}\ndata: ${JSON.stringify(e)}\n\n`)
           .join(""),
+        { headers: { "content-type": "text/event-stream" } },
+      );
+    }
+    if (url.hostname === "api.x.ai") {
+      if (req.headers.get("authorization") !== `Bearer ${XAI_KEY}`) return Response.json({ code: "Client specified an invalid argument", error: "Incorrect API key provided: xa***XX." }, { status: 400 });
+      if (req.method === "GET") return Response.json({ data: [{ id: "grok-4" }, { id: "grok-4-1" }, { id: "grok-4-1-fast-reasoning" }, { id: "grok-4-0709" }, { id: "grok-code-fast-1" }, { id: "grok-3-mini" }] });
+      const chunk = (d: unknown) => `data: ${JSON.stringify(d)}\n\n`;
+      return new Response(
+        chunk({ choices: [{ delta: { role: "assistant", content: APP_HTML.slice(0, 25) } }] }) +
+          chunk({ choices: [{ delta: { content: APP_HTML.slice(25) }, finish_reason: opts.grokFinish ?? "stop" }] }) +
+          chunk({ choices: [], usage: { total_tokens: 222 } }) +
+          "data: [DONE]\n\n",
         { headers: { "content-type": "text/event-stream" } },
       );
     }
@@ -141,6 +154,30 @@ describe("building apps with the person's own API key", () => {
     expect(sent).toMatchObject({ model: "gpt-5.6", input: "A habit tracker", stream: true });
   });
 
+  it("builds with a Grok (xAI) key, picking the newest Grok model", async () => {
+    mockAi();
+    const me = await person("x");
+    const bad = await connect(me, "grok", "xai-WRONGKEY0123456789abcdefXXXX");
+    expect(bad.status).toBe(400);
+    expect(await bad.text()).toContain("xAI didn't accept this key");
+    expect(await (await connect(me, "grok", XAI_KEY)).json()).toEqual({ connected: true, hint: "GROK" });
+    const row = await env.DB.prepare("SELECT * FROM service_keys WHERE owner_email = ? AND service = 'xai'").bind(me).first();
+    expect(JSON.stringify(row)).not.toContain(XAI_KEY);
+
+    const page = await (await call("/app/new", { as: me })).text();
+    expect(page).toContain('data-build="grok"');
+    expect(page).toContain("Make it with Grok");
+
+    const last = await build(me, "grok", "A habit tracker");
+    expect(last.done).toMatchObject({ title: "Lunch Sign-up", model: "grok-4-1" });
+    const sent = seen.find((s) => s.method === "POST")!;
+    expect(sent.url).toBe("https://api.x.ai/v1/chat/completions");
+    expect(JSON.parse(sent.body)).toMatchObject({ model: "grok-4-1", stream: true, messages: [{ role: "system" }, { role: "user", content: "A habit tracker" }] });
+
+    mockAi({ grokFinish: "length" });
+    expect((await build(me, "grok", "x")).error.code).toBe("builder_too_long");
+  });
+
   it("explains what's wrong instead of publishing", async () => {
     const me = await person("n");
     mockAi({ claudeText: "Sorry, I can't help with that." });
@@ -200,7 +237,7 @@ describe("building apps with the person's own API key", () => {
     // No key yet: the page says where to add one.
     let page = await (await call(`/app/apps/${id}`, { as: me })).text();
     expect(page).toContain("Change it with AI");
-    expect(page).toContain("Add your Claude, OpenAI or free Gemini API key");
+    expect(page).toContain("Add your Claude, OpenAI, Grok or free Gemini API key");
 
     mockAi({ claudeText: `<!doctype html><html><head><title>Chores</title><link rel="stylesheet" href="style.css"></head><body>New chores, with dark mode</body></html>` });
     expect((await connect(me, "claude", CLAUDE_KEY)).status).toBe(200);

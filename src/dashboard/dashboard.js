@@ -238,7 +238,7 @@
 
   // New app, built here: the person's own API key builds the app on the server, which streams
   // progress lines ({ progress } ... then { done } or { error }) and publishes it.
-  var BUILDER_NAMES = { claude: "Claude", openai: "ChatGPT", gemini: "Gemini" };
+  var BUILDER_NAMES = { claude: "Claude", openai: "ChatGPT", gemini: "Gemini", grok: "Grok" };
   function build(provider, idea, siteId) {
     var screen = splash(BUILDER_NAMES[provider] + (siteId ? " is changing your app…" : " is building your app…"));
     var sub = document.createElement("p");

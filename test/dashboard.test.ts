@@ -107,13 +107,14 @@ describe("dashboard", () => {
     expect(html).not.toContain("Your connector URL");
     expect(html).not.toContain("If something's off");
     // A tile per AI app, each opening its steps in a dialog; nothing is connected yet.
-    for (const id of ["claude", "chatgpt", "gemini", "claude-code"]) {
+    for (const id of ["claude", "chatgpt", "gemini", "cursor", "claude-code"]) {
       expect(html).toContain(`data-dialog="dlg-${id}"`);
       expect(html).toContain(`<dialog id="dlg-${id}"`);
     }
     expect(html).not.toContain("Connected</span>");
     expect(html).toContain("&quot;httpUrl&quot;: &quot;https://example.com/mcp&quot;"); // Gemini CLI settings
     expect(html).toContain("claude mcp add --transport http formelab https://example.com/mcp");
+    expect(html).toContain("cursor://anysphere.cursor-deeplink/mcp/install?name=formelab&amp;config="); // Add to Cursor
     expect(html).not.toMatch(/\son[a-z]+=/i);
     expect((await call("/app/connect")).status).toBe(302); // signed out: to the login screen
   });

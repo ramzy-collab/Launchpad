@@ -177,7 +177,7 @@ export async function appSettingsPage(c: Context<AppEnv>, id: string): Promise<R
   // Change it with AI: the person's own Claude or OpenAI key rewrites the app (app_builder flag).
   const keys = c.get("features")?.has("app_builder") ? await builderKeys(c.env, user.email) : null;
   const changeButtons = keys
-    ? (["claude", "openai", "gemini"] as Builder[])
+    ? (["claude", "openai", "gemini", "grok"] as Builder[])
         .filter((b) => keys[b])
         .map((b) => `<button type="button" class="make-btn" data-build="${b}" data-site="${e(site.id)}"><span class="ai-mini">${AI_LOGOS[b === "openai" ? "chatgpt" : b]}</span>Change it with ${BUILDER_LABEL[b]}</button>`)
         .join("")
@@ -190,7 +190,7 @@ export async function appSettingsPage(c: Context<AppEnv>, id: string): Promise<R
       ? `<p class="muted">Say what to change, in your own words. Your AI rewrites the app and publishes the new version here; its data, sharing and settings stay as they are.</p>
   <textarea rows="3" maxlength="4000" placeholder="Add a dark mode, and a button to export everything as a spreadsheet" aria-label="What should change?"></textarea>
   <div class="make-row">${changeButtons}</div>`
-      : `<p class="muted">Add your Claude, OpenAI or free Gemini API key on <a href="/new">New app</a> (Add your API key), then come back to change this app by describing what you want.</p>`
+      : `<p class="muted">Add your Claude, OpenAI, Grok or free Gemini API key on <a href="/new">New app</a> (Add your API key), then come back to change this app by describing what you want.</p>`
   }
 </section>
 
@@ -382,12 +382,14 @@ export async function newAppPage(c: Context<AppEnv>): Promise<Response> {
     { b: "claude", app: "claude", label: "Make it with Claude" },
     { b: "openai", app: "chatgpt", label: "Make it with ChatGPT" },
     { b: "gemini", app: "gemini", label: "Make it with Gemini" },
+    { b: "grok", app: "grok", label: "Make it with Grok" },
   ];
-  // Gemini only builds here (its app can't be opened with an idea typed in), so it shows only with the flag.
-  const makers = MAKERS.filter(({ b }) => builderOn || b !== "gemini").map(({ b, app, label }) => {
+  // Gemini and Grok only build here (their apps can't be opened with an idea typed in), so they show only with the flag.
+  const buildsHereOnly = (b: Builder) => b === "gemini" || b === "grok";
+  const makers = MAKERS.filter(({ b }) => builderOn || !buildsHereOnly(b)).map(({ b, app, label }) => {
     const key = keys[b];
     // Opening the Claude or ChatGPT app with the idea typed in, for people who connected it.
-    const canOpen = b !== "gemini" && connected.has(app);
+    const canOpen = !buildsHereOnly(b) && connected.has(app);
     if (!builderOn) {
       return `<div class="make"><button type="button" class="make-btn" data-make="${app}"><span class="ai-mini">${AI_LOGOS[app]}</span>${label}</button>${state(app, `Connect ${app === "claude" ? "Claude" : "ChatGPT"} first`)}</div>`;
     }
@@ -425,6 +427,13 @@ export async function newAppPage(c: Context<AppEnv>): Promise<Response> {
       intro: "Google's free tier is enough to build apps: no credit card needed. It allows a few builds a minute and a daily limit, and Google may use free-tier requests to improve its products.",
       steps: "<li>Click <strong>Create API key</strong>. You don't need to set up billing.</li>",
     },
+    grok: {
+      org: "xAI",
+      site: "console.x.ai",
+      placeholder: "xai-…",
+      intro: "What it uses is billed to your own xAI account.",
+      steps: "<li>Make sure the account has credits. This is separate from a SuperGrok or X Premium plan.</li><li>Open <strong>API Keys</strong>.</li>",
+    },
   };
   const keyDialogs = (builderOn ? MAKERS : []).map(({ b, app }) => {
     const who = BUILDERS[b];
@@ -434,7 +443,7 @@ export async function newAppPage(c: Context<AppEnv>): Promise<Response> {
   <form method="dialog" class="dialog-close"><button aria-label="Close">×</button></form>
   <div class="howto">
     <div class="dialog-head"><span class="ai-logo">${AI_LOGOS[app]}</span><h2 id="dlg-key-${b}-title">Build with ${name} right here</h2></div>
-    <p>Paste an API key once. After that, <strong>Make it</strong> builds your app here and publishes it${b === "gemini" ? "" : `, with nothing to set up in the ${name} app`}. ${help.intro}</p>
+    <p>Paste an API key once. After that, <strong>Make it</strong> builds your app here and publishes it${buildsHereOnly(b) ? "" : `, with nothing to set up in the ${name} app`}. ${help.intro}</p>
     <ol>
       <li>Open <a href="${who.keyUrl}" target="_blank" rel="noopener">${help.site}</a> and sign in${b === "gemini" ? " with Google" : ""}.</li>
       ${help.steps}
@@ -450,7 +459,7 @@ export async function newAppPage(c: Context<AppEnv>): Promise<Response> {
         : " It's only used when you press Make it or Change it."
     }</p>
     ${keys[b] ? `<p><button type="button" class="danger" data-action="builder-disconnect" data-provider="${b}">Remove my key …${e(keys[b]!.hint)}</button></p>` : ""}
-    ${keys[b] || b === "gemini" ? "" : `<p class="muted">Rather use the ${name} app? <button type="button" class="linkish" data-make="${app}">Open it with your idea typed in</button> (needs <a href="/connect#${app}">Formelab connected</a> there).</p>`}
+    ${keys[b] || buildsHereOnly(b) ? "" : `<p class="muted">Rather use the ${name} app? <button type="button" class="linkish" data-make="${app}">Open it with your idea typed in</button> (needs <a href="/connect#${app}">Formelab connected</a> there).</p>`}
   </div>
 </dialog>`;
   }).join("\n");

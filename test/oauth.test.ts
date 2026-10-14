@@ -246,7 +246,7 @@ describe("OAuth for MCP (Claude chat connector)", () => {
     expect(html).toContain("claude.ai"); // where tokens will go
     const csp = page.headers.get("content-security-policy")!;
     expect(csp).toContain("frame-ancestors 'none'");
-    expect(csp).toContain("form-action 'self' https://claude.ai");
+    expect(csp).toMatch(/form-action 'self' https:$/);
   });
 
   it("rejects an unregistered redirect URI without redirecting", async () => {
@@ -365,5 +365,44 @@ describe("OAuth for MCP: Gemini-style clients", () => {
     const who = await mcpCall(access_token, "whoami");
     expect(who.status).toBe(200);
     expect(await who.text()).toContain(OWNER);
+  });
+});
+
+describe("OAuth for MCP: Cursor-style clients", () => {
+  // Cursor registers its own-scheme callback next to a loopback one, and signs in with the former.
+  const NATIVE = "cursor://anysphere.cursor-mcp/oauth/callback";
+
+  it("signs in with an app's own redirect scheme, which the consent page allows and warns about", async () => {
+    const reg = await call(`${ORIGIN}/oauth/register`, {
+      method: "POST",
+      json: { client_name: "Cursor", redirect_uris: [NATIVE, "http://localhost:7777/callback"], token_endpoint_auth_method: "none", grant_types: ["authorization_code", "refresh_token"], response_types: ["code"] },
+    });
+    expect(reg.status, await reg.clone().text()).toBe(201);
+    const clientId = (await reg.json<{ client_id: string }>()).client_id;
+
+    const { challenge } = await pkce();
+    const u = new URL(`${ORIGIN}/authorize`);
+    u.search = new URLSearchParams({ response_type: "code", client_id: clientId, redirect_uri: NATIVE, code_challenge: challenge, code_challenge_method: "S256", scope: "mcp", state: "cur" }).toString();
+    const page = await call(u.toString(), { as: OWNER });
+    expect(page.status, await page.clone().text()).toBe(200);
+    // Without the cursor: scheme in form-action, the browser would block the hand-off after Allow.
+    expect(page.headers.get("content-security-policy")).toContain("form-action 'self' https: cursor:");
+    const html = await page.text();
+    expect(html).toContain("an app on your computer");
+    const handle = /name="handle" value="([^"]+)"/.exec(html)![1]!;
+    const approved = await call(`${ORIGIN}/authorize`, {
+      as: OWNER,
+      method: "POST",
+      headers: { cookie: cookiesFrom(page), "content-type": "application/x-www-form-urlencoded", origin: ORIGIN },
+      body: new URLSearchParams({ handle, decision: "approve" }).toString(),
+    });
+    expect(approved.status, await approved.clone().text()).toBe(302);
+    expect(approved.headers.get("location")).toMatch(/^cursor:\/\/anysphere\.cursor-mcp\/oauth\/callback\?code=/);
+  });
+
+  it("lets the callback redirect on to another https site and loopback clients reach their port", async () => {
+    const { consentCsp } = await import("../src/oauth");
+    expect(consentCsp("https://grok.com/connectors/callback")).toMatch(/form-action 'self' https:$/);
+    expect(consentCsp("http://localhost:7777/oauth/callback")).toMatch(/form-action 'self' https: http:\/\/localhost:7777$/);
   });
 });

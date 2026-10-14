@@ -200,6 +200,25 @@ export const VENDORS: Vendor[] = [
     url: "https://platform.openai.com",
   },
 
+  {
+    name: "xAI API (Grok)",
+    group: "ai",
+    purpose: "Builds apps from a description on the New app page, with the person's own API key (newest Grok model).",
+    plan: "Paid by each person on their own xAI API account; Formelab pays nothing.",
+    setup: "Nothing on Formelab's side; people paste a key on New app.",
+    since: "2026-10-14",
+    url: "https://console.x.ai",
+  },
+  {
+    name: "Cursor",
+    group: "ai",
+    purpose: "People connect Cursor's agent to build and publish apps.",
+    plan: "People's own Cursor plan.",
+    setup: "Connector URL formelab.ai/mcp in ~/.cursor/mcp.json (OAuth sign-in).",
+    since: "2026-10-14",
+    url: "https://cursor.com",
+  },
+
   // Open source
   { name: "Hono", group: "open-source", purpose: "The web framework the Worker is built on.", plan: "MIT license.", setup: "package.json", since: "2026-10-02", url: "https://hono.dev" },
   { name: "MCP TypeScript SDK", group: "open-source", purpose: "The AI connector (Model Context Protocol server).", plan: "MIT license.", setup: "@modelcontextprotocol/sdk", since: "2026-10-02", url: "https://github.com/modelcontextprotocol/typescript-sdk" },

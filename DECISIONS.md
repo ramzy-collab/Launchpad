@@ -484,6 +484,15 @@ Choices made while building v1, including where the build differs from the spec 
   removing it warns that apps stop using Gemini too. Saving it from New app works even with
   `connected_apps` off; apps only use it once that flag is on for the owner.
 
+### Grok as a fourth builder
+
+- xAI's API is OpenAI-compatible, so Grok checks keys the same way (`GET /v1/models`, though a
+  bad key answers 400, not 401) and builds through streaming Chat Completions at
+  `api.x.ai/v1`. Keys are service `xai` in `service_keys`. It picks the newest plain `grok-N` or
+  `grok-N-M`/`grok-N.M` model the key lists (no `-fast`, `-mini`, `-code` or dated variants), so
+  it keeps up without code changes. Like Gemini it only builds here: there's no Grok app to
+  open with the idea typed in.
+
 ### Changing an existing app
 
 - The app's page gets a **Change it with AI** box (same `app_builder` flag). `POST
@@ -496,6 +505,22 @@ Choices made while building v1, including where the build differs from the spec 
 - Anyone who can manage the app (owner, editors, space owner) can change it, with **their own**
   key. Apps whose `index.html` is over 400 KB are refused, with a pointer to the upload instead.
   Each change is in the app's activity log with what was asked.
+
+## Connecting AI apps over OAuth: the consent page's form-action
+
+- The consent page's CSP `form-action` used to allow only the redirect URI's origin. Browsers
+  apply `form-action` to every redirect after the Allow POST, so a client whose callback
+  redirects on to another origin, or a native app's own scheme (`cursor://`, whose URL origin is
+  `"null"`), was blocked silently and the page sat there with Allow grayed out (reported with
+  Grok's custom MCP connector). It now allows `'self' https:` plus the redirect URI's loopback
+  origin or scheme. That only lets the browser follow a hand-off; which redirect URIs get a code
+  is still decided by the OAuth provider.
+- `allowPrivateUseRedirectUris` is on, so native apps like Cursor can get the code back on their
+  own scheme (RFC 8252). The consent page shows the warning that access goes to an app on this
+  computer for those, as for loopback redirects.
+- **Cursor** is a tile on Connect your AI: an `Add to Cursor` deep link
+  (`cursor://anysphere.cursor-deeplink/mcp/install`) or `~/.cursor/mcp.json` with the connector
+  URL, then OAuth from Cursor. Client names containing "cursor" map to its tile.
 
 ## Changelog
 

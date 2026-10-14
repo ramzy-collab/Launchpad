@@ -26,7 +26,7 @@ async function connectLikeChatGPT(authMethod: "none" | "client_secret_post", as 
   const html = await page.text();
   expect(html).toContain("Connect ChatGPT to Formelab?");
   expect(html).toContain("<strong>chatgpt.com</strong>");
-  expect(page.headers.get("content-security-policy")).toContain("form-action 'self' https://chatgpt.com");
+  expect(page.headers.get("content-security-policy")).toMatch(/form-action 'self' https:$/);
   const handle = /name="handle" value="([^"]+)"/.exec(html)![1]!;
   const cookie = page.headers.getSetCookie().map((c) => c.split(";")[0]).join("; ");
   const approved = await call(`${ORIGIN}/authorize`, { as, method: "POST", headers: { ...FORM, cookie }, body: form({ handle, decision: "approve" }) });

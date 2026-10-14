@@ -99,6 +99,9 @@ function providerOptions(origin: string, defaultHandler: ApexHandler): OAuthProv
     tokenEndpoint: TOKEN_PATH,
     clientRegistrationEndpoint: REGISTER_PATH,
     clientIdMetadataDocumentEnabled: true,
+    // Native apps such as Cursor get the code back on their own scheme (cursor://...), as RFC 8252
+    // allows. The consent page names where access goes and warns that it's an app on the computer.
+    allowPrivateUseRedirectUris: true,
     scopesSupported: [MCP_SCOPE, "offline_access"],
     requiredScopes: [MCP_SCOPE],
     resourceMetadata: { resource, authorization_servers: [origin], resource_name: "Formelab" },
@@ -143,7 +146,9 @@ function consentPage(user: string, d: ConsentDescription, handle: string): strin
   const who = d.clientDomain
     ? `Published by <strong>${e(d.clientDomain)}</strong>.`
     : "This app registered itself, so its name is not verified.";
-  const local = d.redirectIsLoopback
+  // Loopback (Gemini CLI) or an app's own scheme (cursor://): both go to an app on this computer.
+  const nativeScheme = !/^https?:/i.test(d.redirectUri);
+  const local = d.redirectIsLoopback || nativeScheme
     ? `<p class="warn"><strong>This sends access to an app on your computer.</strong> Continue only if you just started connecting from it.</p>`
     : "";
   return `<!doctype html>
@@ -173,13 +178,22 @@ ${nav("/app")}
 </html>`;
 }
 
-const consentCsp = (redirectUri: string) => {
+/**
+ * form-action also governs every redirect after the POST, not just the first: browsers block the
+ * whole navigation if any hop isn't allowed, and the page just sits there with Allow grayed out.
+ * Some clients' callbacks redirect again to another https origin (Grok's did), and native apps
+ * use their own scheme (cursor://), whose URL origin is "null". So allow any https origin, plus
+ * the redirect URI's own loopback origin or scheme. The redirect URI itself is checked by the
+ * OAuth provider; this only keeps the browser from stopping a legitimate hand-off.
+ */
+export const consentCsp = (redirectUri: string) => {
   let target = "";
   try {
-    target = " " + new URL(redirectUri).origin;
+    const u = new URL(redirectUri);
+    if (u.protocol === "http:") target = " " + u.origin;
+    else if (u.protocol !== "https:" && /^[a-z][a-z0-9+.-]*:$/.test(u.protocol)) target = " " + u.protocol;
   } catch {}
-  // form-action also governs the redirect after the POST, so it must allow the client's origin.
-  return `default-src 'self'; script-src 'self'; ${FONT_CSP}; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'${target}`;
+  return `default-src 'self'; script-src 'self'; ${FONT_CSP}; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'self' https:${target}`;
 };
 
 /**

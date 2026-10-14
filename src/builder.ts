@@ -1,4 +1,5 @@
-// The easy way, built in: a person saves their own Claude (Anthropic) or OpenAI API key once, and
+// The easy way, built in: a person saves their own Claude (Anthropic), OpenAI, Gemini or Grok (xAI)
+// API key once, and
 // "Make it" on the New app page builds the app with that key right here, then publishes it. No
 // connector to set up in Claude or ChatGPT, and the person's own API account pays for the tokens.
 // Keys are encrypted at rest like Gemini's (service_keys, AAD "user:<email>:<service>") and never
@@ -15,26 +16,28 @@ import { decryptSecret, encryptSecret, rateLimit } from "./secrets";
 import { createNamespace, getNamespace, getSiteByMount, listNamespaces, publishSite, requireManageableSite, RESERVED_LABELS, type Ctx } from "./sites";
 import { filesFromHtml, type FileMap } from "./upload";
 
-export type Builder = "claude" | "openai" | "gemini";
+export type Builder = "claude" | "openai" | "gemini" | "grok";
 // Gemini's builder key is the same stored key as the Google Gemini connected app (service
 // "gemini"): saving or removing it in either place does it for both.
 export const BUILDERS: Record<Builder, { service: string; name: string; keyUrl: string }> = {
   claude: { service: "anthropic", name: "Claude", keyUrl: "https://console.anthropic.com/settings/keys" },
   openai: { service: "openai", name: "ChatGPT (OpenAI)", keyUrl: "https://platform.openai.com/api-keys" },
   gemini: { service: "gemini", name: "Google Gemini", keyUrl: "https://aistudio.google.com/apikey" },
+  grok: { service: "xai", name: "Grok (xAI)", keyUrl: "https://console.x.ai" },
 };
 /** Button labels: "Make it with Claude", "Change it with Gemini". */
-export const BUILDER_LABEL: Record<Builder, string> = { claude: "Claude", openai: "ChatGPT", gemini: "Gemini" };
+export const BUILDER_LABEL: Record<Builder, string> = { claude: "Claude", openai: "ChatGPT", gemini: "Gemini", grok: "Grok" };
 
 export const CLAUDE_MODEL = "claude-opus-5-5";
 const OPENAI_API = "https://api.openai.com/v1";
+const XAI_API = "https://api.x.ai/v1";
 const MAX_IDEA = 4000;
 const MAX_OUTPUT_TOKENS = 32000;
 export const BUILDS_PER_MINUTE = 5;
 
 export function parseBuilder(raw: unknown): Builder {
-  if (raw === "claude" || raw === "openai" || raw === "gemini") return raw;
-  throw badRequest("Pick Claude, ChatGPT or Gemini.", 'Send provider "claude", "openai" or "gemini".');
+  if (raw === "claude" || raw === "openai" || raw === "gemini" || raw === "grok") return raw;
+  throw badRequest("Pick Claude, ChatGPT, Gemini or Grok.", 'Send provider "claude", "openai", "gemini" or "grok".');
 }
 
 const scope = (email: string) => `user:${email}`;
@@ -44,7 +47,7 @@ const loadRow = (env: Env, email: string, b: Builder) =>
 
 /** Which builders this person has a key for, with the key's last four characters. */
 export async function builderKeys(env: Env, email: string): Promise<Partial<Record<Builder, { hint: string }>>> {
-  const { results } = await env.DB.prepare("SELECT service, hint FROM service_keys WHERE owner_email = ? AND service IN ('anthropic', 'openai', 'gemini')")
+  const { results } = await env.DB.prepare("SELECT service, hint FROM service_keys WHERE owner_email = ? AND service IN ('anthropic', 'openai', 'gemini', 'xai')")
     .bind(email)
     .all<{ service: string; hint: string }>();
   const out: Partial<Record<Builder, { hint: string }>> = {};
@@ -53,8 +56,11 @@ export async function builderKeys(env: Env, email: string): Promise<Partial<Reco
   return out;
 }
 
+/** Who issues each builder's keys, for messages: "Anthropic didn't accept this key". */
+const ORG: Record<Builder, string> = { claude: "Anthropic", openai: "OpenAI", gemini: "Google", grok: "xAI" };
+
 const keyRejected = (b: Builder, why: string) =>
-  badRequest(`${b === "claude" ? "Anthropic" : "OpenAI"} didn't accept this key: ${why}`, `Check the key at ${BUILDERS[b].keyUrl}, or create a new one, then paste it again.`);
+  badRequest(`${ORG[b]} didn't accept this key: ${why}`, `Check the key at ${BUILDERS[b].keyUrl}, or create a new one, then paste it again.`);
 
 async function openaiError(res: Response) {
   try {
@@ -67,7 +73,7 @@ async function openaiError(res: Response) {
 
 const anthropic = (apiKey: string) => new Anthropic({ apiKey, maxRetries: 1, fetch: (...a: Parameters<typeof fetch>) => fetch(...a) });
 
-/** Checks the key with Anthropic or OpenAI (a free model lookup), then saves it encrypted. */
+/** Checks the key with Anthropic, OpenAI or xAI (a free model lookup), then saves it encrypted. */
 export async function connectBuilder(env: Env, user: User, b: Builder, rawKey: unknown) {
   if (b === "gemini") {
     const status = await connectGemini(env, user, rawKey);
@@ -75,7 +81,7 @@ export async function connectBuilder(env: Env, user: User, b: Builder, rawKey: u
   }
   const key = String(rawKey ?? "").trim();
   if (!/^[A-Za-z0-9._~-]{20,400}$/.test(key)) {
-    throw badRequest(`That doesn't look like ${b === "claude" ? "an Anthropic" : "an OpenAI"} API key.`, `Copy the whole key from ${BUILDERS[b].keyUrl}, with no spaces.`);
+    throw badRequest(`That doesn't look like ${b === "grok" ? "a" : "an"} ${ORG[b]} API key.`, `Copy the whole key from ${BUILDERS[b].keyUrl}, with no spaces.`);
   }
   if (b === "claude") {
     try {
@@ -86,14 +92,17 @@ export async function connectBuilder(env: Env, user: User, b: Builder, rawKey: u
       throw err(502, "builder_unreachable", "Couldn't reach Anthropic to check the key.", "Try again in a minute.");
     }
   } else {
+    // OpenAI and xAI share the same API shape: list the models the key can use.
+    const api = b === "grok" ? XAI_API : OPENAI_API;
     let res: Response;
     try {
-      res = await fetch(`${OPENAI_API}/models`, { headers: { authorization: `Bearer ${key}` } });
+      res = await fetch(`${api}/models`, { headers: { authorization: `Bearer ${key}` } });
     } catch {
-      throw err(502, "builder_unreachable", "Couldn't reach OpenAI to check the key.", "Try again in a minute.");
+      throw err(502, "builder_unreachable", `Couldn't reach ${ORG[b]} to check the key.`, "Try again in a minute.");
     }
-    if (res.status === 401 || res.status === 403) throw keyRejected(b, await openaiError(res));
-    if (!res.ok) throw err(502, "builder_error", `OpenAI couldn't check the key right now: ${await openaiError(res)}`, "Try again in a minute.");
+    // xAI answers a bad key with 400 ("Incorrect API key provided").
+    if (res.status === 401 || res.status === 403 || (b === "grok" && res.status === 400)) throw keyRejected(b, await openaiError(res));
+    if (!res.ok) throw err(502, "builder_error", `${ORG[b]} couldn't check the key right now: ${await openaiError(res)}`, "Try again in a minute.");
   }
   const service = BUILDERS[b].service;
   const { iv, ciphertext } = await encryptSecret(env, scope(user.email), service, key);
@@ -373,6 +382,89 @@ async function generateWithGemini(key: string, system: string, prompt: string, p
   return { html: extractHtml(text), model, tokens };
 }
 
+/** The newest flagship Grok model the key can use ("grok-5" over "grok-4.1" over "grok-4"; no -mini, -fast, -code or dated variants). */
+async function pickGrokModel(key: string): Promise<string> {
+  const res = await fetch(`${XAI_API}/models`, { headers: { authorization: `Bearer ${key}` } });
+  if (res.status === 400 || res.status === 401 || res.status === 403) throw err(502, "builder_key_rejected", "xAI rejected your Grok API key.", "Paste a new key on the New app page (Grok → Change key).");
+  if (!res.ok) throw err(502, "builder_error", `Grok had a problem: ${await openaiError(res)}`, "Try again in a moment.");
+  const { data = [] } = await res.json<{ data?: { id: string }[] }>();
+  // xAI writes point versions either way: "grok-4.1" or "grok-4-1".
+  const ranked = data
+    .map((m) => {
+      const v = m.id.match(/^grok-(\d+)(?:[.-](\d{1,2}))?$/);
+      return { id: m.id, v: v ? Number(v[1]) + Number(v[2] ?? 0) / 100 : NaN };
+    })
+    .filter((m) => !Number.isNaN(m.v))
+    .sort((a, b) => b.v - a.v);
+  if (!ranked.length) throw err(502, "builder_no_model", "Your xAI key can't use a Grok model.", "Check the key's model permissions at console.x.ai.");
+  return ranked[0]!.id;
+}
+
+/** Grok through xAI's OpenAI-compatible Chat Completions API, streaming. */
+async function generateWithGrok(key: string, system: string, prompt: string, progress: Progress): Promise<Generated> {
+  const model = await pickGrokModel(key);
+  let res: Response;
+  try {
+    res = await fetch(`${XAI_API}/chat/completions`, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: "system", content: system },
+          { role: "user", content: prompt },
+        ],
+        max_tokens: MAX_OUTPUT_TOKENS,
+        stream: true,
+        stream_options: { include_usage: true },
+      }),
+    });
+  } catch {
+    throw err(504, "builder_unreachable", "Couldn't reach Grok.", "Try again in a moment.");
+  }
+  if (!res.ok || !res.body) {
+    const why = await openaiError(res);
+    if (res.status === 401 || res.status === 403 || (res.status === 400 && /api key/i.test(why))) throw err(502, "builder_key_rejected", "xAI rejected your Grok API key.", "Paste a new key on the New app page (Grok → Change key).");
+    if (res.status === 429) throw err(429, "builder_quota", `Your xAI account is over a limit: ${why}`, "Wait a bit, or check your usage and credits at console.x.ai.");
+    throw err(502, "builder_error", `Grok had a problem: ${why}`, "Try again in a moment.");
+  }
+  let text = "";
+  let tokens = 0;
+  let finish: string | undefined;
+  const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
+  let buf = "";
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buf += value;
+    let nl: number;
+    while ((nl = buf.indexOf("\n")) >= 0) {
+      const line = buf.slice(0, nl).trim();
+      buf = buf.slice(nl + 1);
+      if (!line.startsWith("data:")) continue;
+      const data = line.slice(5).trim();
+      if (data === "[DONE]") continue;
+      let ev: { choices?: { delta?: { content?: string | null }; finish_reason?: string | null }[]; usage?: { total_tokens?: number }; error?: { message?: string } | string };
+      try {
+        ev = JSON.parse(data);
+      } catch {
+        continue;
+      }
+      if (ev.error) throw err(502, "builder_error", `Grok had a problem: ${typeof ev.error === "string" ? ev.error : (ev.error.message ?? "unknown error")}`, "Try again in a moment.");
+      const choice = ev.choices?.[0];
+      if (choice?.delta?.content) {
+        text += choice.delta.content;
+        progress(text.length);
+      }
+      if (choice?.finish_reason) finish = choice.finish_reason;
+      if (ev.usage?.total_tokens) tokens = ev.usage.total_tokens;
+    }
+  }
+  if (finish === "content_filter") throw badRequest("Grok declined to build this app.", "Try describing it differently.");
+  if (finish === "length") throw err(502, "builder_too_long", "The app came out too long to finish.", "Ask for a smaller first version, then add to it.");
+  return { html: extractHtml(text), model, tokens };
+}
+
 export interface BuildResult {
   url: string;
   title: string;
@@ -402,7 +494,9 @@ async function generate(ctx: Ctx, b: Builder, key: string, system: string, promp
       ? await generateWithClaude(key, system, prompt, progress)
       : b === "openai"
         ? await generateWithOpenAi(key, system, prompt, progress)
-        : await generateWithGemini(key, system, prompt, progress);
+        : b === "gemini"
+          ? await generateWithGemini(key, system, prompt, progress)
+          : await generateWithGrok(key, system, prompt, progress);
   await ctx.env.DB.prepare("UPDATE service_keys SET last_used_at = ? WHERE owner_email = ? AND service = ?").bind(now(), ctx.user.email, BUILDERS[b].service).run();
   return generated;
 }
