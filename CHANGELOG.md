@@ -5,6 +5,7 @@ Everything that has changed in Formelab, newest first. Shown in the admin panel 
 ## 2026-10-14
 
 - **Make and change apps with Grok.** New app has a **Make it with Grok** button next to Claude, ChatGPT and Gemini, and app pages get **Change it with Grok**. It takes an API key from console.x.ai (billed to your own xAI account) and uses the newest Grok model the key can use.
+- **Grok on Connect your AI.** A Grok tile with the steps to add Formelab as a custom connector on grok.com, and a Connected badge once Grok has signed in. **Make it with Grok** on New app opens Grok with your idea typed in, like Claude and ChatGPT.
 - **Cursor on Connect your AI.** A Cursor tile with an **Add to Cursor** button (or the `mcp.json` to paste), then a Formelab sign-in from Cursor. It shows as Connected once Cursor has signed in.
 - Fixed: connecting an AI app could freeze on Formelab's Allow page (seen with Grok's custom MCP connector). After Allow, the browser blocked the hand-off back to the app when its callback redirected on to another site, or used the app's own link scheme. Those hand-offs now go through.
 

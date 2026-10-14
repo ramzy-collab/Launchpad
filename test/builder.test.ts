@@ -276,6 +276,9 @@ describe("building apps with the person's own API key", () => {
     expect((await call("/_api/admin/build", { as: me, method: "POST", json: { provider: "claude", idea: "x" } })).status).toBe(404);
     const page = await (await call("/app/new", { as: me })).text();
     expect(page).toContain('data-make="claude"');
+    expect(page).toContain('data-make="grok"'); // opens grok.com with the idea typed in
+    expect(page).toContain('href="/connect#grok">Connect Grok first');
+    expect(page).not.toContain('data-make="gemini"');
     expect(page).not.toContain("dlg-key-");
     expect(page).not.toContain("data-build=");
     const pub = await publishZip(me, uniq(), "x", { "index.html": "<!doctype html><html><head><title>x</title></head></html>" });

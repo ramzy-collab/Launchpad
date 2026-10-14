@@ -14,6 +14,7 @@ const APPS = [
   { id: "claude", name: "Claude", where: "claude.ai, desktop and mobile" },
   { id: "chatgpt", name: "ChatGPT", where: "Developer mode, paid plans" },
   { id: "gemini", name: "Gemini", where: "Gemini CLI, Gemini Enterprise" },
+  { id: "grok", name: "Grok", where: "grok.com custom connector" },
   { id: "cursor", name: "Cursor", where: "The AI code editor" },
   { id: "claude-code", name: "Claude Code", where: "In your terminal" },
 ] as const;
@@ -28,7 +29,7 @@ export async function connectPage(c: Context<AppEnv>): Promise<Response> {
   const cursorInstall = `cursor://anysphere.cursor-deeplink/mcp/install?name=formelab&config=${encodeURIComponent(btoa(JSON.stringify({ url })))}`;
   const cmd = `claude mcp add --transport http formelab ${url} \\\n  --header "Authorization: Bearer fl_..."`;
 
-  // Connections are OAuth sign-ins (Claude, ChatGPT, Gemini, Cursor) and access keys an AI app has
+  // Connections are OAuth sign-ins (Claude, ChatGPT, Gemini, Grok, Cursor) and access keys an AI app has
   // used over MCP (Claude Code), matched to a tile by the app's name.
   const [grants, tokens] = await Promise.all([listConnections(c.env, user.email).catch(() => []), listTokens(c.env, user)]);
   const t0 = Date.now();
@@ -108,6 +109,18 @@ export async function connectPage(c: Context<AppEnv>): Promise<Response> {
   <p>Then mention Formelab in a chat, for example:</p>
   <p class="example">Use Formelab to build a sign-up sheet for our book club and publish it.</p>
   <p class="muted">Antigravity CLI, which Google is moving Gemini CLI users to, takes the same server URL as Gemini CLI.</p>
+`,
+    grok: `  <p class="muted">On grok.com. xAI keeps custom connectors to paid plans, and on Business and Enterprise plans an admin may have to add it first. Grok moves these menus now and then, so the labels may differ a little.</p>
+  <ol>
+    <li>Open <a href="https://grok.com/connectors" target="_blank" rel="noopener">grok.com/connectors</a>.</li>
+    <li>Click <strong>New connector</strong> and pick <strong>Custom</strong>.</li>
+    <li>Name it <strong>Formelab</strong> and paste the connector URL above.</li>
+    <li>Click to connect. A Formelab window opens: log in, check the account shown, and click <strong>Allow</strong>. Grok then lists Formelab's tools.</li>
+  </ol>
+  <h3>Use it</h3>
+  <p>In a chat, make sure Formelab is turned on in the connectors menu, then ask, for example:</p>
+  <p class="example">Build a pickup-basketball sign-up sheet and publish it to Formelab.</p>
+  <p class="muted">Once it's connected, <strong>Make it with Grok</strong> on <a href="/new">New app</a> opens Grok with your idea typed in.</p>
 `,
     cursor: `  <p class="muted">Cursor signs in to Formelab with your account; there's no key to copy.</p>
   <p><a class="btn" href="${e(cursorInstall)}">Add to Cursor</a></p>

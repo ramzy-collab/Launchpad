@@ -107,7 +107,7 @@ describe("dashboard", () => {
     expect(html).not.toContain("Your connector URL");
     expect(html).not.toContain("If something's off");
     // A tile per AI app, each opening its steps in a dialog; nothing is connected yet.
-    for (const id of ["claude", "chatgpt", "gemini", "cursor", "claude-code"]) {
+    for (const id of ["claude", "chatgpt", "gemini", "grok", "cursor", "claude-code"]) {
       expect(html).toContain(`data-dialog="dlg-${id}"`);
       expect(html).toContain(`<dialog id="dlg-${id}"`);
     }
