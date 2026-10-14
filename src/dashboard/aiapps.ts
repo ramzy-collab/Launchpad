@@ -1,10 +1,9 @@
-// Which AI apps a person has connected: OAuth sign-ins (Claude, ChatGPT, Gemini, Cursor) and access keys
+// Which AI apps a person has connected: OAuth sign-ins (Claude, ChatGPT, Gemini, Grok, Cursor) and access keys
 // an AI app has used over MCP (Claude Code), matched by the app's name.
 import { listTokens } from "../auth";
 import type { Env, User } from "../env";
 import { listConnections } from "../oauth";
 
-// Grok has no tile on Connect your AI (yet); it only builds on New app.
 export type AiApp = "claude" | "chatgpt" | "gemini" | "grok" | "cursor" | "claude-code";
 
 /** Which AI app a client belongs to, from the name it registered or introduced itself with. */
@@ -15,6 +14,7 @@ export function tileFor(clientName: string): AiApp | null {
   if (n.includes("chatgpt") || n.includes("openai")) return "chatgpt";
   if (n.includes("gemini") || n.includes("antigravity")) return "gemini";
   if (n.includes("cursor")) return "cursor";
+  if (n.includes("grok") || n.includes("xai")) return "grok";
   return null;
 }
 

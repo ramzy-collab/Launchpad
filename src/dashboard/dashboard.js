@@ -214,7 +214,7 @@
   if (location.hash.length > 1) openDialog("dlg-" + location.hash.slice(1));
 
   // New app: hand the idea to Claude or ChatGPT in a new tab, or copy it for Claude Code.
-  var MAKE_URLS = { claude: "https://claude.ai/new?q=", chatgpt: "https://chatgpt.com/?q=" };
+  var MAKE_URLS = { claude: "https://claude.ai/new?q=", chatgpt: "https://chatgpt.com/?q=", grok: "https://grok.com/?q=" };
   function makePrompt(idea) {
     return /formelab/i.test(idea) ? idea : idea + "\n\nBuild this as a web app and publish it to Formelab.";
   }

@@ -375,8 +375,8 @@ export async function newAppPage(c: Context<AppEnv>): Promise<Response> {
     connected.has(app)
       ? `<span class="badge on"><span class="dot" aria-hidden="true"></span>Connected</span>`
       : `<a class="muted" href="/connect#${app}">${setup}</a>`;
-  // Claude and ChatGPT: with the person's API key saved, "Make it" builds and publishes right here.
-  // Without one, the button asks for a key, unless their Claude or ChatGPT app is already
+  // Claude, ChatGPT and Grok: with the person's API key saved, "Make it" builds and publishes right here.
+  // Without one, the button asks for a key, unless their Claude, ChatGPT or Grok app is already
   // connected to Formelab; then it opens that app with the idea typed in, as before.
   const MAKERS: { b: Builder; app: AiApp; label: string }[] = [
     { b: "claude", app: "claude", label: "Make it with Claude" },
@@ -384,14 +384,15 @@ export async function newAppPage(c: Context<AppEnv>): Promise<Response> {
     { b: "gemini", app: "gemini", label: "Make it with Gemini" },
     { b: "grok", app: "grok", label: "Make it with Grok" },
   ];
-  // Gemini and Grok only build here (their apps can't be opened with an idea typed in), so they show only with the flag.
-  const buildsHereOnly = (b: Builder) => b === "gemini" || b === "grok";
+  // Gemini only builds here (its app can't be opened with an idea typed in), so it shows only with the flag.
+  const buildsHereOnly = (b: Builder) => b === "gemini";
+  const appName: Record<string, string> = { claude: "Claude", chatgpt: "ChatGPT", grok: "Grok" };
   const makers = MAKERS.filter(({ b }) => builderOn || !buildsHereOnly(b)).map(({ b, app, label }) => {
     const key = keys[b];
     // Opening the Claude or ChatGPT app with the idea typed in, for people who connected it.
     const canOpen = !buildsHereOnly(b) && connected.has(app);
     if (!builderOn) {
-      return `<div class="make"><button type="button" class="make-btn" data-make="${app}"><span class="ai-mini">${AI_LOGOS[app]}</span>${label}</button>${state(app, `Connect ${app === "claude" ? "Claude" : "ChatGPT"} first`)}</div>`;
+      return `<div class="make"><button type="button" class="make-btn" data-make="${app}"><span class="ai-mini">${AI_LOGOS[app]}</span>${label}</button>${state(app, `Connect ${appName[app]} first`)}</div>`;
     }
     const btn = key
       ? `<button type="button" class="make-btn" data-build="${b}"><span class="ai-mini">${AI_LOGOS[app]}</span>${label}</button>`
