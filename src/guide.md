@@ -21,9 +21,11 @@ https://<name>-<code>.<APP_DOMAIN>/        e.g. https://budget-7kq2.formelab.app
 - A space groups apps and the people who can publish into it (its owner and editors). It isn't an
   address of its own.
 - Every app is served from the root of its own address, so `location.pathname` starts at `/`.
-- Every page needs a sign-in to Formelab, so you always know who is looking.
+- Every page needs a sign-in to Formelab, so you usually know who is looking. The exception is an
+  app's **public link** (below): people who open it that way aren't signed in.
 - An app is `restricted` by default (only its owner, editors and the emails on its allow-list) or
-  `all` (every Formelab member).
+  `all` (every Formelab member). Either way its owner can also turn on a **public link** that opens
+  it for anyone who has the link, no account needed (`update_site` with `public_link: true`).
 
 Apps get platform features through a small browser SDK, `window.formelab`:
 
@@ -82,6 +84,17 @@ Add `<script src="/_platform/sdk.js"></script>`, then use `window.formelab` (als
 
 ```js
 const me = await formelab.me(); // { email: "ana@example.com", name: null }
+```
+
+`me()` returns `null` for a **guest**: someone who opened the app through its public link and isn't
+signed in (or isn't someone the app is shared with). Guests can see the app and read its shared data
+(`formelab.kv.get` and `list`), and that's all: every other call fails with code
+`sign_in_required`. If the app may be shared by public link, handle `null` and offer a sign-in
+button that calls `formelab.signIn()`, which signs them in and brings them back to the same page:
+
+```js
+const me = await formelab.me();
+if (!me) showReadOnlyView(); // e.g. hide the vote buttons, show "Sign in to vote" → formelab.signIn()
 ```
 
 ### `formelab.kv`
@@ -434,6 +447,12 @@ settings (who can open and edit it, who can change its data) are kept. `visibili
 `allowed_emails` and `data_writes` only apply when an app is first published; change them later
 with `update_site`.
 `update_site` changes settings without re-uploading; `delete_site` is permanent.
+
+**Sharing publicly.** When the user wants anyone to be able to open the app (no Formelab account),
+call `update_site` with `public_link: true` and give them the returned `site.publicUrl` (not the
+plain `url`, which still asks for a sign-in). `public_link: "new"` replaces the link so the old one
+stops working; `false` turns it off. Only do this when the user asks: anyone who gets the link can
+open the app and read its shared data.
 
 ### With `scripts/publish.sh` and a deploy token
 

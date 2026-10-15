@@ -37,7 +37,25 @@ export function runtimeApi() {
     c.header("cache-control", "no-store");
   });
 
+  // Guests (people who came in through the app's public link) can see the app and read its shared
+  // data. Everything that writes, or spends the owner's keys and accounts, needs a sign-in.
+  api.use("*", async (c, next) => {
+    if (!c.get("guest")) return next();
+    const path = new URL(c.req.url).pathname;
+    const reads = c.req.method === "GET" && (path === "/_api/me" || path === "/_api/kv" || path.startsWith("/_api/kv/"));
+    if (!reads) {
+      throw err(
+        401,
+        "sign_in_required",
+        "Sign in to do that: people who open this app through its public link can only look.",
+        "Call formelab.signIn() to send them to sign in, or check formelab.me(), which is null for them.",
+      );
+    }
+    await next();
+  });
+
   api.get("/me", (c) => {
+    if (c.get("guest")) return c.json(null);
     const u = c.get("user");
     return c.json({ email: u.email, name: u.name });
   });

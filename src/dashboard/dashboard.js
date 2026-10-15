@@ -103,6 +103,16 @@
         reloadSoon();
       });
     },
+    "public-link": function (form) {
+      var op = form.dataset.op;
+      if (op === "off" && !confirm("Turn off the public link? People who use it won't be able to open the app any more.")) return;
+      if (op === "new" && !confirm("Make a new public link? The current one stops working, including for people who already opened it.")) return;
+      var value = op === "on" ? true : op === "off" ? false : "new";
+      return api("PATCH", "/sites/" + encodeURIComponent(form.dataset.id), { public_link: value }).then(function () {
+        show(op === "off" ? "Public link turned off." : op === "new" ? "Made a new link. The old one no longer works." : "Public link is on. Copy it below.");
+        reloadSoon();
+      });
+    },
     "ns-create": function (form) {
       return api("POST", "/namespaces", { label: form.elements.label.value }).then(function () {
         show("Space created.");

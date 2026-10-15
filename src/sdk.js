@@ -44,7 +44,12 @@
 
   var formelab = {
     mount: mount,
+    // The signed-in person, or null for someone who opened the app through its public link.
     me: function () { return call("GET", "me"); },
+    // Sends a public-link visitor to sign in, then back to this page.
+    signIn: function () {
+      location.assign("/_platform/sign-in?return=" + enc(location.pathname + location.search + location.hash));
+    },
     // Shared data (kv) and each person's private data (kv.mine) have the same calls.
     kv: (function () {
       function store(base) {

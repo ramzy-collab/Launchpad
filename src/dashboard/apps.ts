@@ -62,7 +62,7 @@ function tile(s: BrowserApp, shared: boolean, now: number): string {
     ${thumb(s)}
     <span class="tile-title">${e(appName(s))}</span>
     <span class="tile-path">${e(path)}</span>
-    <span class="tile-meta">${shared ? `${e(s.ownerEmail)} · ` : ""}${e(VIS_SHORT[s.visibility])} · ${e(ago(s.updatedAt, now))}</span>
+    <span class="tile-meta">${shared ? `${e(s.ownerEmail)} · ` : ""}${e(VIS_SHORT[s.visibility])}${s.publicUrl ? " + link" : ""} · ${e(ago(s.updatedAt, now))}</span>
   </a>
   ${gear(s)}
 </div>`;
@@ -72,7 +72,7 @@ function row(s: BrowserApp, shared: boolean, now: number): string {
   return `<tr ${dataAttrs(s, shared)}>
   <td><a class="row-app" href="${e(s.url)}" target="_blank" rel="noopener">${thumb(s, "sm")}<span>${e(appName(s))}<span class="muted row-url">${e(s.url)}</span></span></a></td>
   <td>${e(s.namespace)}</td>
-  ${shared ? `<td>${e(s.ownerEmail)}</td><td>${s.canManage ? "Can edit" : "Can open"}</td>` : `<td>${e(VIS[s.visibility])}${s.allowedEmails.length ? `<div class="muted">${e(s.allowedEmails.join(", "))}</div>` : ""}</td>`}
+  ${shared ? `<td>${e(s.ownerEmail)}</td><td>${s.canManage ? "Can edit" : "Can open"}</td>` : `<td>${e(VIS[s.visibility])}${s.publicUrl ? `<div class="muted">and anyone with the public link</div>` : ""}${s.allowedEmails.length ? `<div class="muted">${e(s.allowedEmails.join(", "))}</div>` : ""}</td>`}
   <td class="nowrap">${e(ago(s.updatedAt, now))}</td>
   <td class="nowrap">${e(fmtBytes(s.totalBytes))}</td>
   <td>${gear(s)}</td>

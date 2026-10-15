@@ -612,3 +612,28 @@ Choices made while building v1, including where the build differs from the spec 
   adds a unique index; the chance of two labels colliding is negligible at today's size, and a
   failed run can simply be re-run.
 - Dev: `APP_DOMAIN=apps.localhost`, since the web app now takes `app.localhost`.
+
+## Public links ("anyone with the link")
+
+- **A secret link, not a third visibility.** Owners and editors can turn on a public link,
+  `<host_label>.APP_DOMAIN/_platform/link/<token>` (32 base32 characters, 100 bits), next to the
+  app's `restricted`/`all` setting. The app's plain address isn't enough: its 4-character code is
+  for uniqueness, not secrecy, so "public" keyed on the address alone would be guessable. Turning
+  the link off, or making a new one, changes the token (migration 0017, `sites.public_link`).
+- **The link sets a cookie and redirects to `/`.** Pages load their scripts, styles and API calls
+  from the same host without the token in the URL, so `__Host-fl_link` (HttpOnly, 30 days) carries
+  it. Every request compares it with the current token, so revoking the link locks out everyone it
+  let in, at once. The redirect sends `no-referrer` so the token doesn't leak to the app's assets.
+- **Guests can look, not change.** People let in by the link (and signed-in people the app isn't
+  shared with) get the files, `formelab.me()` → `null` and reads of the app's shared KV. Everything
+  else (writes, private data, secrets, the proxy, Gemini, Sheets) answers 401 `sign_in_required`:
+  those spend the owner's keys and accounts, and anonymous writes would be an open spam target even
+  when `data_writes` is "everyone". `formelab.signIn()` (`/_platform/sign-in`) sends a guest
+  through the usual sign-in hand-off and back.
+- **Signed-in people keep their access.** Someone the app is shared with who already has a session
+  on the app's host is identified as usual. Following the public link doesn't sign anyone in, so
+  a member who opens it fresh is a guest until they sign in.
+- **Only managers see the link.** `publicUrl` is in the site view for owners and editors only;
+  people the app is shared with to open don't get it, so they can't widen the audience.
+- **Turned on only through update_site or the app's page**, never by `publish`, matching the rule
+  that publishing a new version never changes sharing.

@@ -45,6 +45,11 @@ export type AppEnv = {
   Bindings: Env;
   Variables: {
     user: User;
+    /**
+     * On an app's host: the visitor came in through the app's public link and isn't someone who
+     * may open it by name. `user` is not set; the runtime API only lets guests read.
+     */
+    guest: boolean | undefined;
     namespace: string;
     site: import("./sites").SiteRow;
     /** The browser session behind the request, when it came from Formelab's own login. */

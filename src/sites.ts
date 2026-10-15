@@ -6,7 +6,7 @@ import { now } from "./env";
 import { badRequest, err, forbidden, notFound } from "./errors";
 import { contentTypeFor } from "./mime";
 import type { FileMap } from "./upload";
-import { isEmail, normEmail, parseJsonArray, randomId, sortableId } from "./util";
+import { base32, isEmail, normEmail, parseJsonArray, randomBytes, randomId, sortableId } from "./util";
 import { appSharedEmail, namespaceSharedEmail, sendEach } from "./email";
 import { appOrigin, siteOrigin } from "./hosts";
 
@@ -59,6 +59,8 @@ export interface SiteRow {
   host_label: string;
   /** Who may change the app's shared data (KV): "all" who can open it, or its owner and "editors". */
   kv_writes?: "all" | "editors";
+  /** The secret in the app's "anyone with the link" address, or null when it has none (see publicLinkUrl). */
+  public_link?: string | null;
 }
 
 /** Everything a service call needs: bindings, the acting user, and a way to defer work. */
@@ -160,6 +162,16 @@ export function parseTitle(raw: unknown): string | null | undefined {
 export const siteUrl = (env: Env, site: Pick<SiteRow, "host_label">, requestUrl?: string) =>
   `${siteOrigin(env, site.host_label, requestUrl)}/`;
 
+/** Where public links start (on the app's own host); see the route in index.ts. */
+export const PUBLIC_LINK_PATH = "/_platform/link/";
+const PUBLIC_LINK_RE = /^[a-z2-7]{32}$/;
+export const isPublicLinkToken = (t: string) => PUBLIC_LINK_RE.test(t);
+const newPublicLink = () => base32(randomBytes(20));
+
+/** The app's "anyone with the link" address, or null when it has none. */
+export const publicLinkUrl = (env: Env, site: Pick<SiteRow, "host_label" | "public_link">, requestUrl?: string) =>
+  site.public_link ? `${siteOrigin(env, site.host_label, requestUrl)}${PUBLIC_LINK_PATH}${site.public_link}` : null;
+
 const HOST_CODE_ALPHABET = "abcdefghjkmnpqrstuvwxyz23456789"; // no 0/o, 1/l/i
 const HOST_NAME_MAX = 40;
 
@@ -207,6 +219,11 @@ export interface SiteView {
   sheets: string[];
   /** Who may change the app's shared data: "everyone" who can open it, or only its owner and "editors". */
   dataWrites: "everyone" | "editors";
+  /**
+   * The "anyone with the link" address: it opens the app without signing in. Null when the app has
+   * none, and always null for people who can't manage the app (only they may hand it out).
+   */
+  publicUrl: string | null;
 }
 
 export const siteView = (env: Env, s: SiteRow, requestUrl?: string): SiteView => ({
@@ -228,7 +245,25 @@ export const siteView = (env: Env, s: SiteRow, requestUrl?: string): SiteView =>
   iconUrl: s.icon_path ? `/apps/${encodeURIComponent(s.id)}/icon?v=${s.current_version}` : null,
   sheets: parseJsonArray(s.sheets),
   dataWrites: s.kv_writes === "editors" ? "editors" : "everyone",
+  publicUrl: publicLinkUrl(env, s, requestUrl),
 });
+
+/** siteView for a list that also holds apps the person can only open: the public link is for managers. */
+const listedView = (env: Env, s: SiteRow, canManage: boolean, requestUrl?: string) => {
+  const v = siteView(env, s, requestUrl);
+  return { ...v, publicUrl: canManage ? v.publicUrl : null, canManage };
+};
+
+/** true (turn the public link on, keeping one that exists), false (off) or "new" (replace it). */
+export function parsePublicLink(raw: unknown): boolean | "new" | undefined {
+  if (raw === undefined || raw === null || raw === "") return undefined;
+  if (raw === "new") return "new";
+  try {
+    return parseBool(raw);
+  } catch {
+    throw badRequest(`public_link must be true, false or "new".`, "true turns on a link that opens the app without signing in, false turns it off, and \"new\" replaces it so the old link stops working.");
+  }
+}
 
 /** "everyone" | "editors" (also "all") → the stored kv_writes value. */
 export function parseDataWrites(raw: unknown): "all" | "editors" | undefined {
@@ -413,7 +448,7 @@ export async function listSharedSites(ctx: Ctx) {
       if (!ns || ownsSite(user, s, ns)) return false;
       return listed(s.allowed_emails, user.email) || listed(s.editors, user.email) || listed(ns.editors, user.email);
     })
-    .map((s) => ({ ...siteView(env, s, ctx.requestUrl), canManage: canManageSite(user, s, nsByLabel.get(s.namespace)!) }));
+    .map((s) => listedView(env, s, canManageSite(user, s, nsByLabel.get(s.namespace)!), ctx.requestUrl));
   const shown = new Set(out.map((v) => v.id));
   findMissingIcons(ctx, sites.results.filter((r) => shown.has(r.id)));
   return out;
@@ -467,7 +502,7 @@ export async function listSites(ctx: Ctx, rawNamespace?: string | null) {
       if (s.hidden && !manage) return false;
       return canViewSite(user, s, ns);
     })
-    .map((s) => ({ ...siteView(env, s, ctx.requestUrl), canManage: canManageSite(user, s, namespaces.get(s.namespace)!) }));
+    .map((s) => listedView(env, s, canManageSite(user, s, namespaces.get(s.namespace)!), ctx.requestUrl));
 }
 
 export interface PublishInput {
@@ -650,6 +685,7 @@ export interface SitePatch {
   editors?: unknown;
   sheets?: unknown;
   data_writes?: unknown;
+  public_link?: unknown;
 }
 
 export async function updateSite(ctx: Ctx, id: string, patch: SitePatch) {
@@ -708,6 +744,12 @@ export async function updateSite(ctx: Ctx, id: string, patch: SitePatch) {
   if (dataWrites) {
     set("kv_writes", dataWrites);
     if (changed.includes("kv_writes")) detail.dataWrites = dataWrites === "all" ? "everyone" : "editors";
+  }
+  const publicLink = parsePublicLink(patch.public_link);
+  if (publicLink !== undefined) {
+    const next = publicLink === false ? null : publicLink === "new" || !site.public_link ? newPublicLink() : site.public_link;
+    set("public_link", next);
+    if (changed.includes("public_link")) detail.publicLink = !next ? "off" : site.public_link ? "new" : "on";
   }
   if (patch.sheets !== undefined) {
     // The spreadsheets are reached with the owner's own Google account, so only the owner chooses them.
