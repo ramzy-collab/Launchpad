@@ -143,12 +143,14 @@ function showcase(copy: boolean): string {
 `;
 }
 
-export function homePage(): Response {
+/** `share` is the link preview tags (see share.ts). */
+export function homePage(share = ""): Response {
   return htmlResponse(`<!doctype html>
 <html lang="en">
 <head>
 ${homeHead("Formelab: SaaS is dead", ["site.js"])}
 <meta name="description" content="Software that fits you, not the other way around. Describe what you need, and Formelab makes it real.">
+${share}
 </head>
 <body>
 ${topNav()}
@@ -208,13 +210,13 @@ ${topNav()}
  * /login goes straight to WorkOS's sign-in page instead (see loginStartPath).
  * `admin` is the admin panel's own, separate sign-in on admin.DOMAIN.
  */
-export function loginPage(opts: { returnTo: string; admin?: boolean }): Response {
+export function loginPage(opts: { returnTo: string; admin?: boolean; share?: string }): Response {
   const options = `<a class="btn w100" href="/app">Log in</a>
       <p class="hint">You'll confirm it's you with a one-time code sent to your email, or with your work account.</p>`;
   return htmlResponse(`<!doctype html>
 <html lang="en">
 <head>
-${homeHead(opts.admin ? "Formelab admin" : "Log in to Formelab")}
+${homeHead(opts.admin ? "Formelab admin" : "Log in to Formelab")}${opts.share ? "\n" + opts.share : ""}
 </head>
 <body>
 ${topNav(opts.admin, false)}

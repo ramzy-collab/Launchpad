@@ -23,12 +23,15 @@ const assets = {
   INSTALL_JS: "src/dashboard/install.js",
   SW_JS: "src/dashboard/sw.js",
 };
-// Images, bundled as base64 (the app icons for installing Formelab on a device).
+// Images and fonts, bundled as base64 (the app icons for installing Formelab on a device).
 const binaryAssets = {
   ICON_192_PNG: "src/dashboard/icons/icon-192.png",
   ICON_512_PNG: "src/dashboard/icons/icon-512.png",
   MASKABLE_512_PNG: "src/dashboard/icons/maskable-512.png",
   APPLE_TOUCH_ICON_PNG: "src/dashboard/icons/apple-touch-icon.png",
+  // Fonts for drawing link preview cards (see src/share.ts). SIL Open Font License.
+  DISPLAY_FONT_TTF: "src/fonts/BricolageGrotesque_800ExtraBold.ttf",
+  TEXT_FONT_TTF: "src/fonts/Inter_600SemiBold.ttf",
 };
 
 export function generateAssets() {

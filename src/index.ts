@@ -23,6 +23,7 @@ import { canViewSite } from "./auth";
 import { getNamespace, getSiteByHostLabel, type SiteRow } from "./sites";
 import { joinWaitlist } from "./waitlist";
 import { appManifest, appPwaIcon, pwaRoutes } from "./pwa";
+import { appPreviewPage, appShareImage, formelabPreviewPage, formelabShareImage, formelabShareTags, isPreviewBot } from "./share";
 
 const text = (body: string, type: string, cache = "no-cache") =>
   new Response(body, {
@@ -80,7 +81,7 @@ apex.route("/_api/deploy", managementApi("deploy"));
 // files they load. Someone already signed in goes straight to their dashboard.
 apex.get("/", async (c) => {
   if (hasSignIn(c.req.raw) && (await identifyBrowser(c.req.raw, c.env))) return c.redirect(`${appOrigin(c.env, c.req.url)}/`, 302);
-  return homePage();
+  return homePage(formelabShareTags(c.env, c.req.url, "Formelab: SaaS is dead"));
 });
 // Formelab's own sign-in page (see signin.ts); Google and stray WorkOS sign-ins use /auth/*.
 apex.get("/login", signInGet);
@@ -97,6 +98,7 @@ apex.post("/_api/waitlist", async (c) => {
   return c.json({ ok: true });
 });
 for (const [path, handler] of assetRoutes) apex.get(path, handler);
+apex.get("/_assets/share.png", formelabShareImage);
 
 // Old dashboard and admin addresses on DOMAIN move to their own hosts.
 const moved = (origin: typeof appOrigin, prefix: string) => (c: Context<AppEnv>) => {
@@ -142,6 +144,8 @@ const requireSignIn: MiddlewareHandler<AppEnv> = async (c, next) => {
   const who = await identifyBrowser(c.req.raw, c.env);
   if (!who) {
     if (c.req.path.startsWith("/_api/")) return jsonError(unauthorized());
+    // Link previews (iMessage, Slack, ...) get Formelab's card instead of the sign-in redirect.
+    if ((c.req.method === "GET" || c.req.method === "HEAD") && isPreviewBot(c.req.raw)) return formelabPreviewPage(c);
     if (c.req.method !== "GET") return unauthorizedPage();
     return c.redirect(`${aiOrigin(c.env, c.req.url)}/auth/app?return=${encodeURIComponent(c.req.url)}`, 302);
   }
@@ -198,6 +202,7 @@ function signedInHost(requireSignIn: MiddlewareHandler<AppEnv>, routes: (app: Ho
 const webApp = signedInHost(requireSignIn, (app) => {
   app.get("/_auth/callback", appCallback);
   for (const [path, handler] of pwaRoutes) app.get(path, handler);
+  app.get("/_assets/share.png", formelabShareImage);
 });
 webApp.get("/", async (c) => dashboardPage(c));
 webApp.get("/shared", async (c) => sharedPage(c));
@@ -260,6 +265,8 @@ siteApp.get("/healthz", () => text("ok", "text/plain; charset=utf-8", "no-store"
 siteApp.get("/_auth/callback", appCallback);
 // App icons for installing an app: signed addresses from its manifest, so no sign-in (see pwa.ts).
 siteApp.get("/_platform/app-icon/:id/:version/:kind/:sig", appPwaIcon);
+// The app's link preview image, public so iMessage, Slack and others can show it (see share.ts).
+siteApp.get("/_platform/share.png", appShareImage);
 
 // Everything else: a signed-in person who may open this app.
 siteApp.use("*", async (c, next) => {
@@ -267,6 +274,8 @@ siteApp.use("*", async (c, next) => {
   const who = await identifyBrowser(c.req.raw, c.env);
   if (!who) {
     if (c.req.path.startsWith("/_api/")) return jsonError(unauthorized());
+    // Link previews (iMessage, Slack, ...) get the app's title and image instead of the sign-in redirect.
+    if ((c.req.method === "GET" || c.req.method === "HEAD") && !c.req.path.startsWith("/_") && isPreviewBot(c.req.raw)) return appPreviewPage(c);
     if (c.req.method === "GET" && workosEnabled(c.env)) {
       return c.redirect(`${apexOrigin(c.env, c.req.url)}/auth/app?return=${encodeURIComponent(c.req.url)}`, 302);
     }

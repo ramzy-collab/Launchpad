@@ -26,6 +26,7 @@ import { homeHead, loginPage, topNav } from "./dashboard/home";
 import { htmlResponse, PAGE_CSP } from "./dashboard/layout";
 import { appOrigin, siteOrigin } from "./hosts";
 import { identifyBrowser } from "./auth";
+import { formelabShareTags } from "./share";
 import { cookieHeader, readCookie, SESSION_COOKIE } from "./session";
 import { escapeHtml as e, isEmail, normEmail } from "./util";
 
@@ -97,11 +98,15 @@ interface View {
   info?: string;
   /** HTML (already escaped) shown under the error, e.g. a link to another way in. */
   extra?: string;
+  /** Link preview tags (see share.ts). */
+  share?: string;
 }
 
 function view(c: Context<AppEnv>, returnTo: string): View {
   const last = readCookie(c.req.raw, LAST_USED_COOKIE);
-  return { admin: onAdminHost(c), returnTo, last: last === "email" || last === "google" ? last : null, csp: signinCsp(c) };
+  const admin = onAdminHost(c);
+  const share = admin ? "" : formelabShareTags(c.env, c.req.url, "Log in to Formelab");
+  return { admin, returnTo, last: last === "email" || last === "google" ? last : null, csp: signinCsp(c), share };
 }
 
 /**
@@ -124,7 +129,7 @@ function frame(v: View, title: string, intro: string, body: string, status = 200
     `<!doctype html>
 <html lang="en">
 <head>
-${homeHead(v.admin ? "Formelab admin" : "Log in to Formelab", ["signin.js"])}
+${homeHead(v.admin ? "Formelab admin" : "Log in to Formelab", ["signin.js"])}${v.share ? "\n" + v.share : ""}
 </head>
 <body>
 ${topNav(v.admin, false)}
@@ -224,7 +229,7 @@ function codeForm(v: View, email: string, verifying: boolean, status = 200): Res
 /** A sign-in page that only makes sense with WorkOS; without it, the Cloudflare Access login. */
 async function gate(c: Context<AppEnv>): Promise<{ v: View } | Response> {
   const returnTo = safeReturn(c.req.method === "GET" ? c.req.query("return") : String((await form(c)).get("return") ?? ""), homePath(c));
-  if (!workosEnabled(c.env)) return loginPage({ returnTo, admin: onAdminHost(c) });
+  if (!workosEnabled(c.env)) return loginPage({ returnTo, admin: onAdminHost(c), share: onAdminHost(c) ? "" : formelabShareTags(c.env, c.req.url, "Log in to Formelab") });
   if (c.req.method === "GET" && hasSignIn(c.req.raw) && (await identifyBrowser(c.req.raw, c.env))) return c.redirect(returnTo, 302);
   if (c.req.method === "POST") {
     const origin = c.req.header("origin");

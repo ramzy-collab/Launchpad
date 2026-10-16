@@ -132,8 +132,11 @@ section and don't ask the user anything: make sensible choices and build the who
 
 Reply with ONE complete, self-contained HTML document and nothing else: no explanation, no
 Markdown fences. Start with <!doctype html>. It must have a short, friendly <title> naming the
-app, a <link rel="icon"> with an inline SVG that fits the app, work well on a phone, and follow
-the guide's ground rules and checklist. Save data with formelab.kv (or formelab.kv.mine for each
+app, a <link rel="icon"> with an inline SVG that fits the app, a one-sentence
+<meta name="description">, and a share illustration for link previews: a <meta property="og:image">
+whose content is an inline, URL-encoded SVG data URI (viewBox 0 0 1200 630, under 20 KB) drawing the
+app's name and a simple stylized picture of what it's for (see the guide's "Link previews"). It
+must work well on a phone and follow the guide's ground rules and checklist. Save data with formelab.kv (or formelab.kv.mine for each
 person's own data) so it lasts; the app is published with data_writes "everyone", so every viewer
 can write shared data.`;
 
@@ -145,8 +148,9 @@ data people already saved still loads.
 
 Reply with the ONE complete, updated HTML document for the app's index.html and nothing else: no
 explanation, no Markdown fences, no "rest unchanged" placeholders. Start with <!doctype html>.
-Keep its <title> and icon unless asked to change them, and follow the guide's ground rules and
-checklist.`;
+Keep its <title>, icon, description and share illustration (<meta property="og:image">) unless
+asked to change them or the change makes them wrong; add the description and share illustration if
+it has none (see the guide's "Link previews"). Follow the guide's ground rules and checklist.`;
 
 /** The model's answer as an HTML document: tolerates a Markdown fence or a sentence around it. */
 export function extractHtml(text: string): string {
