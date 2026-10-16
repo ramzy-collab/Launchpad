@@ -118,6 +118,15 @@ describe("public links: anyone with the link", () => {
     expect(activity).toContain("Turned on a public link");
   });
 
+  it("shows link previews (iMessage, Slack) the app's card for a public link, without a cookie", async () => {
+    const { patch } = await newSite();
+    const { publicUrl } = await (await patch({ public_link: true })).json<View>();
+    const res = await call(publicUrl!, { headers: { "user-agent": "Slackbot-LinkExpanding 1.0 (+https://api.slack.com/robots)" } });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("set-cookie")).toBeNull();
+    expect(await res.text()).toContain("og:image");
+  });
+
   it("sends guests to sign in and back with formelab.signIn()", async () => {
     const { origin } = await newSite();
     const res = await call(`${origin}/_platform/sign-in?return=${encodeURIComponent("/board?x=1")}`);

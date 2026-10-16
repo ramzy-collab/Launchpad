@@ -2,6 +2,12 @@
 
 Everything that has changed in Formelab, newest first. Shown in the admin panel under Changelog.
 
+## 2026-10-16
+
+- **Shared links look great.** Send an app's link in iMessage, WhatsApp, Slack, Discord, LinkedIn or anywhere else with link previews and it now shows the app's name, a line about it and a big picture of what it is, instead of "Log in to Formelab". Opening the app still needs a sign-in; only the preview is public.
+- **Each app gets its own preview picture.** AI apps (Claude, ChatGPT, Gemini, Grok and Make it in Formelab) now draw a share illustration for every app they make, along with a one-line description. Apps without one, including every app made before today, get a card with their icon, name and description. App makers can also add their own `share.svg` or `share.png` (1200×630), or name one with `og:image`.
+- **Formelab's own links too.** formelab.ai, the login page and links into the web app show a Formelab card with "SaaS is dead." instead of a plain grey bubble.
+
 ## 2026-10-15
 
 - **Share an app with anyone who has the link.** Each app's page has a new **Public link** section: turn it on and copy a link that opens the app for anyone, no Formelab account needed. People who open it that way can look at the app and read its shared data, but can't change anything unless they sign in (apps can offer a sign-in button with `formelab.signIn()`). **Make a new link** stops the old one working, for everyone who used it; **Turn off** ends it. Owners can also do this from Claude and other AI apps (`update_site` with `public_link`), and changes show in the app's activity.

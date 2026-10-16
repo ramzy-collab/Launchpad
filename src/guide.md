@@ -215,6 +215,30 @@ steps instead, "Tap Share, then Add to Home Screen" on an iPhone or iPad, "File 
 Safari on a Mac. Hide the button when `installed()` is true.
 
 <!-- flag:connected_apps -->
+### Link previews: how your app looks when it's shared
+
+When someone sends your app's link in iMessage, WhatsApp, Slack, Discord or anywhere else that
+shows link previews, Formelab answers the preview with the app's title, a line of description
+and a big picture, even though opening the app still needs a sign-in. The picture and the text
+are public, so keep anyone's data out of them. Give your app:
+
+- **A `<meta name="description">`**: one plain sentence saying what the app does.
+- **A share illustration** that shows what the app is: a stylized drawing, not a screenshot.
+  Draw it as an SVG 1200 wide and 630 tall (`viewBox="0 0 1200 630"`), with the app's name in
+  big type and a simple picture of what it's for (a calendar for a planner, a ball and hoop for
+  a league, a ballot for a poll), in the app's own colors. Name it in `<head>`:
+
+  ```html
+  <meta property="og:image" content="share.svg">  <!-- share.svg in the zip -->
+  <meta property="og:image" content="data:image/svg+xml,%3Csvg ...">  <!-- or inline, URL-encoded, for a single-file app -->
+  ```
+
+  Keep it under 20 KB: flat shapes, no embedded photos or fonts, no scripts, no external
+  images (they aren't loaded). Text is drawn in Inter or Bricolage Grotesque, whatever
+  `font-family` you name. A PNG or JPEG (`share.png`, 1200×630) works too.
+
+Apps without a share illustration get a card made from their icon, title and description.
+
 ### `formelab.gemini`: AI in your app
 
 Calls Google **Gemini 3.5 Flash-Lite** (`gemini-3.5-flash-lite`) with the app owner's Gemini key,
@@ -366,6 +390,8 @@ Every visitor updates the visit counter, so publish it with `data_writes: "every
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Starter</title>
+  <meta name="description" content="Greets you, counts visits and calls an API through the proxy.">
+  <meta property="og:image" content="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1200 630'%3E%3Crect width='1200' height='630' fill='%23EFEDFE'/%3E%3Ccircle cx='930' cy='315' r='190' fill='%235B4CF5'/%3E%3Cpath d='M850 320l55 55 110-125' stroke='white' stroke-width='40' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3Ctext x='90' y='350' font-family='sans-serif' font-weight='800' font-size='110' fill='%231C1B19'%3EStarter%3C/text%3E%3C/svg%3E">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%235B4CF5'/%3E%3Cpath d='M20 34l8 8 16-18' stroke='white' stroke-width='6' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
   <style>
     body { font: 16px/1.5 system-ui, sans-serif; max-width: 40rem; margin: 2rem auto; padding: 0 1rem; }
@@ -479,5 +505,6 @@ The script calls `POST https://<DOMAIN>/_api/deploy/sites` (multipart: `file`, `
       data is in `formelab.kv.mine`; `data_writes: "everyone"` is set only if viewers must write shared KV.
 - [ ] Works on a phone (responsive layout, `<meta name="viewport">`), and as an installed app (every screen has a way back).
 - [ ] **Has an icon (required):** a small SVG that fits the app, linked in `<head>` as `<link rel="icon" href="data:image/svg+xml,...">` (URL-encoded SVG), or as `<link rel="icon" href="icon.svg">` with `icon.svg` in the zip. Formelab shows it on the app's tile, and the `publish` tool refuses apps without one (`icon_required`).
+- [ ] **Has a share illustration and description (recommended):** a 1200×630 SVG that shows what the app is, named by `<meta property="og:image">`, and a one-sentence `<meta name="description">`, for link previews in iMessage, Slack and the rest (see "Link previews"). No one's data in them: they're public.
 - [ ] Apps are private by default (only the owner and editors). Add `allowed_emails` for the people who should open it; they see it under "Shared with me".
 - [ ] Published with the right `namespace` and `mount_path`; the URL was shared with the user.

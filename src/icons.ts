@@ -15,13 +15,14 @@ const WELL_KNOWN = ["apple-touch-icon.png", "favicon.svg", "favicon.png", "favic
 const MAX_DATA_URI = 48 * 1024;
 const MAX_ICON_BYTES = 1024 * 1024;
 
-const attr = (tag: string, name: string) => {
+/** An attribute's value in an HTML tag, or null. */
+export const attr = (tag: string, name: string) => {
   const m = new RegExp(`\\b${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`, "i").exec(tag);
   return m ? (m[1] ?? m[2] ?? m[3] ?? "").trim() : null;
 };
 
 /** A file path inside the app for an href in its index.html, or null for anything outside it. */
-function resolveHref(href: string, mount: string): string | null {
+export function resolveHref(href: string, mount: string): string | null {
   let p = href.split(/[?#]/)[0]!;
   if (/^[a-z][a-z0-9+.-]*:/i.test(p) || p.startsWith("//")) return null;
   try {
@@ -63,9 +64,8 @@ export function findIcon(paths: Iterable<string>, indexHtml: string, mount: stri
   return WELL_KNOWN.find(isImage) ?? "";
 }
 
-/** The icon for a site, looking for it (and remembering the answer) if it hasn't been yet. */
-export async function iconPathFor(env: Ctx["env"], site: SiteRow & { icon_path?: string | null }): Promise<string> {
-  if (typeof site.icon_path === "string") return site.icon_path;
+/** The current version's file paths and the start of its index.html, for finding its icon and preview image. */
+export async function appFiles(env: Ctx["env"], site: SiteRow, headBytes = 64 * 1024): Promise<{ paths: string[]; indexHtml: string }> {
   const prefix = `sites/${site.id}/${site.current_version}/`;
   const paths: string[] = [];
   let cursor: string | undefined;
@@ -74,8 +74,15 @@ export async function iconPathFor(env: Ctx["env"], site: SiteRow & { icon_path?:
     for (const o of list.objects) paths.push(o.key.slice(prefix.length));
     cursor = list.truncated ? list.cursor : undefined;
   } while (cursor && paths.length < 5000);
-  const index = await env.BUCKET.get(prefix + "index.html", { range: { offset: 0, length: 64 * 1024 } });
-  const icon = findIcon(paths, index ? await index.text() : "", site.mount_path);
+  const index = await env.BUCKET.get(prefix + "index.html", { range: { offset: 0, length: headBytes } });
+  return { paths, indexHtml: index ? await index.text() : "" };
+}
+
+/** The icon for a site, looking for it (and remembering the answer) if it hasn't been yet. */
+export async function iconPathFor(env: Ctx["env"], site: SiteRow & { icon_path?: string | null }): Promise<string> {
+  if (typeof site.icon_path === "string") return site.icon_path;
+  const { paths, indexHtml } = await appFiles(env, site);
+  const icon = findIcon(paths, indexHtml, site.mount_path);
   await env.DB.prepare("UPDATE sites SET icon_path = ? WHERE id = ? AND current_version = ?").bind(icon, site.id, site.current_version).run();
   return icon;
 }
@@ -84,12 +91,19 @@ const HUES = ["#5B4CF5", "#FF6B4A", "#2BC48A", "#F5A623", "#E5487D", "#3B82F6", 
 const xml = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
 /** The letter tile, as an SVG, for apps without an icon. Same colors as the tiles' hue-N classes. */
-export function letterIcon(site: SiteRow): string {
+/** The app's color: the same one its letter tile and the web app's hue-N class use. */
+export function hueOf(site: Pick<SiteRow, "id">): string {
   let h = 0;
   for (const ch of site.id) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
-  const name = site.title || site.mount_path || site.namespace;
-  const letter = (name.match(/[\p{L}\p{N}]/u)?.[0] ?? "•").toUpperCase();
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="18" fill="${HUES[h % 8]}"/><text x="32" y="43" text-anchor="middle" font-family="system-ui,sans-serif" font-size="30" font-weight="800" fill="#fff">${xml(letter)}</text></svg>`;
+  return HUES[h % 8]!;
+}
+
+/** The letter on an app's tile. */
+export const letterOf = (site: SiteRow) => ((site.title || site.mount_path || site.namespace).match(/[\p{L}\p{N}]/u)?.[0] ?? "•").toUpperCase();
+
+export function letterIcon(site: SiteRow): string {
+  const letter = letterOf(site);
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="18" fill="${hueOf(site)}"/><text x="32" y="43" text-anchor="middle" font-family="system-ui,sans-serif" font-size="30" font-weight="800" fill="#fff">${xml(letter)}</text></svg>`;
 }
 
 // An icon is untrusted content from the app. Served from the web app's own host, an SVG opened

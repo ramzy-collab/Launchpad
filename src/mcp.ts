@@ -98,7 +98,9 @@ export function buildServer(ctx: Ctx): McpServer {
         "or `zip_base64` (a base64 zip with index.html at its root). Replacing an existing app keeps its KV data, secrets and " +
         "sharing settings: visibility and allowed_emails only apply to a new app; change sharing with update_site. " +
         "Creates the namespace if it does not exist yet. The app MUST have an icon: a small SVG that fits the app, linked from " +
-        "index.html's <head> as <link rel=\"icon\" href=\"data:image/svg+xml,...\"> (or an icon.svg file in the zip); without one, publish fails with icon_required.",
+        "index.html's <head> as <link rel=\"icon\" href=\"data:image/svg+xml,...\"> (or an icon.svg file in the zip); without one, publish fails with icon_required. " +
+        "Also give it a <meta name=\"description\"> and a share illustration for link previews (iMessage, Slack, WhatsApp): a 1200x630 SVG " +
+        "that shows what the app is, named by <meta property=\"og:image\" content=\"share.svg\"> (or an inline data:image/svg+xml URI); see the guide's \"Link previews\".",
       inputSchema: {
         html: z.string().optional().describe("Complete HTML document for a single-file app"),
         zip_base64: z.string().optional().describe("Base64-encoded .zip with index.html at its root"),

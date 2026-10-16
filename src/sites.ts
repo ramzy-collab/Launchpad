@@ -1,5 +1,6 @@
 import { audit } from "./audit";
 import { findIcon, iconPathFor } from "./icons";
+import { findShareImage } from "./share";
 import { canManageSite, canPublishTo, canViewSite, isNamespaceEditor, isNamespaceOwner, ownerOnly } from "./auth";
 import type { Env, User } from "./env";
 import { now } from "./env";
@@ -53,6 +54,8 @@ export interface SiteRow {
   updated_at: number;
   /** See src/icons.ts: NULL = not looked for yet, "" = none. */
   icon_path?: string | null;
+  /** See src/share.ts: NULL = not looked for yet, "" = none (a card is drawn). */
+  share_path?: string | null;
   /** JSON array of the Google spreadsheet ids the app may use (see src/sheets.ts). */
   sheets?: string;
   /** The app's own host, <host_label>.APP_DOMAIN, e.g. "hoops-7kq2" (see src/hosts.ts). */
@@ -562,6 +565,8 @@ export async function publishSite(ctx: Ctx, input: PublishInput) {
   if (!input.files.has("index.html")) throw badRequest("The upload has no index.html.", "Include an index.html at the root.");
   // The app's icon for the web app's tiles (see icons.ts).
   const icon = findIcon(input.files.keys(), new TextDecoder().decode(input.files.get("index.html")!.subarray(0, 64 * 1024)), mount);
+  // Its link preview image (see share.ts).
+  const share = findShareImage(input.files.keys(), new TextDecoder().decode(input.files.get("index.html")!.subarray(0, 192 * 1024)), mount);
   if (input.requireIcon && !icon) throw err(400, "icon_required", "This app has no icon (favicon). Formelab shows it on the app's tile.", ICON_HINT);
 
   let ns = await getNamespace(env, label);
@@ -656,8 +661,9 @@ export async function publishSite(ctx: Ctx, input: PublishInput) {
     throw e;
   }
   if (existing) ctx.waitUntil(deletePrefix(env.BUCKET, `sites/${id}/${existing.current_version}/`).catch(() => {}));
-  await env.DB.prepare("UPDATE sites SET icon_path = ? WHERE id = ? AND current_version = ?").bind(icon, id, version).run();
+  await env.DB.prepare("UPDATE sites SET icon_path = ?, share_path = ? WHERE id = ? AND current_version = ?").bind(icon, share, id, version).run();
   row.icon_path = icon;
+  row.share_path = share;
   await audit(env, user.email, existing ? "replace" : "publish", `${label}/${mount}`, {
     siteId: id,
     version,
