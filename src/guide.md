@@ -444,9 +444,7 @@ Every visitor updates the visit counter, so publish it with `data_writes: "every
 ### With the MCP `publish` tool (preferred)
 
 If the Formelab MCP server is connected (tools named `publish`, `list_sites`, …). This works in
-Claude Code (deploy token), Claude chat and ChatGPT (custom connectors with sign-in). To change an
-existing app, `search` for it and `fetch` it to read its current `index.html`, then `publish` the
-edited version to the same `namespace` and `mount_path`:
+Claude Code (deploy token), Claude chat and ChatGPT (custom connectors with sign-in).
 
 1. `list_namespaces` to see where you can publish. If there are none, pick a short namespace
    name; publishing to a free namespace creates it.
@@ -454,6 +452,20 @@ edited version to the same `namespace` and `mount_path`:
    `mount_path`. Optional: `title`, `spa`, `visibility`, `allowed_emails`, `data_writes`
    (`"everyone"` if viewers write to shared KV; the default `"editors"` otherwise).
 3. Give the user the returned `url` (the app's own address, like `https://budget-7kq2.<APP_DOMAIN>/`).
+
+**Changing an existing app: send only the changes.** Don't resend the whole app; for a large app
+that takes minutes. Read the file with `read_file` (`namespace`, `mount_path`, `path`, default
+`index.html`; large files come in pages, so pass the `offset` it gives you), then `publish` to the
+same `namespace` and `mount_path` with:
+
+- `edits`: `[{ "path": "index.html", "old_str": "...", "new_str": "..." }]`. Each `old_str` is
+  copied exactly from the current file (spaces and line breaks included) and must occur exactly
+  once; edits apply in order, and if one fails nothing is published. `path` defaults to `index.html`.
+- `files`: `{ "app.js": "...whole new text..." }` to add or replace whole text files, `null` to
+  delete one. Applied before `edits`.
+
+Files you don't mention stay as they are, and the result lists the files that `changed`. Send the
+whole app (`html` or `zip_base64`) only for a new app, or when most of it changes.
 
 Publishing to an existing path replaces the app atomically; its KV data, secrets and sharing
 settings (who can open and edit it, who can change its data) are kept. `visibility`,
@@ -470,10 +482,18 @@ export FORMELAB_TOKEN=fl_...
 export FORMELAB_DOMAIN=example.com
 scripts/publish.sh --file app.html --namespace ramzy --path budget --title "Budget"
 scripts/publish.sh --file site.zip --namespace ramzy --path docs --spa
+scripts/publish.sh --dir dist --changed-only --namespace ramzy --path docs
 ```
 
+`--dir` zips a folder for you. With `--changed-only`, the script compares the folder with the live
+app and uploads only the files that differ (and removes the ones that are gone), so updating a
+large app sends a few files instead of all of them.
+
 The script calls `POST https://<DOMAIN>/_api/deploy/sites` (multipart: `file`, `namespace`,
-`mount_path`, `title`, `spa`, `visibility`, `allowed_emails`).
+`mount_path`, `title`, `spa`, `visibility`, `allowed_emails`; with `merge=true`, `file` is a zip of
+only the changed files and `delete` lists paths to remove, one per line).
+`GET /_api/deploy/sites/manifest?namespace=…&mount_path=…` lists the live files with their SHA-256
+(`&format=sha256sum` for `sha256sum` lines). The JSON body also takes `edits` and `files`, as above.
 
 ## 7. Agent checklist
 

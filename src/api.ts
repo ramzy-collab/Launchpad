@@ -9,11 +9,15 @@ import {
   listNamespaces,
   listSites,
   publishSite,
+  requireManageableSite,
+  siteIdByMount,
+  siteManifest,
   updateNamespaceEditors,
   updateSite,
   type Ctx,
 } from "./sites";
 import { filesFromHtml, filesFromUpload, filesFromZip, MAX_UPLOAD_BYTES, type FileMap } from "./upload";
+import { filesForPublish } from "./changes";
 import { listConnections, revokeConnection } from "./oauth";
 import { approveWaitlist, setPassword } from "./login";
 import { connectGemini, disconnectGemini, geminiStatus } from "./gemini";
@@ -74,29 +78,55 @@ export function managementApi(kind: "admin" | "deploy") {
 
   api.get("/sites", async (c) => c.json(await listSites(ctxOf(c), c.req.query("namespace"))));
 
+  // What the live version holds, so a deploy script can upload only what changed (scripts/publish.sh
+  // --changed-only). format=sha256sum gives `sha256sum` lines; a file published before hashes were
+  // kept shows 64 zeros, so it never matches and is uploaded again.
+  api.get("/sites/manifest", async (c) => {
+    const ctx = ctxOf(c);
+    const { site } = await requireManageableSite(ctx, await siteIdByMount(ctx, c.req.query("namespace"), c.req.query("mount_path") ?? ""));
+    const manifest = await siteManifest(c.env, site);
+    if (c.req.query("format") === "sha256sum") {
+      return c.text(manifest.files.map((f) => `${f.sha256 ?? "0".repeat(64)}  ${f.path}\n`).join(""));
+    }
+    return c.json(manifest);
+  });
+
   api.post("/sites", async (c) => {
     const len = Number(c.req.header("content-length") ?? 0);
     if (len > MAX_UPLOAD_BYTES * 1.4 + 1024 * 1024) throw err(413, "too_large", "The upload is larger than 25 MB.", "Shrink the upload and try again.");
     const type = c.req.header("content-type") ?? "";
+    const ctx = ctxOf(c);
     let fields: Record<string, unknown>;
-    let files: FileMap;
+    let publish: Awaited<ReturnType<typeof filesForPublish>>;
     if (type.includes("application/json")) {
       fields = await jsonBody(c);
-      files = filesFromJson(fields);
+      publish = await filesForPublish(ctx, fields);
     } else if (type.includes("multipart/form-data")) {
       const form = await c.req.formData();
-      const file = form.get("file");
-      if (!file || typeof file === "string") throw badRequest("Missing the file field.", "Attach the .html or .zip as a form field named \"file\".");
-      files = filesFromUpload(file.name ?? "", new Uint8Array(await file.arrayBuffer()));
       fields = {};
       for (const [k, v] of form.entries()) if (typeof v === "string") fields[k] = v;
+      const file = form.get("file");
+      if (fields.merge === "true") {
+        // Only the changed files (a zip, optional when only deleting) laid over the live version,
+        // and `delete`: paths to remove, one per line.
+        const overlay = file && typeof file !== "string" ? filesFromZip(new Uint8Array(await file.arrayBuffer()), { partial: true }) : undefined;
+        const del = typeof fields.delete === "string" ? fields.delete.split("\n").map((p) => p.trim()).filter(Boolean) : [];
+        publish = await filesForPublish(ctx, { namespace: fields.namespace, mount_path: fields.mount_path }, {
+          overlay: overlay ?? new Map(),
+          ...(del.length ? { deletes: del } : {}),
+        });
+      } else {
+        if (!file || typeof file === "string") throw badRequest("Missing the file field.", "Attach the .html or .zip as a form field named \"file\".");
+        publish = { files: filesFromUpload(file.name ?? "", new Uint8Array(await file.arrayBuffer())) };
+      }
     } else {
-      throw badRequest("Unsupported content type.", "Send multipart/form-data with a file field, or JSON with html or zip_base64.");
+      throw badRequest("Unsupported content type.", "Send multipart/form-data with a file field, or JSON with html, zip_base64, files or edits.");
     }
-    const result = await publishSite(ctxOf(c), {
+    const result = await publishSite(ctx, {
       namespace: fields.namespace,
       mountPath: fields.mount_path ?? "",
-      files,
+      files: publish.files,
+      expectedVersion: publish.expectedVersion,
       title: fields.title,
       spa: fields.spa,
       visibility: fields.visibility,
@@ -104,7 +134,7 @@ export function managementApi(kind: "admin" | "deploy") {
       editors: fields.editors,
       dataWrites: fields.data_writes,
     });
-    return c.json(result, result.replaced ? 200 : 201);
+    return c.json({ ...result, ...(publish.changed ? { changed: publish.changed } : {}) }, result.replaced ? 200 : 201);
   });
 
   api.patch("/sites/:id", async (c) => c.json(await updateSite(ctxOf(c), c.req.param("id"), await jsonBody(c))));

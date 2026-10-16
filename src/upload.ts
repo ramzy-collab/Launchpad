@@ -144,9 +144,10 @@ function inflateLimited(data: Uint8Array, budget: { remaining: number }, name: s
  * Unzips an upload into a file map, enforcing every limit while decompressing:
  * 25 MB compressed, 100 MB uncompressed in total, 2,000 files, no symlinks,
  * no traversal, no reserved paths, and index.html at the root (after stripping
- * a single shared top-level folder).
+ * a single shared top-level folder). With `partial`, the zip holds only some of an app's files
+ * (laid over its current ones): paths are taken as they are and index.html may be missing.
  */
-export function filesFromZip(zip: Uint8Array): FileMap {
+export function filesFromZip(zip: Uint8Array, opts: { partial?: boolean } = {}): FileMap {
   if (zip.length > MAX_UPLOAD_BYTES) throw tooLarge("The upload is larger than 25 MB.");
   const entries = readCentralDirectory(zip);
   const dv = new DataView(zip.buffer, zip.byteOffset, zip.byteLength);
@@ -169,7 +170,7 @@ export function filesFromZip(zip: Uint8Array): FileMap {
 
   // Strip one shared top-level folder ("my-app/index.html" -> "index.html").
   const firstSegs = new Set(files.map((f) => (f.path.includes("/") ? f.path.split("/")[0] : "")));
-  if (firstSegs.size === 1 && !firstSegs.has("")) {
+  if (!opts.partial && firstSegs.size === 1 && !firstSegs.has("")) {
     const prefix = [...firstSegs][0] + "/";
     for (const f of files) f.path = f.path.slice(prefix.length);
   }
@@ -179,7 +180,7 @@ export function filesFromZip(zip: Uint8Array): FileMap {
     if (out.has(f.path)) throw invalidZip(`The zip contains "${clip(f.path)}" more than once.`);
     out.set(f.path, new Uint8Array(0));
   }
-  if (!out.has("index.html")) {
+  if (!opts.partial && !out.has("index.html")) {
     throw badRequest("The zip has no index.html at its root.", "Put index.html at the top level of the zip (or inside a single top-level folder).");
   }
 
