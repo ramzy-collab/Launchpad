@@ -612,3 +612,36 @@ Choices made while building v1, including where the build differs from the spec 
   adds a unique index; the chance of two labels colliding is negligible at today's size, and a
   failed run can simply be re-run.
 - Dev: `APP_DOMAIN=apps.localhost`, since the web app now takes `app.localhost`.
+
+## Link previews (src/share.ts)
+
+- **Preview fetchers are recognized by user agent.** Every app needs a sign-in and the services that
+  fetch link previews never have one, so before this a shared app link previewed as "Log in to
+  Formelab". On an app's host (and the web app), a GET without a sign-in from a known fetcher
+  (facebookexternalhit and Twitterbot, which iMessage sends; Slackbot, Discordbot, WhatsApp, which
+  Signal also sends; TelegramBot, LinkedInBot, SkypeUriPreview and a few more) gets a small page
+  with only Open Graph and Twitter card tags. People keep the sign-in redirect. In-app browsers
+  (Facebook's FBAN, Teams, Snapchat, LinkedInApp) are deliberately not matched, so a person opening
+  a link inside those apps still signs in. A user agent can be faked, but the page shows only what
+  the preview shows anyway: the title, the description and the image, never the app's files, data
+  or API (`/_api`, `/_platform` stay closed). The page is `noindex`.
+- **Previews are public for every app, restricted ones included** (the owner's choice: a shared
+  link should look right wherever it's sent). The title and description come from the app's title
+  setting, else its `og:title`/`<title>` and `og:description`/`<meta name="description">`.
+- **The image is the app's own drawing.** The AI that builds the app knows what it is, so the guide,
+  the MCP publish tool and the in-Formelab builder ask for a 1200×630 SVG illustration named by
+  `<meta property="og:image">` (a file or an inline data URI, since the builder writes one HTML
+  file), or `share.svg`/`share.png`. It's found at publish time like the icon and stored in
+  `sites.share_path` (migration 0017; NULL = not looked for yet, so older apps are looked at on
+  first request). Screenshots were rejected because they would publish people's data from the app;
+  an image model was rejected because it needs the owner's paid key.
+- **SVG to PNG with resvg-wasm.** Link preview services don't show SVG, so `/_platform/share.png`
+  draws it as a PNG 1200 wide. resvg has no network or file access, so an app's SVG can't load
+  anything; text uses the bundled Bricolage Grotesque 800 and Inter 600 (OFL, in `src/fonts`,
+  bundled as base64 by gen-assets) whatever family it names. Apps without an illustration, or with
+  one resvg can't draw, get a card drawn from their icon (PNG, JPEG, GIF or SVG; else their letter),
+  color, title and description. Images are cached with the Cache API per app version. The wasm adds
+  about 1.2 MB gzipped to the Worker (1.9 MB total, under the paid plan's 10 MB).
+- **An https og:image is used as is** (it's already public); one on the app's own host would need a
+  sign-in, so apps should use a relative path instead.
+

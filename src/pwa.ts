@@ -96,7 +96,7 @@ async function sign(env: Env, message: string): Promise<string> {
 }
 
 /** A signed address for an app's icon (or its letter tile) on the app's own host, for this version. */
-async function iconUrl(env: Env, site: SiteRow, kind: IconKind): Promise<string> {
+export async function iconUrl(env: Env, site: SiteRow, kind: IconKind): Promise<string> {
   const sig = await sign(env, `${site.id}:${site.current_version}:${kind}`);
   return `/_platform/app-icon/${encodeURIComponent(site.id)}/${site.current_version}/${kind}/${sig}`;
 }
@@ -120,7 +120,7 @@ export async function appPwaIcon(c: Context<AppEnv>): Promise<Response> {
   return new Response(res.body, { headers });
 }
 
-const appTitle = (site: SiteRow) => site.title || site.mount_path.split("/").pop() || site.namespace;
+export const appTitle = (site: SiteRow) => site.title || site.mount_path.split("/").pop() || site.namespace;
 
 /** The icons for an app's manifest: its own when it's an SVG or a PNG of at least 144px, else its letter tile. */
 async function manifestIcons(env: Env, site: IconSite) {
