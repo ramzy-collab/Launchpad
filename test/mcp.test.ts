@@ -63,7 +63,7 @@ describe("MCP server", () => {
     expect(init.result.serverInfo.name).toBe("formelab");
     const { result } = await rpc(t, "tools/list");
     const names = result.tools.map((x: { name: string }) => x.name).sort();
-    expect(names).toEqual(["delete_site", "fetch", "get_guide", "list_namespaces", "list_sites", "publish", "search", "update_site", "whoami"]);
+    expect(names).toEqual(["delete_site", "fetch", "get_guide", "list_namespaces", "list_sites", "publish", "read_file", "search", "update_site", "whoami"]);
     const del = result.tools.find((x: { name: string }) => x.name === "delete_site");
     expect(del.description).toMatch(/permanent/i);
   });
@@ -124,6 +124,73 @@ describe("MCP server", () => {
     expect(both.data.error.hint).toBeTruthy();
     const neither = await tool(t, "publish", { namespace: uniq(), mount_path: "" });
     expect(neither.isError).toBe(true);
+  });
+
+  it("updates an app with edits and partial files instead of the whole app", async () => {
+    const t = await token();
+    const ns = uniq();
+    const pub = await tool(t, "publish", { html: ICON_PAGE("<h1>Count</h1><p>v1</p>"), namespace: ns, mount_path: "c", title: "Count" });
+    expect(pub.isError).toBe(false);
+    const kv = (init: Parameters<typeof call>[1] = {}) => call(`${pub.data.url}_api/kv/hits`, { as: OWNER, mount: "/c/", ...init });
+    expect((await kv({ method: "PUT", body: "7" })).status).toBe(200);
+
+    const ed = await tool(t, "publish", { namespace: ns, mount_path: "c", edits: [{ old_str: "<p>v1</p>", new_str: "<p>v2</p><script src=\"app.js\"></script>" }] });
+    expect(ed.isError, ed.text).toBe(false);
+    expect(ed.data).toMatchObject({ url: pub.data.url, replaced: true, changed: ["index.html"] });
+    expect(await (await call(pub.data.url, { as: OWNER })).text()).toContain("<p>v2</p>");
+
+    const fl = await tool(t, "publish", { namespace: ns, mount_path: "c", files: { "app.js": "console.log(1)" }, edits: [{ path: "app.js", old_str: "1", new_str: "2" }] });
+    expect(fl.data.site.fileCount).toBe(2);
+    expect(await (await call(`${pub.data.url}app.js`, { as: OWNER })).text()).toBe("console.log(2)");
+    expect(await (await call(pub.data.url, { as: OWNER })).text()).toContain("<p>v2</p>"); // untouched
+    // Data and settings are kept, as with a whole publish.
+    expect(await (await kv()).json()).toEqual({ value: 7 });
+    expect(fl.data.site.title).toBe("Count");
+
+    // A failed edit publishes nothing.
+    const bad = await tool(t, "publish", { namespace: ns, mount_path: "c", edits: [{ old_str: "v2", new_str: "v3" }, { old_str: "missing", new_str: "x" }] });
+    expect(bad.isError).toBe(true);
+    expect(bad.data.error.message).toBe("Edit 2 (index.html): old_str was not found.");
+    expect(await (await call(pub.data.url, { as: OWNER })).text()).toContain("<p>v2</p>");
+
+    // A new app from files alone; edits need an existing app; whole app and changes don't mix.
+    expect((await tool(t, "publish", { namespace: ns, mount_path: "f", files: { "index.html": ICON_PAGE("from files"), "a.css": "" } })).data.site.fileCount).toBe(2);
+    expect((await tool(t, "publish", { namespace: ns, mount_path: "nope", edits: [{ old_str: "a", new_str: "b" }] })).data.error.code).toBe("not_found");
+    expect((await tool(t, "publish", { namespace: ns, mount_path: "c", html: ICON_PAGE("x"), edits: [{ old_str: "a", new_str: "b" }] })).data.error.message).toContain("not both");
+
+    // Someone who can't manage the app learns nothing about its contents.
+    const other = await tool(await token("mallory@example.com"), "publish", { namespace: ns, mount_path: "c", edits: [{ old_str: "secret", new_str: "x" }] });
+    expect(other.data.error.code).toBe("not_yours");
+  });
+
+  it("reads an app's files whole, in pages for large ones", async () => {
+    const t = await token();
+    const ns = uniq();
+    const big = "x".repeat(600 * 1024);
+    const { makeZip } = await import("./helpers");
+    const zip = makeZip({ "index.html": ICON_PAGE("<p>hello</p>"), "big.js": `/*${big}*/`, "logo.png": new Uint8Array([0x89, 0x50, 0xff, 0xfe]) });
+    let b64 = "";
+    for (const byte of zip) b64 += String.fromCharCode(byte);
+    expect((await tool(t, "publish", { zip_base64: btoa(b64), namespace: ns, mount_path: "r" })).isError).toBe(false);
+
+    const idx = await tool(t, "read_file", { namespace: ns, mount_path: "r" });
+    expect(idx.text).toContain("File: index.html");
+    expect(idx.text).toContain("big.js (");
+    expect(idx.text.endsWith(ICON_PAGE("<p>hello</p>"))).toBe(true);
+
+    const p1 = await tool(t, "read_file", { namespace: ns, mount_path: "r", path: "big.js" });
+    const next = Number(/offset (\d+)/.exec(p1.text)?.[1]);
+    expect(next).toBe(512 * 1024);
+    const p2 = await tool(t, "read_file", { namespace: ns, mount_path: "r", path: "big.js", offset: next });
+    expect(p2.text).not.toContain("More follows");
+    const body = (r: string) => r.slice(r.indexOf("\n\n") + 2);
+    expect(body(p1.text) + body(p2.text)).toBe(`/*${big}*/`);
+
+    expect((await tool(t, "read_file", { namespace: ns, mount_path: "r", path: "logo.png" })).text).toContain("binary file");
+    const missing = await tool(t, "read_file", { namespace: ns, mount_path: "r", path: "nope.js" });
+    expect(missing.isError).toBe(true);
+    expect(missing.data.error.hint).toContain("big.js");
+    expect((await tool(await token("mallory@example.com"), "read_file", { namespace: ns, mount_path: "r" })).data.error.code).toBe("not_found");
   });
 
   it("returns permission errors as tool errors with hints", async () => {

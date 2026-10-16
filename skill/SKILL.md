@@ -35,5 +35,7 @@ server.
 5. **Report** the returned URL to the user, plus anything they must do next (for example, "open the
    app and paste your API key in Settings").
 
-For later changes, publish again to the same `namespace` + `mount_path` (data and secrets are kept),
-or use `update_site` for settings only. `delete_site` is permanent; only use it when asked.
+For later changes, don't resend the whole app: read the file with `read_file`, then `publish` to the
+same `namespace` + `mount_path` with only `edits` (exact `old_str` → `new_str` pairs) and/or `files`
+(whole text files to add or replace; `null` deletes). Everything else, plus data and secrets, is
+kept. This is much faster for large apps. Use `update_site` for settings only. `delete_site` is permanent; only use it when asked.
