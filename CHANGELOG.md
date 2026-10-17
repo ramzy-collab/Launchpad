@@ -11,6 +11,10 @@ Everything that has changed in Formelab, newest first. Shown in the admin panel 
 - **Each app gets its own preview picture.** AI apps (Claude, ChatGPT, Gemini, Grok and Make it in Formelab) now draw a share illustration for every app they make, along with a one-line description. Apps without one, including every app made before today, get a card with their icon, name and description. App makers can also add their own `share.svg` or `share.png` (1200×630), or name one with `og:image`.
 - **Formelab's own links too.** formelab.ai, the login page and links into the web app show a Formelab card with "SaaS is dead." instead of a plain grey bubble.
 
+## 2026-10-15
+
+- **Share an app with anyone who has the link.** Each app's page has a new **Public link** section: turn it on and copy a link that opens the app for anyone, no Formelab account needed. People who open it that way can look at the app and read its shared data, but can't change anything unless they sign in (apps can offer a sign-in button with `formelab.signIn()`). **Make a new link** stops the old one working, for everyone who used it; **Turn off** ends it. Owners can also do this from Claude and other AI apps (`update_site` with `public_link`), and changes show in the app's activity.
+
 ## 2026-10-14
 
 - **Make and change apps with Grok.** New app has a **Make it with Grok** button next to Claude, ChatGPT and Gemini, and app pages get **Change it with Grok**. It takes an API key from console.x.ai (billed to your own xAI account) and uses the newest Grok model the key can use.

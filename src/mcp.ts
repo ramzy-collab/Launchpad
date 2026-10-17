@@ -194,6 +194,14 @@ export function buildServer(ctx: Ctx): McpServer {
           .array(z.string())
           .optional()
           .describe("Owner only: the Google spreadsheets (ids or links) this app may use through formelab.sheets. Replaces the list."),
+        public_link: z
+          .union([z.boolean(), z.literal("new")])
+          .optional()
+          .describe(
+            "\"Anyone with the link\": true turns on a link (returned as site.publicUrl) that opens the app for anyone, no Formelab account needed. " +
+              "They can look and read its shared data (formelab.kv) but can't change anything; formelab.me() is null for them. " +
+              "false turns it off; \"new\" replaces it so the old link stops working. Only turn it on when the user asks to share the app publicly.",
+          ),
       },
       annotations: { idempotentHint: true },
     },

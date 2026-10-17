@@ -46,6 +46,7 @@ const FIELD_LABEL: Record<string, string> = {
   editors: "editors",
   kv_writes: "who can change its data",
   sheets: "Google Sheets it can use",
+  public_link: "public link",
 };
 
 const list = (v: unknown) => (Array.isArray(v) ? v.map(String).join(", ") : "");
@@ -85,6 +86,16 @@ export function describeActivity(row: AuditRow): string {
       if (d.visibility) {
         explained.add("visibility");
         parts.push(`set who can open it to ${d.visibility === "all" ? "all Formelab members" : "only people it's shared with"}`);
+      }
+      if (d.publicLink) {
+        explained.add("public_link");
+        parts.push(
+          d.publicLink === "off"
+            ? "turned off its public link"
+            : d.publicLink === "new"
+              ? "made a new public link (the old one stopped working)"
+              : "turned on a public link (anyone with it can open the app)",
+        );
       }
       if (d.dataWrites) {
         explained.add("kv_writes");
