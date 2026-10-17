@@ -41,6 +41,8 @@ interface McpProps {
   via: "oauth" | "token";
   /** The access key, for connections made with one (via "token"). */
   tokenId?: string;
+  /** The AI app: the OAuth client's name, or the name an access key's app last gave. */
+  client?: string;
 }
 
 /** The client name in an MCP initialize message (a single message or a batch), if this is one. */
@@ -76,13 +78,24 @@ const mcpApiHandler = {
     }
     // Access keys carry no app name, so learn it from the MCP handshake (Claude Code says
     // "claude-code"); Connect your AI uses it to show which AI app is connected.
-    if (ctx.props?.via === "token" && ctx.props.tokenId) {
-      const client = await initializeClientName(req);
-      if (client) ctx.waitUntil(noteTokenClient(env, ctx.props.tokenId, client).catch(() => {}));
+    const initializing = await initializeClientName(req);
+    if (initializing && ctx.props?.via === "token" && ctx.props.tokenId) {
+      ctx.waitUntil(noteTokenClient(env, ctx.props.tokenId, initializing).catch(() => {}));
     }
-    return handleMcp(req, env, user, ctx);
+    // Which AI app made the call, for the admin panel's Metrics. Connections approved before
+    // grants carried the client's name fall back to the User-Agent.
+    const client = initializing ?? ctx.props?.client ?? userAgentClient(req);
+    return handleMcp(req, env, user, ctx, { client, initializing: !!initializing });
   },
 };
+
+/** The AI app named by a request's User-Agent (e.g. "claude-code/2.1.0" → "claude-code"), if any. */
+function userAgentClient(req: Request): string | null {
+  const ua = req.headers.get("user-agent")?.trim();
+  if (!ua) return null;
+  const first = ua.split(/\s+/)[0]!.split("/")[0]!;
+  return /^(mozilla|node|undici|python-httpx|python-requests|axios|curl)$/i.test(first) ? null : first.slice(0, 100);
+}
 
 type ApexHandler = { fetch: (req: Request, env: Env, ctx: ExecutionContext) => Response | Promise<Response> };
 
@@ -108,7 +121,9 @@ function providerOptions(origin: string, defaultHandler: ApexHandler): OAuthProv
     resolveExternalToken: async ({ token, env }) => {
       if (!token.startsWith("fl_")) return null;
       const found = await resolveDeployToken(env, token);
-      return found ? { props: { email: found.user.email, via: "token", tokenId: found.tokenId } satisfies McpProps, audience: resource } : null;
+      return found
+        ? { props: { email: found.user.email, via: "token", tokenId: found.tokenId, client: found.clientName ?? undefined } satisfies McpProps, audience: resource }
+        : null;
     },
     onError: ({ code, internal }) => {
       console.warn("oauth error", code, internal?.category, internal?.reason);
@@ -257,7 +272,7 @@ export async function authorizePost(c: Context<AppEnv>): Promise<Response> {
       userId: user.email,
       metadata: { clientName, connectedAt: Date.now() },
       scope,
-      props: { email: user.email, via: "oauth" } satisfies McpProps,
+      props: { email: user.email, via: "oauth", client: clientName.slice(0, 100) } satisfies McpProps,
     });
     await audit(c.env, user.email, "oauth_connect", null, { client: clientName.slice(0, 100) });
     approved.headers.set("location", redirectTo);

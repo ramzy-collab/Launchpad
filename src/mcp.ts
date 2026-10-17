@@ -6,6 +6,7 @@ import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/
 import { CfWorkerJsonSchemaValidator } from "@modelcontextprotocol/sdk/validation/cfworker";
 import { z } from "zod";
 import { filesForPublish } from "./changes";
+import { recordMcpCall } from "./usage";
 import type { Env, User } from "./env";
 import { ApiError, notFound } from "./errors";
 import { GUIDE_MD } from "./generated/assets";
@@ -46,7 +47,7 @@ async function run(fn: () => Promise<unknown>): Promise<ToolResult> {
 
 const emails = z.array(z.string()).optional();
 
-export function buildServer(ctx: Ctx): McpServer {
+export function buildServer(ctx: Ctx, beforeTools?: (server: McpServer) => void): McpServer {
   const server = new McpServer(
     { name: "formelab", version: "1.0.0" },
     {
@@ -59,6 +60,8 @@ export function buildServer(ctx: Ctx): McpServer {
         "Every app needs an icon (a small SVG favicon linked from index.html); publish refuses apps without one.",
     },
   );
+
+  beforeTools?.(server);
 
   server.registerTool(
     "whoami",
@@ -335,10 +338,34 @@ async function fetchItem(ctx: Ctx, id: string) {
   };
 }
 
+/** Records each tool call (name, outcome, time taken) for the admin panel's Metrics, after it answers. */
+function countToolCalls(server: McpServer, ctx: Ctx, client: string | null) {
+  const register = server.registerTool.bind(server) as (name: string, config: unknown, cb: (...args: unknown[]) => Promise<ToolResult> | ToolResult) => unknown;
+  (server as { registerTool: unknown }).registerTool = (name: string, config: unknown, cb: (...args: unknown[]) => Promise<ToolResult> | ToolResult) =>
+    register(name, config, async (...args: unknown[]) => {
+      const started = Date.now();
+      let ok = false;
+      try {
+        const result = await cb(...args);
+        ok = !result?.isError;
+        return result;
+      } finally {
+        ctx.waitUntil(recordMcpCall(ctx.env, { email: ctx.user.email, client, tool: name, ok, ms: Date.now() - started }).catch(() => {}));
+      }
+    });
+}
+
 /** Stateless Streamable HTTP: a fresh server and transport per request, JSON responses. */
-export async function handleMcp(req: Request, env: Env, user: User, exec: { waitUntil(p: Promise<unknown>): void }): Promise<Response> {
+export async function handleMcp(
+  req: Request,
+  env: Env,
+  user: User,
+  exec: { waitUntil(p: Promise<unknown>): void },
+  usage: { client: string | null; initializing: boolean } = { client: null, initializing: false },
+): Promise<Response> {
   const ctx: Ctx = { env, user, waitUntil: (p) => exec.waitUntil(p), requestUrl: req.url };
-  const server = buildServer(ctx);
+  if (usage.initializing) ctx.waitUntil(recordMcpCall(env, { email: user.email, client: usage.client, tool: "initialize", ok: true, ms: 0 }).catch(() => {}));
+  const server = buildServer(ctx, (s) => countToolCalls(s, ctx, usage.client));
   const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
   await server.connect(transport);
   try {
