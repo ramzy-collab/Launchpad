@@ -687,3 +687,40 @@ Choices made while building v1, including where the build differs from the spec 
   people the app is shared with to open don't get it, so they can't widen the audience.
 - **Turned on only through update_site or the app's page**, never by `publish`, matching the rule
   that publishing a new version never changes sharing.
+
+## Metrics (src/metrics.ts, admin panel → Metrics)
+
+- **Computed on each page load, from the tables Formelab already has plus two new ones.** No
+  rollup jobs or analytics vendor: accounts, the waitlist, apps, the activity log (grouped by
+  person, action and day in SQL) and the new `mcp_calls` and `app_visits` tables (migration 0018)
+  are read with a dozen grouped queries and combined in the Worker. At Formelab's size that's cheap
+  and nothing can drift out of sync. If it grows slow, the first step is nightly per-day rollups of
+  `audit` and `app_visits`; the page's shape wouldn't change.
+- **What's recorded.** One `mcp_calls` row per MCP tool call (tool, AI app, ok, milliseconds) and
+  per `initialize` (a session starting), written after the response with `waitUntil`. Tool calls
+  are counted by wrapping `registerTool` before the tools are registered, so new tools are counted
+  without remembering to. The AI app is the name from the `initialize` message, else the name
+  stored with the connection (new OAuth grants carry the client's name in their props; access keys
+  have `tokens.client_name`), else the User-Agent's product token. `clientFamily` groups the many
+  spellings ("claude-code", "Claude-User", "claude-ai") into products for the charts; raw names are
+  kept. One `app_visits` row per app, person and UTC day, incremented per page load (a GET with
+  `Sec-Fetch-Dest: document`, or an extensionless/.html path without Fetch Metadata; never
+  `/_api` or `/_platform`). `own` marks the app's owner or an editor. Signed-in visitors are
+  people, not cookies. Guests let in by an app's public link are anonymous: their page views go in
+  one row per app and day with an empty email, counting toward views but never toward people. Rows have no foreign keys so deleted apps and
+  accounts stay in the history.
+- **Definitions.** Active = building (publish, new version, settings, secrets, AI build or edit, or
+  any MCP call) or using (opening an app they don't build, or its Gemini, Sheets or secret-proxy
+  calls). Reach = people using apps they didn't build: the measure of apps spreading past their
+  makers. Activation = active accounts with at least one live app. The funnel follows people whose
+  first contact (waitlist or account) is in the period. Retention is by signup week, over the last
+  12 weeks. Changes compare against the period just before, of the same length.
+- **Team accounts are left out by default** (admins and OWNER_EMAIL), so the page describes real
+  customers; a switch puts them back. Their apps are left out too, and visits by them.
+- **Charts are SVG drawn on the server** (`src/dashboard/charts.ts`), because the admin panel's CSP
+  allows no inline script or style and a chart library would be the first third-party script.
+  Widths are SVG attributes, not inline styles. `viz.js` adds the crosshair and tooltips from each
+  chart's `data-chart` JSON (labels set with textContent), with arrow-key support. Every chart has
+  a "Show the numbers" table. Series colors are the brand accent then a categorical order checked
+  for color-blind separation in light and dark; each series keeps its color across charts.
+- **Admins only.** Investors see it on a screen share; the page has no shareable link (the owner's choice).

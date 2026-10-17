@@ -2,6 +2,11 @@
 
 Everything that has changed in Formelab, newest first. Shown in the admin panel under Changelog.
 
+## 2026-10-17
+
+- **Metrics in the admin panel.** A new **Metrics** page shows how Formelab is growing and being used, ready to put in front of an investor: weekly active people (building apps, or using apps someone else built), stickiness, activation and time to first app up top; then growth (accounts, apps, sign-ups, waitlist demand), engagement (daily, weekly and monthly active people, new vs returning builders, retention by signup week), the activation funnel from sign-up to coming back, MCP use (tool calls by AI app, which AI apps people use, each tool, success rate and speed), hosted apps (page views, visitors, builders vs people apps were shared with, shipping pace, what apps do, the top apps) and the most engaged customers. Pick 30 days, 90 days, 12 months or all time; every number shows its change against the period before. Team accounts (admins and the owner) are left out unless you turn them on. Every chart has a hover readout and a table of its numbers, and the page works in dark mode, on a phone and printed.
+- **Formelab now counts MCP calls and app visits.** Each MCP tool call (which tool, which AI app, whether it worked and how long it took) and each person opening an app (once a day per app, with how many pages they loaded) is recorded for Metrics. Views by guests who opened an app through its public link count too, without naming anyone. These charts fill in from today; everything else goes back to the start.
+
 ## 2026-10-16
 
 - **Updating a big app is much faster.** AI apps connected to Formelab no longer rewrite a whole app to change it. The publish tool now takes just the edits (find this, replace with that) or just the files that changed, and Formelab applies them to the live app. Everything else, plus the app's data, sharing and settings, stays as it is. A one-line fix to a large app takes seconds instead of minutes. If an edit doesn't match, nothing is published and the AI is told which edit and why.

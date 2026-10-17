@@ -12,16 +12,17 @@ import { homePage } from "./dashboard/home";
 import { forgotGet, forgotPost, resetGet, resetPost, signInCode, signInGet, signInPost } from "./signin";
 import type { AppEnv, Env } from "./env";
 import { forbidden, jsonError, onError, unauthorized } from "./errors";
-import { ASSET_VERSION, CONSENT_JS, DASHBOARD_JS, FORMELAB_CSS, GUIDE_MD, HOME_CSS, INSTALL_JS, SDK_JS, SIGNIN_JS, SITE_JS, THEME_JS } from "./generated/assets";
+import { ASSET_VERSION, CONSENT_JS, DASHBOARD_JS, FORMELAB_CSS, GUIDE_MD, HOME_CSS, INSTALL_JS, VIZ_JS, SDK_JS, SIGNIN_JS, SITE_JS, THEME_JS } from "./generated/assets";
 import { apexOrigin, AUTHORIZE_PATH, authorizeGet, authorizePost, oauthProvider } from "./oauth";
 import { runtimeApi } from "./runtime";
 import { appCallback, appHandoff, loginCallback, loginStart, logout, safeReturn, workosEnabled } from "./login";
 import { legacyAppRedirect, noAccessPage, plainPage, serveAppFile } from "./serve";
 import { cookieHeader, readCookie, SESSION_COOKIE } from "./session";
 import { adminOrigin, aiOrigin, appOrigin, appsLabelOf, hostKind, legacyNamespaceOf } from "./hosts";
-import { canViewSite } from "./auth";
+import { canManageSite, canViewSite } from "./auth";
 import { getNamespace, getSiteByHostLabel, isPublicLinkToken, PUBLIC_LINK_PATH, type SiteRow } from "./sites";
 import { joinWaitlist } from "./waitlist";
+import { GUEST, isPageView, recordAppVisit } from "./usage";
 import { appManifest, appPwaIcon, pwaRoutes } from "./pwa";
 import { appPreviewPage, appShareImage, formelabPreviewPage, formelabShareImage, formelabShareTags, isPreviewBot } from "./share";
 
@@ -49,6 +50,7 @@ const assetRoutes: [string, (c: Context<AppEnv>) => Response][] = [
   ["/_assets/site.js", asset(SITE_JS, "text/javascript; charset=utf-8")],
   ["/_assets/signin.js", asset(SIGNIN_JS, "text/javascript; charset=utf-8")],
   ["/_assets/dashboard.js", asset(DASHBOARD_JS, "text/javascript; charset=utf-8")],
+  ["/_assets/viz.js", asset(VIZ_JS, "text/javascript; charset=utf-8")],
   ["/_assets/consent.js", asset(CONSENT_JS, "text/javascript; charset=utf-8")],
   ["/_assets/install.js", asset(INSTALL_JS, "text/javascript; charset=utf-8")],
   ["/_assets/services.svg", asset(SERVICES_SPRITE, "image/svg+xml")],
@@ -238,6 +240,7 @@ const adminApp = signedInHost(requireAdminSignIn, (app) => {
   app.get("/auth/callback", loginCallback);
 });
 adminApp.get("/", (c) => adminPage(c, "overview"));
+adminApp.get("/metrics", (c) => adminPage(c, "metrics"));
 adminApp.get("/users", (c) => adminPage(c, "users"));
 adminApp.get("/waitlist", (c) => adminPage(c, "waitlist"));
 adminApp.get("/activity", (c) => adminPage(c, "activity"));
@@ -306,6 +309,8 @@ siteApp.use("*", async (c, next) => {
   if (!allowed && hasPublicLink(site, c.req.raw)) {
     c.set("guest", true);
     c.set("namespace", site.namespace);
+    // Guests are anonymous: their page views count toward the app's views, not its visitors.
+    if (isPageView(c.req.raw)) c.executionCtx.waitUntil(recordAppVisit(c.env, site.id, GUEST, false).catch(() => {}));
     return next();
   }
   if (!who) {
@@ -322,6 +327,10 @@ siteApp.use("*", async (c, next) => {
   }
   c.set("user", who.user);
   c.set("namespace", site.namespace);
+  // Someone opening one of the app's pages counts toward its visitors (admin panel → Metrics).
+  if (isPageView(c.req.raw)) {
+    c.executionCtx.waitUntil(recordAppVisit(c.env, site.id, who.user.email, canManageSite(who.user, site, nsRow)).catch(() => {}));
+  }
   await next();
 });
 

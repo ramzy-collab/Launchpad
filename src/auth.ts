@@ -141,18 +141,18 @@ export async function userForDeployToken(env: Env, token: string): Promise<User 
 }
 
 /** Like userForDeployToken, also returning the key's id. */
-export async function resolveDeployToken(env: Env, token: string): Promise<{ user: User; tokenId: string } | null> {
+export async function resolveDeployToken(env: Env, token: string): Promise<{ user: User; tokenId: string; clientName: string | null } | null> {
   if (!/^fl_[a-z2-7]{20,100}$/.test(token)) return null;
   const hash = await sha256Hex(token);
   const row = await env.DB.prepare(
-    `SELECT t.id, t.expires_at, t.revoked, u.email, u.name, u.is_admin, u.status
+    `SELECT t.id, t.expires_at, t.revoked, t.client_name, u.email, u.name, u.is_admin, u.status
        FROM tokens t JOIN users u ON u.email = t.owner_email WHERE t.hash = ?`,
   )
     .bind(hash)
-    .first<{ id: string; expires_at: number; revoked: number } & UserRow>();
+    .first<{ id: string; expires_at: number; revoked: number; client_name: string | null } & UserRow>();
   if (!row || row.revoked || row.expires_at <= now()) return null;
   await env.DB.prepare("UPDATE tokens SET last_used = ? WHERE id = ?").bind(now(), row.id).run();
-  return { user: userOf(row), tokenId: row.id };
+  return { user: userOf(row), tokenId: row.id, clientName: row.client_name };
 }
 
 /** Remembers which AI app uses an access key (from its MCP initialize message). */

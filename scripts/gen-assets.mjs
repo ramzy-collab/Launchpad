@@ -12,6 +12,7 @@ const assets = {
   SDK_JS: "src/sdk.js",
   GUIDE_MD: "src/guide.md",
   DASHBOARD_JS: "src/dashboard/dashboard.js",
+  VIZ_JS: "src/dashboard/viz.js",
   FORMELAB_CSS: "src/dashboard/formelab.css",
   HOME_CSS: "src/dashboard/home.css",
   THEME_JS: "src/dashboard/theme.js",

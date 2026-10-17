@@ -12,12 +12,14 @@ import { adminStats, listUsers } from "../users";
 import { escapeHtml as e } from "../util";
 import { listWaitlist } from "../waitlist";
 import { head, htmlResponse } from "./layout";
+import { metricsBody } from "./metrics";
 import { fmtTime, logoutControl, MENU_ICON } from "./page";
 
-type Tab = "overview" | "users" | "waitlist" | "features" | "activity" | "changelog" | "vendors";
+type Tab = "overview" | "metrics" | "users" | "waitlist" | "features" | "activity" | "changelog" | "vendors";
 
 const TABS: Record<Tab, { title: string; intro: string }> = {
   overview: { title: "Overview", intro: "Formelab at a glance. Changes here affect everyone on Formelab." },
+  metrics: { title: "Metrics", intro: "How Formelab is growing and being used: people, apps, MCP and the apps people host." },
   users: { title: "Users", intro: "Everyone with an account, and people let in who haven't logged in yet." },
   waitlist: { title: "Waitlist", intro: "People waiting to get in." },
   activity: { title: "Activity", intro: "Formelab-level changes, newest first." },
@@ -27,15 +29,15 @@ const TABS: Record<Tab, { title: string; intro: string }> = {
 };
 
 /** The admin panel's frame: the same left menu as the web app, grouped into Users and Formelab. */
-function adminShell(c: Context<AppEnv>, tab: Tab, body: string): Response {
+function adminShell(c: Context<AppEnv>, tab: Tab, body: string, scripts: string[] = []): Response {
   const user = c.get("user");
   const link = (t: Tab, href: string) => `<a href="${href}"${t === tab ? ' aria-current="page"' : ""}>${TABS[t].title}</a>`;
   return htmlResponse(`<!doctype html>
 <html lang="en">
 <head>
-${head(`${TABS[tab].title} · Formelab Admin Panel`, ["dashboard.js"])}
+${head(`${TABS[tab].title} · Formelab Admin Panel`, ["dashboard.js", ...scripts])}
 </head>
-<body class="dash admin">
+<body class="dash admin${tab === "metrics" ? " metrics" : ""}">
 <div class="app-shell">
 <header class="topbar">
   <a class="brand" href="/" aria-label="Formelab admin home"><span class="mark"></span>Formelab Admin Panel</a>
@@ -46,6 +48,7 @@ ${head(`${TABS[tab].title} · Formelab Admin Panel`, ["dashboard.js"])}
   <nav class="side-nav" aria-label="Admin sections">
     <p class="side-label">Users</p>
     ${link("overview", "/")}
+    ${link("metrics", "/metrics")}
     ${link("users", "/users")}
     ${link("waitlist", "/waitlist")}
     ${link("activity", "/activity")}
@@ -78,6 +81,7 @@ ${body}
 /** Admins only; everyone else gets the same "not found" as any unknown page. */
 export async function adminPage(c: Context<AppEnv>, tab: Tab): Promise<Response> {
   if (!c.get("user").isAdmin) return plainPage(404, "Not found", "There is nothing here.");
+  if (tab === "metrics") return adminShell(c, tab, await metricsBody(c), ["viz.js"]);
   if (tab === "users") return adminShell(c, tab, await usersBody(c));
   if (tab === "waitlist") return adminShell(c, tab, await waitlistBody(c));
   if (tab === "activity") return adminShell(c, tab, await activityBody(c));

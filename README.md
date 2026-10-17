@@ -255,6 +255,9 @@ Then smoke-test the live domain (section 2.2).
   `<ns>.<DOMAIN>/<path>/...` go to the app's own address, and `<APP_DOMAIN>/...` goes to the web
   app. Data an app kept in the browser (`localStorage`) stays at the old address, and people who
   installed an app or the web app on a device should install it again from the new address.
+- **`0018_usage`** adds the `mcp_calls` and `app_visits` tables behind the admin panel's Metrics
+  page. Apply it before deploying: until it exists, MCP calls and app visits still work but aren't
+  counted, and the Metrics page fails. MCP and app-visit charts start from the day it's deployed.
 
 ### 2.2 Smoke test
 
