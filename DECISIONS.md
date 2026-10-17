@@ -663,6 +663,31 @@ Choices made while building v1, including where the build differs from the spec 
 - **An https og:image is used as is** (it's already public); one on the app's own host would need a
   sign-in, so apps should use a relative path instead.
 
+## Public links ("anyone with the link")
+
+- **A secret link, not a third visibility.** Owners and editors can turn on a public link,
+  `<host_label>.APP_DOMAIN/_platform/link/<token>` (32 base32 characters, 100 bits), next to the
+  app's `restricted`/`all` setting. The app's plain address isn't enough: its 4-character code is
+  for uniqueness, not secrecy, so "public" keyed on the address alone would be guessable. Turning
+  the link off, or making a new one, changes the token (migration 0017, `sites.public_link`).
+- **The link sets a cookie and redirects to `/`.** Pages load their scripts, styles and API calls
+  from the same host without the token in the URL, so `__Host-fl_link` (HttpOnly, 30 days) carries
+  it. Every request compares it with the current token, so revoking the link locks out everyone it
+  let in, at once. The redirect sends `no-referrer` so the token doesn't leak to the app's assets.
+- **Guests can look, not change.** People let in by the link (and signed-in people the app isn't
+  shared with) get the files, `formelab.me()` → `null` and reads of the app's shared KV. Everything
+  else (writes, private data, secrets, the proxy, Gemini, Sheets) answers 401 `sign_in_required`:
+  those spend the owner's keys and accounts, and anonymous writes would be an open spam target even
+  when `data_writes` is "everyone". `formelab.signIn()` (`/_platform/sign-in`) sends a guest
+  through the usual sign-in hand-off and back.
+- **Signed-in people keep their access.** Someone the app is shared with who already has a session
+  on the app's host is identified as usual. Following the public link doesn't sign anyone in, so
+  a member who opens it fresh is a guest until they sign in.
+- **Only managers see the link.** `publicUrl` is in the site view for owners and editors only;
+  people the app is shared with to open don't get it, so they can't widen the audience.
+- **Turned on only through update_site or the app's page**, never by `publish`, matching the rule
+  that publishing a new version never changes sharing.
+
 ## Metrics (src/metrics.ts, admin panel → Metrics)
 
 - **Computed on each page load, from the tables Formelab already has plus two new ones.** No
@@ -680,8 +705,9 @@ Choices made while building v1, including where the build differs from the spec 
   spellings ("claude-code", "Claude-User", "claude-ai") into products for the charts; raw names are
   kept. One `app_visits` row per app, person and UTC day, incremented per page load (a GET with
   `Sec-Fetch-Dest: document`, or an extensionless/.html path without Fetch Metadata; never
-  `/_api` or `/_platform`). `own` marks the app's owner or an editor. Since every app needs a
-  sign-in, visitors are people, not cookies. Rows have no foreign keys so deleted apps and
+  `/_api` or `/_platform`). `own` marks the app's owner or an editor. Signed-in visitors are
+  people, not cookies. Guests let in by an app's public link are anonymous: their page views go in
+  one row per app and day with an empty email, counting toward views but never toward people. Rows have no foreign keys so deleted apps and
   accounts stay in the history.
 - **Definitions.** Active = building (publish, new version, settings, secrets, AI build or edit, or
   any MCP call) or using (opening an app they don't build, or its Gemini, Sheets or secret-proxy
@@ -697,5 +723,4 @@ Choices made while building v1, including where the build differs from the spec 
   chart's `data-chart` JSON (labels set with textContent), with arrow-key support. Every chart has
   a "Show the numbers" table. Series colors are the brand accent then a categorical order checked
   for color-blind separation in light and dark; each series keeps its color across charts.
-- **Admins only.** Investors see it on a screen share; there is no public link (the owner's choice).
-
+- **Admins only.** Investors see it on a screen share; the page has no shareable link (the owner's choice).

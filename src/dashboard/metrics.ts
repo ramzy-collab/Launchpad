@@ -22,6 +22,7 @@ const SLOT: Record<string, number> = {
   Visitors: 2,
   "People it was shared with": 2,
   "Its builders": 1,
+  "Views through a public link": 3,
   "Claude Code": 1,
   Claude: 2,
   ChatGPT: 3,
@@ -128,7 +129,7 @@ function headline(m: Metrics): string {
   ${tile("Apps created", fmt(t.apps.value), { delta: delta(t.apps, priorName(m)), sub: `${e(fmt(t.apps.total))} live now`, trend: t.apps.trend })}
   ${tile("Publishes", fmt(t.publishes.value), { delta: delta(t.publishes, priorName(m)), sub: "New apps and new versions", trend: t.publishes.trend })}
   ${tile("MCP tool calls", fmt(t.mcpCalls.value), { delta: delta(t.mcpCalls, priorName(m)), sub: `By ${e(fmt(m.mcp.people))} ${m.mcp.people === 1 ? "person" : "people"}`, trend: t.mcpCalls.trend })}
-  ${tile("App page views", fmt(t.appViews.value), { delta: delta(t.appViews, priorName(m)), sub: `${e(fmt(t.appViews.visitors))} people opened an app`, trend: t.appViews.trend })}
+  ${tile("App page views", fmt(t.appViews.value), { delta: delta(t.appViews, priorName(m)), sub: `${e(fmt(t.appViews.visitors))} people opened an app${t.appViews.guestViews ? ` · ${e(fmt(t.appViews.guestViews))} views through public links` : ""}`, trend: t.appViews.trend })}
   ${tile("Reach", fmt(t.reach.value), { delta: delta(t.reach, priorName(m)), sub: "People using apps they didn't build", trend: t.reach.trend })}
   ${tile("Waitlist sign-ups", fmt(t.waitlist.value), { delta: delta(t.waitlist, priorName(m)), sub: `${e(fmt(t.waitlist.waiting))} waiting to get in`, trend: t.waitlist.trend })}
   ${tile("AI connections", fmt(m.mcp.connectedPeople), { sub: "People who connected an AI app, all time" })}
@@ -272,7 +273,7 @@ function appsSection(m: Metrics): string {
     "Hosted apps",
     "Apps people built and published on Formelab, and the people opening them. An app's builders are its owner and editors; everyone else opening it is someone it was shared with.",
     `<div class="viz-grid">
-  ${lineChart({ id: "chart-views", title: "App traffic", sub: `Page views and distinct people opening apps, ${per(m)}`, labels: labels(m), series: withSlots([a.views, a.visitors]), firstCol: firstCol(m), empty: "No app visits in this period yet." })}
+  ${lineChart({ id: "chart-views", title: "App traffic", sub: `Page views (including guests with a public link) and distinct signed-in people opening apps, ${per(m)}`, labels: labels(m), series: withSlots([a.views, a.visitors, a.guestViews]), firstCol: firstCol(m), empty: "No app visits in this period yet." })}
   ${columnChart({ id: "chart-visitors", title: "Who opens apps", sub: `Distinct people ${per(m)}: builders testing vs people it was shared with`, labels: labels(m), series: withSlots([a.builderVisitors, a.sharedVisitors]), firstCol: firstCol(m), empty: "No app visits in this period yet." })}
   ${columnChart({ id: "chart-shipping", title: "Shipping", sub: `Publishes ${per(m)}: brand-new apps vs new versions of existing ones`, labels: labels(m), series: withSlots([m.shipping.updates, m.shipping.newApps]), firstCol: firstCol(m) })}
   <figure class="chart">
@@ -320,7 +321,7 @@ function notes(m: Metrics): string {
     <li><strong>Team accounts</strong> (admins and the owner) are ${m.includeTeam ? "<strong>included</strong>" : "left out, so the numbers show real customers. Turn on <em>Include team accounts</em> to count them"}.</li>
     <li><strong>MCP calls</strong> are recorded ${since(m.trackingSince.mcp === null ? null : new Date(m.trackingSince.mcp).toISOString().slice(0, 10))} and <strong>app visits</strong> ${since(m.trackingSince.visits)}. Accounts, the waitlist, apps, publishes and changes go back to the start.</li>
     <li>Changes compare the period shown with the one just before it, the same length.</li>
-    <li>A visit is one person opening an app's pages on one day (UTC); views count every page they loaded.</li>
+    <li>A visit is one person opening an app's pages on one day (UTC); views count every page they loaded. Guests let in by an app's public link don't sign in, so they count as views but not as people.</li>
   </ul>
 </section>`;
 }

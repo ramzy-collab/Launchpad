@@ -78,6 +78,27 @@ describe("usage tracking", () => {
       { email: OWNER, own: 1, views: 1 },
     ]);
   });
+
+  it("counts guests let in by a public link as page views, without a person", async () => {
+    const ns = uniq();
+    const res = await publishHtml(OWNER, ns, "open", PAGE("hi"));
+    const { site } = await res.json<{ site: { id: string } }>();
+    const { publicUrl } = await (await call(`/_api/admin/sites/${site.id}`, { as: OWNER, method: "PATCH", json: { public_link: true } })).json<{ publicUrl: string }>();
+    const cookie = (await call(publicUrl)).headers.get("set-cookie")!.split(";")[0]!;
+    const origin = await appAt(ns, "open");
+    for (let i = 0; i < 3; i++) await call(`${origin}/`, { headers: { cookie, "sec-fetch-dest": "document" } });
+    const rows = await eventually(
+      () => env.DB.prepare("SELECT email, own, views FROM app_visits WHERE site_id = ?").bind(site.id).all<{ email: string; own: number; views: number }>().then((r) => r.results),
+      (r) => r[0]?.views === 3,
+    );
+    expect(rows).toEqual([{ email: "", own: 0, views: 3 }]);
+
+    const m = await computeMetrics(env, "30d", true);
+    expect(m.apps.guestViews.values.at(-1)).toBeGreaterThanOrEqual(3);
+    expect(m.tiles.appViews.guestViews).toBeGreaterThanOrEqual(3);
+    expect(m.people.some((p) => p.email === "")).toBe(false);
+    expect(m.apps.adoption.find((a) => a.label === "Has a public link")!.count).toBeGreaterThanOrEqual(1);
+  });
 });
 
 describe("metrics", () => {

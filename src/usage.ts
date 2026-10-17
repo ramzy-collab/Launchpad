@@ -22,6 +22,9 @@ export function isPageView(req: Request): boolean {
   return !ext || ext === "html" || ext === "htm";
 }
 
+/** The email recorded for guests let in by an app's public link, who are anonymous. */
+export const GUEST = "";
+
 export const utcDay = (ms: number) => new Date(ms).toISOString().slice(0, 10);
 
 /** Counts a page someone opened in an app: one row per app, person and day. */

@@ -17,12 +17,12 @@ import { apexOrigin, AUTHORIZE_PATH, authorizeGet, authorizePost, oauthProvider 
 import { runtimeApi } from "./runtime";
 import { appCallback, appHandoff, loginCallback, loginStart, logout, safeReturn, workosEnabled } from "./login";
 import { legacyAppRedirect, noAccessPage, plainPage, serveAppFile } from "./serve";
-import { readCookie, SESSION_COOKIE } from "./session";
+import { cookieHeader, readCookie, SESSION_COOKIE } from "./session";
 import { adminOrigin, aiOrigin, appOrigin, appsLabelOf, hostKind, legacyNamespaceOf } from "./hosts";
 import { canManageSite, canViewSite } from "./auth";
-import { getNamespace, getSiteByHostLabel, type SiteRow } from "./sites";
+import { getNamespace, getSiteByHostLabel, isPublicLinkToken, PUBLIC_LINK_PATH, type SiteRow } from "./sites";
 import { joinWaitlist } from "./waitlist";
-import { isPageView, recordAppVisit } from "./usage";
+import { GUEST, isPageView, recordAppVisit } from "./usage";
 import { appManifest, appPwaIcon, pwaRoutes } from "./pwa";
 import { appPreviewPage, appShareImage, formelabPreviewPage, formelabShareImage, formelabShareTags, isPreviewBot } from "./share";
 
@@ -271,10 +271,48 @@ siteApp.get("/_platform/app-icon/:id/:version/:kind/:sig", appPwaIcon);
 // The app's link preview image, public so iMessage, Slack and others can show it (see share.ts).
 siteApp.get("/_platform/share.png", appShareImage);
 
-// Everything else: a signed-in person who may open this app.
+// "Anyone with the link" (see sites.ts publicLinkUrl): the link drops a cookie holding its secret on
+// this host and opens the app. Visitors it lets in are guests: they can look, not change anything.
+// Making a new link or turning it off changes the secret, which locks those cookies out again.
+const PUBLIC_LINK_COOKIE = "__Host-fl_link";
+const PUBLIC_LINK_TTL_S = 30 * 24 * 3600;
+const hasPublicLink = (site: SiteRow, req: Request) => {
+  const held = readCookie(req, PUBLIC_LINK_COOKIE);
+  return !!site.public_link && !!held && held === site.public_link;
+};
+
+siteApp.get(`${PUBLIC_LINK_PATH}:token`, (c) => {
+  const site = c.get("site");
+  const token = c.req.param("token");
+  if (!isPublicLinkToken(token) || token !== site.public_link) {
+    return plainPage(404, "Link not working", "This link to the app was turned off or replaced. Ask whoever sent it for a new one.");
+  }
+  // Link previews (iMessage, Slack, ...) of a public link get the app's card, like its plain address.
+  if (isPreviewBot(c.req.raw)) return appPreviewPage(c);
+  const headers = new Headers({ location: "/", "cache-control": "no-store", "referrer-policy": "no-referrer" });
+  headers.append("set-cookie", cookieHeader(PUBLIC_LINK_COOKIE, token, PUBLIC_LINK_TTL_S));
+  return new Response(null, { status: 302, headers });
+});
+
+// Guests who want to be themselves in the app (formelab.signIn()): sign in on the apex, then back.
+siteApp.get("/_platform/sign-in", (c) => {
+  const back = new URL(safeReturn(c.req.query("return"), "/"), c.req.url);
+  return c.redirect(`${apexOrigin(c.env, c.req.url)}/auth/app?return=${encodeURIComponent(back.toString())}`, 302);
+});
+
+// Everything else: a signed-in person who may open this app, or a guest with its public link.
 siteApp.use("*", async (c, next) => {
   const site = c.get("site");
   const who = await identifyBrowser(c.req.raw, c.env);
+  const nsRow = who ? await getNamespace(c.env, site.namespace) : null;
+  const allowed = !!who && !!nsRow && canViewSite(who.user, site, nsRow);
+  if (!allowed && hasPublicLink(site, c.req.raw)) {
+    c.set("guest", true);
+    c.set("namespace", site.namespace);
+    // Guests are anonymous: their page views count toward the app's views, not its visitors.
+    if (isPageView(c.req.raw)) c.executionCtx.waitUntil(recordAppVisit(c.env, site.id, GUEST, false).catch(() => {}));
+    return next();
+  }
   if (!who) {
     if (c.req.path.startsWith("/_api/")) return jsonError(unauthorized());
     // Link previews (iMessage, Slack, ...) get the app's title and image instead of the sign-in redirect.
@@ -284,8 +322,7 @@ siteApp.use("*", async (c, next) => {
     }
     return unauthorizedPage();
   }
-  const nsRow = await getNamespace(c.env, site.namespace);
-  if (!nsRow || !canViewSite(who.user, site, nsRow)) {
+  if (!allowed) {
     return c.req.path.startsWith("/_api/") ? jsonError(forbidden("You don't have access to this app.")) : noAccessPage(site, who.user);
   }
   c.set("user", who.user);

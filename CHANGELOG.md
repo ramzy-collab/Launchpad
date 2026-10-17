@@ -5,7 +5,7 @@ Everything that has changed in Formelab, newest first. Shown in the admin panel 
 ## 2026-10-17
 
 - **Metrics in the admin panel.** A new **Metrics** page shows how Formelab is growing and being used, ready to put in front of an investor: weekly active people (building apps, or using apps someone else built), stickiness, activation and time to first app up top; then growth (accounts, apps, sign-ups, waitlist demand), engagement (daily, weekly and monthly active people, new vs returning builders, retention by signup week), the activation funnel from sign-up to coming back, MCP use (tool calls by AI app, which AI apps people use, each tool, success rate and speed), hosted apps (page views, visitors, builders vs people apps were shared with, shipping pace, what apps do, the top apps) and the most engaged customers. Pick 30 days, 90 days, 12 months or all time; every number shows its change against the period before. Team accounts (admins and the owner) are left out unless you turn them on. Every chart has a hover readout and a table of its numbers, and the page works in dark mode, on a phone and printed.
-- **Formelab now counts MCP calls and app visits.** Each MCP tool call (which tool, which AI app, whether it worked and how long it took) and each person opening an app (once a day per app, with how many pages they loaded) is recorded for Metrics. These charts fill in from today; everything else goes back to the start.
+- **Formelab now counts MCP calls and app visits.** Each MCP tool call (which tool, which AI app, whether it worked and how long it took) and each person opening an app (once a day per app, with how many pages they loaded) is recorded for Metrics. Views by guests who opened an app through its public link count too, without naming anyone. These charts fill in from today; everything else goes back to the start.
 
 ## 2026-10-16
 
@@ -15,6 +15,10 @@ Everything that has changed in Formelab, newest first. Shown in the admin panel 
 - **Shared links look great.** Send an app's link in iMessage, WhatsApp, Slack, Discord, LinkedIn or anywhere else with link previews and it now shows the app's name, a line about it and a big picture of what it is, instead of "Log in to Formelab". Opening the app still needs a sign-in; only the preview is public.
 - **Each app gets its own preview picture.** AI apps (Claude, ChatGPT, Gemini, Grok and Make it in Formelab) now draw a share illustration for every app they make, along with a one-line description. Apps without one, including every app made before today, get a card with their icon, name and description. App makers can also add their own `share.svg` or `share.png` (1200×630), or name one with `og:image`.
 - **Formelab's own links too.** formelab.ai, the login page and links into the web app show a Formelab card with "SaaS is dead." instead of a plain grey bubble.
+
+## 2026-10-15
+
+- **Share an app with anyone who has the link.** Each app's page has a new **Public link** section: turn it on and copy a link that opens the app for anyone, no Formelab account needed. People who open it that way can look at the app and read its shared data, but can't change anything unless they sign in (apps can offer a sign-in button with `formelab.signIn()`). **Make a new link** stops the old one working, for everyone who used it; **Turn off** ends it. Owners can also do this from Claude and other AI apps (`update_site` with `public_link`), and changes show in the app's activity.
 
 ## 2026-10-14
 

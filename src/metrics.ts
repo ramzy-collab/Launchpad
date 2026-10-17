@@ -6,6 +6,7 @@
 // a handful of grouped queries is cheap, and there is nothing to keep in sync.
 import type { Env } from "./env";
 import { now } from "./env";
+import { GUEST } from "./usage";
 import { normEmail, parseJsonArray } from "./util";
 
 export const DAY = 86_400_000;
@@ -78,7 +79,7 @@ export interface Metrics {
     apps: Tile & { total: number };
     publishes: Tile;
     mcpCalls: Tile;
-    appViews: Tile & { visitors: number };
+    appViews: Tile & { visitors: number; guestViews: number };
     waitlist: Tile & { waiting: number };
     activation: { value: number; accounts: number; withApp: number };
     stickiness: { value: number; dau: number; mau: number };
@@ -107,6 +108,7 @@ export interface Metrics {
     visitors: Series;
     sharedVisitors: Series;
     builderVisitors: Series;
+    guestViews: Series;
     top: AppRow[];
     adoption: { label: string; count: number; total: number }[];
   };
@@ -205,6 +207,7 @@ type SiteRowLite = {
   visibility: string;
   allowed_emails: string;
   sheets: string;
+  public_link: string | null;
   created_at: number;
 };
 
@@ -217,7 +220,7 @@ async function load(env: Env) {
   const [users, waitlist, sites, audit, siteAudit, oauth, mcp, visits, kv, kvUser, secrets, tokens] = await Promise.all([
     q<{ email: string; created_at: number; is_admin: number; status: string }>("SELECT email, created_at, is_admin, status FROM users"),
     q<{ email: string; created_at: number; approved_at: number | null }>("SELECT email, created_at, approved_at FROM waitlist"),
-    q<SiteRowLite>("SELECT id, title, namespace, mount_path, host_label, owner_email, editors, visibility, allowed_emails, sheets, created_at FROM sites"),
+    q<SiteRowLite>("SELECT id, title, namespace, mount_path, host_label, owner_email, editors, visibility, allowed_emails, sheets, public_link, created_at FROM sites"),
     q<AuditGroup>(`SELECT actor, action, CAST(at / ${DAY} AS INTEGER) AS d, COUNT(*) AS n FROM audit GROUP BY actor, action, d`),
     q<{ site_id: string; action: string; n: number }>("SELECT site_id, action, COUNT(*) AS n FROM audit WHERE site_id IS NOT NULL GROUP BY site_id, action"),
     q<{ actor: string; detail: string | null }>("SELECT actor, detail FROM audit WHERE action = 'oauth_connect'"),
@@ -263,7 +266,10 @@ export async function computeMetrics(env: Env, range: Range, includeTeam: boolea
   const sites = raw.sites.filter((s) => counts(s.owner_email));
   const audit = raw.audit.filter((a) => counts(a.actor));
   const mcp = raw.mcp.filter((m) => counts(m.email));
-  const visits = raw.visits.filter((v) => counts(v.email)).map((v) => ({ ...v, d: dayFromIso(v.day) }));
+  const allVisits = raw.visits.filter((v) => counts(v.email)).map((v) => ({ ...v, d: dayFromIso(v.day) }));
+  // People who opened apps; guests let in by a public link are anonymous and count only as views.
+  const visits = allVisits.filter((v) => v.email !== GUEST);
+  const guestVisits = allVisits.filter((v) => v.email === GUEST);
 
   const firstDay = [...users, ...waitlist, ...sites].reduce((t, r) => Math.min(t, dayOf(r.created_at)), today);
   const { unit, buckets } = bucketsFor(range, today, firstDay);
@@ -396,6 +402,7 @@ export async function computeMetrics(env: Env, range: Range, includeTeam: boolea
     visitors: series("Visitors"),
     sharedVisitors: series("People it was shared with"),
     builderVisitors: series("Its builders"),
+    guestViews: series("Views through a public link"),
   };
   const visitorsPerBucket = buckets.map(() => new Set<string>());
   const sharedPerBucket = buckets.map(() => new Set<string>());
@@ -414,6 +421,17 @@ export async function computeMetrics(env: Env, range: Range, includeTeam: boolea
     appSeries.views.values[i]! += v.views;
     visitorsPerBucket[i]!.add(v.email);
     (v.own ? builderPerBucket : sharedPerBucket)[i]!.add(v.email);
+  }
+  for (const v of guestVisits) {
+    const a = perApp.get(v.site_id) ?? { visitors: new Set(), builders: new Set(), views: 0, last: -1, everShared: false };
+    perApp.set(v.site_id, a);
+    a.last = Math.max(a.last, v.d);
+    a.everShared = true;
+    if (!inRange(v.d)) continue;
+    a.views += v.views;
+    const i = bucketIndex(buckets, v.d);
+    appSeries.views.values[i]! += v.views;
+    appSeries.guestViews.values[i]! += v.views;
   }
   appSeries.visitors.values = visitorsPerBucket.map((s) => s.size);
   appSeries.sharedVisitors.values = sharedPerBucket.map((s) => s.size);
@@ -464,6 +482,7 @@ export async function computeMetrics(env: Env, range: Range, includeTeam: boolea
   const adoption = [
     { label: "Updated after launch", count: sites.filter((s) => (siteActions.get(s.id)?.replace ?? 0) > 0).length },
     { label: "Shared with other people", count: sites.filter(sharedOut).length },
+    { label: "Has a public link", count: sites.filter((s) => !!s.public_link).length },
     { label: "Opened by someone else", count: sites.filter((s) => perApp.get(s.id)?.everShared).length },
     { label: "Stores data", count: sites.filter((s) => featuresOf(s).includes("Data")).length },
     { label: "Calls outside APIs", count: sites.filter((s) => featuresOf(s).includes("APIs")).length },
@@ -513,7 +532,7 @@ export async function computeMetrics(env: Env, range: Range, includeTeam: boolea
   const wauNow = peopleBetween(active, today - 6, today);
   const trendOf = (values: number[], running = false) => sparkPoints(values, running);
   const accountsIn = (pred: (d: number) => boolean) => users.filter((u) => u.status === "active" && pred(dayOf(u.created_at))).length;
-  const viewsIn = (pred: (d: number) => boolean) => visits.reduce((t, v) => t + (pred(v.d) ? v.views : 0), 0);
+  const viewsIn = (pred: (d: number) => boolean, list = allVisits) => list.reduce((t, v) => t + (pred(v.d) ? v.views : 0), 0);
   const callsIn = (pred: (d: number) => boolean) => toolCalls.reduce((t, m) => t + (pred(m.d) ? m.n : 0), 0);
   const reachIn = (from: number, to: number) => peopleBetween(using, from, to).size;
   const withApp = new Set(sites.map((s) => s.owner_email));
@@ -543,7 +562,7 @@ export async function computeMetrics(env: Env, range: Range, includeTeam: boolea
       trend: trendOf(shipping.newApps.values.map((v, i) => v + shipping.updates.values[i]!)),
     },
     mcpCalls: { value: callsIn(inRange), previous: hasPrev ? callsIn(inPrev) : null, trend: trendOf(byClientTotal([...byClient.values()], n)) },
-    appViews: { value: viewsIn(inRange), previous: hasPrev ? viewsIn(inPrev) : null, trend: trendOf(appSeries.views.values), visitors: new Set(visits.filter((v) => inRange(v.d)).map((v) => v.email)).size },
+    appViews: { value: viewsIn(inRange), previous: hasPrev ? viewsIn(inPrev) : null, trend: trendOf(appSeries.views.values), visitors: new Set(visits.filter((v) => inRange(v.d)).map((v) => v.email)).size, guestViews: viewsIn(inRange, guestVisits) },
     waitlist: {
       value: waitlist.filter((w) => inRange(dayOf(w.created_at))).length,
       previous: hasPrev ? waitlist.filter((w) => inPrev(dayOf(w.created_at))).length : null,

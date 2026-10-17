@@ -28,6 +28,25 @@ const visibilityOptions = (current: "all" | "restricted") =>
     .map((v) => `<option value="${v}"${v === current ? " selected" : ""}>${VISIBILITY_LABEL[v]}</option>`)
     .join("");
 
+/** The app page's "anyone with the link" controls (managers only see the page). */
+function publicLinkSection(site: { id: string; publicUrl: string | null }): string {
+  const op = (value: string, label: string, cls = "") =>
+    `<form class="inline" data-action="public-link" data-id="${e(site.id)}" data-op="${value}"><button${cls ? ` class="${cls}"` : ""}>${label}</button></form>`;
+  const body = site.publicUrl
+    ? `<p class="muted">Anyone with this link can open the app without a Formelab account. They can look at it and read its shared data, but can't change anything unless they sign in and the app is shared with them.</p>
+  <div class="copyrow"><pre id="public-link">${e(site.publicUrl)}</pre><button type="button" data-copy="#public-link">Copy</button></div>
+  <div class="make-row">${op("new", "Make a new link", "ghost")}${op("off", "Turn off", "ghost")}</div>
+  <p class="muted">A new link stops the old one from working, including for people who already opened it.</p>`
+    : `<p class="muted">Turn on a link that opens this app for anyone who has it, without signing in. They can look at it and read its shared data, but can't change anything. You can turn it off or replace it at any time.</p>
+  <div>${op("on", "Turn on public link")}</div>`;
+  return `<section>
+  <h2>Public link</h2>
+  ${body}
+</section>
+
+`;
+}
+
 export function logoutControl(c: Context<AppEnv>): string {
   return c.get("sessionId")
     ? `<form method="post" action="/auth/logout" class="logout"><button class="link">Log out</button></form>`
@@ -207,7 +226,7 @@ export async function appSettingsPage(c: Context<AppEnv>, id: string): Promise<R
     ${fact("Space", e(site.namespace))}
     ${fact("Path", e(site.mountPath ? `/${site.mountPath}/` : "/ (the space's root)"))}
     ${fact("Owner", e(site.ownerEmail))}
-    ${fact("Who can open it", e(VISIBILITY_LABEL[site.visibility]))}
+    ${fact("Who can open it", e(VISIBILITY_LABEL[site.visibility] + (site.publicUrl ? ", and anyone with the public link" : "")))}
     ${fact("Published", e(fmtTime(site.createdAt)))}
     ${fact("Last updated", e(`${fmtTime(site.updatedAt)} (${ago(site.updatedAt)})`))}
     ${fact("Size", e(`${fmtBytes(site.totalBytes)} in ${site.fileCount} file${site.fileCount === 1 ? "" : "s"}`))}
@@ -241,7 +260,7 @@ export async function appSettingsPage(c: Context<AppEnv>, id: string): Promise<R
   </form>
 </section>
 
-<section>
+${publicLinkSection(site)}<section>
   <h2>Install on your devices</h2>
   <p class="muted">Open the app on your phone or computer, then add it to your home screen or install it from your browser. It gets its own icon and opens in its own window, straight to the app. Everyone it's shared with can do the same.</p>
   <p class="install-actions"><a class="ghost" href="${e(site.url)}" target="_blank" rel="noopener">Open app ↗</a> <a href="/install">How to install →</a></p>
