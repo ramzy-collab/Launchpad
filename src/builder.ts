@@ -13,7 +13,7 @@ import { enabledFlags, withFlags } from "./flags";
 import { GUIDE_MD } from "./generated/assets";
 import { connectGemini, disconnectGemini, GEMINI_MODEL } from "./gemini";
 import { decryptSecret, encryptSecret, rateLimit } from "./secrets";
-import { createNamespace, getNamespace, getSiteByMount, listNamespaces, publishSite, requireManageableSite, RESERVED_LABELS, type Ctx } from "./sites";
+import { createNamespace, currentFiles, getNamespace, getSiteByMount, listNamespaces, publishSite, requireManageableSite, RESERVED_LABELS, type Ctx } from "./sites";
 import { filesFromHtml, type FileMap } from "./upload";
 
 export type Builder = "claude" | "openai" | "gemini" | "grok";
@@ -522,28 +522,13 @@ export async function buildApp(ctx: Ctx, b: Builder, rawIdea: unknown, progress:
 
 const MAX_EDIT_HTML = 400 * 1024;
 
-/** All of an app's current files, so a change to index.html can keep the rest. */
-async function currentFiles(env: Env, prefix: string): Promise<FileMap> {
-  const files: FileMap = new Map();
-  let cursor: string | undefined;
-  do {
-    const list = await env.BUCKET.list({ prefix, cursor, limit: 1000 });
-    for (const o of list.objects) {
-      const obj = await env.BUCKET.get(o.key);
-      if (obj) files.set(o.key.slice(prefix.length), new Uint8Array(await obj.arrayBuffer()));
-    }
-    cursor = list.truncated ? list.cursor : undefined;
-  } while (cursor);
-  return files;
-}
-
 /** Changes an existing app as asked, with the person's own API key, and publishes the new version in place. */
 export async function editApp(ctx: Ctx, b: Builder, siteId: unknown, rawChange: unknown, progress: Progress): Promise<BuildResult> {
   const { env, user } = ctx;
   const { site } = await requireManageableSite(ctx, String(siteId ?? ""));
   const change = String(rawChange ?? "").trim();
   const { key, guide } = await prepare(ctx, b, change, "the change");
-  const files = await currentFiles(env, `sites/${site.id}/${site.current_version}/`);
+  const files = await currentFiles(env, site);
   const index = files.get("index.html");
   if (!index) throw err(409, "no_index", "This app has no index.html to change.", "Publish a new version from a file instead.");
   if (index.length > MAX_EDIT_HTML) throw err(413, "too_large", "This app's index.html is too big to change with AI here.", "Change it in your AI app, or publish a new version from a file.");

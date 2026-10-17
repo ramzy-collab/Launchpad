@@ -521,6 +521,8 @@ export interface PublishInput {
   dataWrites?: unknown;
   /** Refuse an app without an icon (the MCP publish tool, so AI-made apps always have one). */
   requireIcon?: boolean;
+  /** The version the files were built on (edits, partial uploads): refuse if the app has changed since. */
+  expectedVersion?: string;
 }
 
 /** Shown to AI apps whose publish was refused for lack of an icon. */
@@ -530,16 +532,60 @@ export const ICON_HINT =
 
 const R2_CONCURRENCY = 8;
 
-async function putFiles(bucket: R2Bucket, prefix: string, files: FileMap) {
-  const entries = [...files.entries()];
+/** Runs `fn` over `items`, at most R2_CONCURRENCY at a time. */
+async function eachLimited<T>(items: T[], fn: (item: T) => Promise<void>) {
   let i = 0;
   const worker = async () => {
-    while (i < entries.length) {
-      const [path, data] = entries[i++]!;
-      await bucket.put(prefix + path, data, { httpMetadata: { contentType: contentTypeFor(path) } });
-    }
+    while (i < items.length) await fn(items[i++]!);
   };
-  await Promise.all(Array.from({ length: Math.min(R2_CONCURRENCY, entries.length) }, worker));
+  await Promise.all(Array.from({ length: Math.min(R2_CONCURRENCY, items.length) }, worker));
+}
+
+async function sha256Bytes(data: Uint8Array): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", data);
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/** Writes each file with its SHA-256 in customMetadata, so siteManifest can tell clients what is unchanged. */
+async function putFiles(bucket: R2Bucket, prefix: string, files: FileMap) {
+  await eachLimited([...files.entries()], async ([path, data]) => {
+    await bucket.put(prefix + path, data, {
+      httpMetadata: { contentType: contentTypeFor(path) },
+      customMetadata: { sha256: await sha256Bytes(data) },
+    });
+  });
+}
+
+/** Every file of the site's live version. */
+export async function currentFiles(env: Env, site: SiteRow): Promise<FileMap> {
+  const prefix = `sites/${site.id}/${site.current_version}/`;
+  const keys: string[] = [];
+  let cursor: string | undefined;
+  do {
+    const list = await env.BUCKET.list({ prefix, cursor, limit: 1000 });
+    for (const o of list.objects) keys.push(o.key);
+    cursor = list.truncated ? list.cursor : undefined;
+  } while (cursor);
+  const files: FileMap = new Map();
+  await eachLimited(keys, async (key) => {
+    const obj = await env.BUCKET.get(key);
+    if (obj) files.set(key.slice(prefix.length), new Uint8Array(await obj.arrayBuffer()));
+  });
+  return files;
+}
+
+/** The live version's files with their sizes and SHA-256 (null for files written before hashes were kept). */
+export async function siteManifest(env: Env, site: SiteRow) {
+  const prefix = `sites/${site.id}/${site.current_version}/`;
+  const files: { path: string; bytes: number; sha256: string | null }[] = [];
+  let cursor: string | undefined;
+  do {
+    const list = await env.BUCKET.list({ prefix, cursor, limit: 1000, include: ["customMetadata"] });
+    for (const o of list.objects) files.push({ path: o.key.slice(prefix.length), bytes: o.size, sha256: o.customMetadata?.sha256 ?? null });
+    cursor = list.truncated ? list.cursor : undefined;
+  } while (cursor);
+  files.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+  return { version: site.current_version, files };
 }
 
 export async function deletePrefix(bucket: R2Bucket, prefix: string) {
@@ -579,6 +625,11 @@ export async function publishSite(ctx: Ctx, input: PublishInput) {
     if (!canManageSite(user, existing, ns)) {
       throw err(409, "not_yours", `A site at ${label}/${mount} already exists and you cannot replace it.`, "Ask its owner to add you as an editor, or publish to a different path.");
     }
+    if (input.expectedVersion !== undefined && existing.current_version !== input.expectedVersion) {
+      throw err(409, "conflict", "This app changed while your changes were being applied.", "Publish your changes again.");
+    }
+  } else if (input.expectedVersion !== undefined) {
+    throw err(409, "conflict", "This app was deleted while your changes were being applied.", "Publish the whole app again.");
   } else if (!canPublishTo(user, ns)) {
     throw err(409, "namespace_taken", `The namespace "${label}" belongs to someone else.`, `Publish to your own namespace instead, or ask ${ns.owner_email} to add you as an editor.`);
   }

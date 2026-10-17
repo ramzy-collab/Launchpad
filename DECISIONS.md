@@ -85,6 +85,24 @@ Choices made while building v1, including where the build differs from the spec 
 - **Atomic replace** also uses an optimistic check: `UPDATE ... WHERE id = ? AND current_version = ?`.
   If two replacements race, the loser gets 409 and its new files are removed. A failure before the
   D1 update leaves the old version live and schedules the new prefix for deletion.
+- **Publishing changes instead of a whole app** (`src/changes.ts`). An AI updating a large app
+  used to regenerate all of it as tool-call output, which takes minutes; the Worker side was never
+  the slow part. `publish` (MCP and the deploy API's JSON body) now also takes `edits` (exact
+  `old_str` → `new_str`, each matching exactly once, applied in order, all or nothing) and `files`
+  (whole text files, `null` deletes). The Worker loads the live version's files, applies the
+  changes in memory and publishes a normal new version through `publishSite`, so icons, share
+  images, audit and atomic replace all work as before. Changes carry the version they were applied
+  to (`expectedVersion`), and a publish in between is refused with 409 rather than silently
+  overwritten. Errors don't reveal file contents to people who can't manage the app: their
+  request is refused (`not_yours`) before any file is read.
+- **Skipping unchanged files happens on the client, not in R2.** Files live under a per-version
+  prefix that serving, icons, share images and PWA icons all read, and the Workers R2 binding has
+  no server-side copy, so reusing the previous version's objects would mean a content-addressed
+  layout touching all of those. The real cost of a large deploy is the upload anyway. So each file
+  is written with its SHA-256 in `customMetadata`, `GET /_api/deploy/sites/manifest` returns them,
+  and `publish.sh --changed-only` uploads a zip of only the files that differ (`merge=true`, plus
+  `delete`). A partial zip keeps its paths as they are (no shared-top-folder stripping) and needs
+  no `index.html`. Files written before hashes were kept show as 64 zeros and are uploaded once.
 - **Lookup order for extensionless paths:** `<path>/index.html`, `<path>.html`, then the exact
   `<path>` (so files like `LICENSE` are still reachable), then `index.html` in SPA mode.
 - **`<base>` injection:** HTMLRewriter prepends `<base href="/<mount>/">` to `<head>`. If a document

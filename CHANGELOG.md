@@ -4,6 +4,9 @@ Everything that has changed in Formelab, newest first. Shown in the admin panel 
 
 ## 2026-10-16
 
+- **Updating a big app is much faster.** AI apps connected to Formelab no longer rewrite a whole app to change it. The publish tool now takes just the edits (find this, replace with that) or just the files that changed, and Formelab applies them to the live app. Everything else, plus the app's data, sharing and settings, stays as it is. A one-line fix to a large app takes seconds instead of minutes. If an edit doesn't match, nothing is published and the AI is told which edit and why.
+- **AI apps can read every file of an app.** A new read_file tool returns any file of an app in full, in pages for very large files, so edits can be made anywhere instead of only in the first 200 KB of index.html.
+- **Deploy only what changed.** `scripts/publish.sh --dir dist --changed-only` compares a folder with the live app and uploads only the files that differ, removing the ones that are gone.
 - **Shared links look great.** Send an app's link in iMessage, WhatsApp, Slack, Discord, LinkedIn or anywhere else with link previews and it now shows the app's name, a line about it and a big picture of what it is, instead of "Log in to Formelab". Opening the app still needs a sign-in; only the preview is public.
 - **Each app gets its own preview picture.** AI apps (Claude, ChatGPT, Gemini, Grok and Make it in Formelab) now draw a share illustration for every app they make, along with a one-line description. Apps without one, including every app made before today, get a card with their icon, name and description. App makers can also add their own `share.svg` or `share.png` (1200×630), or name one with `og:image`.
 - **Formelab's own links too.** formelab.ai, the login page and links into the web app show a Formelab card with "SaaS is dead." instead of a plain grey bubble.

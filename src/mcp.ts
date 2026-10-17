@@ -5,7 +5,7 @@ import { enabledFlags, flagOn, withFlags } from "./flags";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { CfWorkerJsonSchemaValidator } from "@modelcontextprotocol/sdk/validation/cfworker";
 import { z } from "zod";
-import { filesFromJson } from "./api";
+import { filesForPublish } from "./changes";
 import type { Env, User } from "./env";
 import { ApiError, notFound } from "./errors";
 import { GUIDE_MD } from "./generated/assets";
@@ -17,8 +17,12 @@ import {
   getSiteById,
   listNamespaces,
   listSites,
+  getSiteByMount,
   publishSite,
   siteIdByMount,
+  siteManifest,
+  validateLabel,
+  validateMountPath,
   siteView,
   updateSite,
   type Ctx,
@@ -94,8 +98,11 @@ export function buildServer(ctx: Ctx): McpServer {
     "publish",
     {
       description:
-        "Publish (create or replace) an app and return its URL. Provide exactly one of `html` (a complete single-file HTML document) " +
-        "or `zip_base64` (a base64 zip with index.html at its root). Replacing an existing app keeps its KV data, secrets and " +
+        "Publish (create or replace) an app and return its URL. Send either the whole app, as `html` (a complete single-file HTML document) " +
+        "or `zip_base64` (a base64 zip with index.html at its root), or only changes to an existing app, as `edits` and/or `files`. " +
+        "To update an existing app, ALWAYS send changes rather than the whole app: it is far faster for large apps. " +
+        "`edits` are exact find-and-replace pairs applied to the app's current files on the server; read the current source first with read_file. " +
+        "Files you don't mention stay as they are. Replacing an existing app keeps its KV data, secrets and " +
         "sharing settings: visibility and allowed_emails only apply to a new app; change sharing with update_site. " +
         "Creates the namespace if it does not exist yet. The app MUST have an icon: a small SVG that fits the app, linked from " +
         "index.html's <head> as <link rel=\"icon\" href=\"data:image/svg+xml,...\"> (or an icon.svg file in the zip); without one, publish fails with icon_required. " +
@@ -104,6 +111,20 @@ export function buildServer(ctx: Ctx): McpServer {
       inputSchema: {
         html: z.string().optional().describe("Complete HTML document for a single-file app"),
         zip_base64: z.string().optional().describe("Base64-encoded .zip with index.html at its root"),
+        edits: z
+          .array(
+            z.object({
+              path: z.string().optional().describe("File to edit; default \"index.html\""),
+              old_str: z.string().describe("Text copied exactly from the current file; must occur exactly once"),
+              new_str: z.string().describe("Its replacement (\"\" deletes old_str)"),
+            }),
+          )
+          .optional()
+          .describe("Changes to an existing app: find-and-replace edits applied in order, all or nothing. Use instead of resending the whole app."),
+        files: z
+          .record(z.string(), z.string().nullable())
+          .optional()
+          .describe("Text files to add or replace whole, by path, e.g. {\"app.js\": \"...\"}; null deletes a file. Other files stay. Applied before edits. A new app can be made from files alone if index.html is among them."),
         namespace: z.string().describe("Namespace (subdomain) label, e.g. \"ramzy\""),
         mount_path: z.string().describe("The app's name in its space, e.g. \"budget\" or \"tools/budget\"; \"\" for the space's main app. Its address is generated from it, like https://budget-7kq2.<domain>/"),
         title: z.string().optional(),
@@ -118,11 +139,12 @@ export function buildServer(ctx: Ctx): McpServer {
     },
     (args) =>
       run(async () => {
-        const files = filesFromJson(args as Record<string, unknown>);
+        const { files, expectedVersion, changed } = await filesForPublish(ctx, args as Record<string, unknown>);
         const r = await publishSite(ctx, {
           namespace: args.namespace,
           mountPath: args.mount_path,
           files,
+          expectedVersion,
           title: args.title,
           spa: args.spa,
           visibility: args.visibility,
@@ -130,8 +152,25 @@ export function buildServer(ctx: Ctx): McpServer {
           dataWrites: args.data_writes,
           requireIcon: true,
         });
-        return { url: r.url, replaced: r.replaced, site: r.site, ...(r.note ? { note: r.note } : {}) };
+        return { url: r.url, replaced: r.replaced, ...(changed ? { changed } : {}), site: r.site, ...(r.note ? { note: r.note } : {}) };
       }),
+  );
+
+  server.registerTool(
+    "read_file",
+    {
+      description:
+        "Read one file of an app's live version, exactly as published, to change it with publish's edits. " +
+        `Returns up to ${READ_LIMIT / 1024} KB per call; for a larger file, call again with the next offset. Also lists the app's files.`,
+      inputSchema: {
+        namespace: z.string(),
+        mount_path: z.string(),
+        path: z.string().optional().describe("File path, e.g. \"app.js\"; default \"index.html\""),
+        offset: z.number().int().min(0).optional().describe("Character to start from (for files larger than one call returns)"),
+      },
+      annotations: { readOnlyHint: true },
+    },
+    (args) => run(() => readFile(ctx, args.namespace, args.mount_path, args.path, args.offset)),
   );
 
   server.registerTool(
@@ -217,6 +256,36 @@ export function buildServer(ctx: Ctx): McpServer {
 
 const GUIDE_TITLE = "Formelab app-building guide";
 const SOURCE_LIMIT = 200 * 1024;
+const READ_LIMIT = 512 * 1024;
+
+async function readFile(ctx: Ctx, rawNs: string, rawMount: string, rawPath = "index.html", offset = 0) {
+  const label = validateLabel(rawNs);
+  const site = await getSiteByMount(ctx.env, label, validateMountPath(rawMount));
+  const ns = site ? await getNamespace(ctx.env, label) : null;
+  // Same rule as fetch: anyone who may open the app may read its files.
+  if (!site || !ns || !canViewSite(ctx.user, site, ns)) throw notFound(`Site ${label}/${rawMount}`);
+  const { files } = await siteManifest(ctx.env, site);
+  const path = rawPath.replace(/^\/+/, "") || "index.html";
+  const listing = files.length > 200 ? `${files.slice(0, 200).map((f) => f.path).join(", ")}, … (${files.length} files)` : files.map((f) => `${f.path} (${f.bytes} bytes)`).join(", ");
+  const obj = files.some((f) => f.path === path) ? await ctx.env.BUCKET.get(`sites/${site.id}/${site.current_version}/${path}`) : null;
+  if (!obj) throw new ApiError(404, "not_found", `"${path}" is not in this app.`, `The app's files: ${listing}`);
+  const bytes = new Uint8Array(await obj.arrayBuffer());
+  let text: string;
+  try {
+    text = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes);
+  } catch {
+    return `${path} is a binary file (${bytes.length} bytes); it can be replaced but not read or edited as text.\nFiles: ${listing}`;
+  }
+  const end = Math.min(text.length, offset + READ_LIMIT);
+  const more = end < text.length;
+  return [
+    `File: ${path} (${text.length} characters)${offset || more ? `, characters ${offset}-${end}` : ""}`,
+    ...(more ? [`More follows: call read_file again with offset ${end}.`] : []),
+    `Files: ${listing}`,
+    "",
+    text.slice(offset, end),
+  ].join("\n");
+}
 
 async function searchItems(ctx: Ctx, query: string) {
   const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
@@ -262,7 +331,7 @@ async function fetchItem(ctx: Ctx, id: string) {
     `Files: ${view.fileCount}, ${view.totalBytes} bytes`,
     `Updated: ${new Date(view.updatedAt).toISOString()}`,
     "",
-    `index.html${truncated ? " (first 200 KB)" : ""}:`,
+    `index.html${truncated ? " (first 200 KB; read_file returns all of it)" : ""}:`,
     source,
   ].join("\n");
   return {
