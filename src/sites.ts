@@ -10,6 +10,7 @@ import type { FileMap } from "./upload";
 import { base32, isEmail, normEmail, parseJsonArray, randomBytes, randomId, sortableId } from "./util";
 import { appSharedEmail, namespaceSharedEmail, sendEach } from "./email";
 import { appOrigin, siteOrigin } from "./hosts";
+import { flagOnForOwner } from "./flags";
 
 /** Addresses in `next` that weren't in `prev` (both normalized). */
 const added = (next: string[], prev: string[]) => {
@@ -64,6 +65,8 @@ export interface SiteRow {
   kv_writes?: "all" | "editors";
   /** The secret in the app's "anyone with the link" address, or null when it has none (see publicLinkUrl). */
   public_link?: string | null;
+  /** 1 when guests from the public link may send responses (formelab.responses.submit); see src/responses.ts. */
+  guest_responses?: number;
 }
 
 /** Everything a service call needs: bindings, the acting user, and a way to defer work. */
@@ -227,6 +230,8 @@ export interface SiteView {
    * none, and always null for people who can't manage the app (only they may hand it out).
    */
   publicUrl: string | null;
+  /** Whether people who open the app through its public link may send it responses. */
+  guestResponses: boolean;
 }
 
 export const siteView = (env: Env, s: SiteRow, requestUrl?: string): SiteView => ({
@@ -249,6 +254,7 @@ export const siteView = (env: Env, s: SiteRow, requestUrl?: string): SiteView =>
   sheets: parseJsonArray(s.sheets),
   dataWrites: s.kv_writes === "editors" ? "editors" : "everyone",
   publicUrl: publicLinkUrl(env, s, requestUrl),
+  guestResponses: !!s.guest_responses,
 });
 
 /** siteView for a list that also holds apps the person can only open: the public link is for managers. */
@@ -743,6 +749,7 @@ export interface SitePatch {
   sheets?: unknown;
   data_writes?: unknown;
   public_link?: unknown;
+  guest_responses?: unknown;
 }
 
 export async function updateSite(ctx: Ctx, id: string, patch: SitePatch) {
@@ -808,6 +815,14 @@ export async function updateSite(ctx: Ctx, id: string, patch: SitePatch) {
     set("public_link", next);
     if (changed.includes("public_link")) detail.publicLink = !next ? "off" : site.public_link ? "new" : "on";
   }
+  const guestResponses = parseBool(patch.guest_responses);
+  if (guestResponses !== undefined && !(await flagOnForOwner(ctx.env, "responses", site.owner_email))) {
+    throw err(403, "not_available", "Responses aren't available on Formelab yet.", "Leave guest_responses out until they are.");
+  }
+  if (guestResponses !== undefined) {
+    set("guest_responses", guestResponses ? 1 : 0);
+    if (changed.includes("guest_responses")) detail.guestResponses = guestResponses;
+  }
   if (patch.sheets !== undefined) {
     // The spreadsheets are reached with the owner's own Google account, so only the owner chooses them.
     const list = sheetIdList(patch.sheets);
@@ -843,6 +858,7 @@ export async function removeSite(env: Env, site: SiteRow) {
     env.DB.prepare("DELETE FROM kv WHERE site_id = ?").bind(site.id),
     env.DB.prepare("DELETE FROM kv_user WHERE site_id = ?").bind(site.id),
     env.DB.prepare("DELETE FROM secrets WHERE site_id = ?").bind(site.id),
+    env.DB.prepare("DELETE FROM responses WHERE site_id = ?").bind(site.id),
     env.DB.prepare("DELETE FROM rate_counters WHERE bucket LIKE ?").bind(site.id + ":%"),
     env.DB.prepare("DELETE FROM sites WHERE id = ?").bind(site.id),
   ]);

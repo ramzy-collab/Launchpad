@@ -7,7 +7,7 @@ import { SERVICES_SPRITE } from "./dashboard/services";
 import { appIcon } from "./icons";
 import { sheetsCallback, sheetsConnect } from "./sheets";
 import { enabledFlags, withFlags } from "./flags";
-import { accountPage, appActivityPage, appSettingsPage, connectedPage, dashboardPage, installPage, keysPage, newAppPage, sharedPage, spacesPage } from "./dashboard/page";
+import { accountPage, appActivityPage, appResponsesCsv, appSettingsPage, connectedPage, dashboardPage, installPage, keysPage, newAppPage, sharedPage, spacesPage } from "./dashboard/page";
 import { homePage } from "./dashboard/home";
 import { forgotGet, forgotPost, resetGet, resetPost, signInCode, signInGet, signInPost } from "./signin";
 import type { AppEnv, Env } from "./env";
@@ -225,6 +225,7 @@ webApp.get("/install", (c) => installPage(c));
 webApp.get("/apps/:id", (c) => appSettingsPage(c, c.req.param("id")));
 webApp.get("/apps/:id/icon", (c) => appIcon(ctxOf(c), c.req.param("id")));
 webApp.get("/apps/:id/activity", (c) => appActivityPage(c, c.req.param("id")));
+webApp.get("/apps/:id/responses.csv", (c) => appResponsesCsv(c, c.req.param("id")));
 webApp.notFound(() => plainPage(404, "Not found", "There is nothing here."));
 
 // The admin panel (admins only; adminPage answers 404 to everyone else).

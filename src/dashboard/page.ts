@@ -18,6 +18,8 @@ import { connectedAiApps, type AiApp } from "./aiapps";
 import { AI_LOGOS } from "./logos";
 import { BUILDER_LABEL, BUILDERS, builderKeys, type Builder } from "../builder";
 import { PWA_HEAD } from "../pwa";
+import { countResponses, responsesCsv } from "../responses";
+import { flagOnForOwner } from "../flags";
 
 export const fmtTime = (ms: number | null) => (ms ? new Date(ms).toISOString().replace("T", " ").slice(0, 16) + " UTC" : "never");
 
@@ -29,14 +31,28 @@ const visibilityOptions = (current: "all" | "restricted") =>
     .join("");
 
 /** The app page's "anyone with the link" controls (managers only see the page). */
-function publicLinkSection(site: { id: string; publicUrl: string | null }): string {
+function publicLinkSection(site: { id: string; publicUrl: string | null; guestResponses: boolean }, responsesOn: boolean): string {
   const op = (value: string, label: string, cls = "") =>
     `<form class="inline" data-action="public-link" data-id="${e(site.id)}" data-op="${value}"><button${cls ? ` class="${cls}"` : ""}>${label}</button></form>`;
+  const responses = `<form class="inline" data-action="guest-responses" data-id="${e(site.id)}" data-on="${site.guestResponses ? "false" : "true"}"><button class="ghost">${
+    site.guestResponses ? "Stop taking responses from the link" : "Let people with the link send responses"
+  }</button></form>`;
   const body = site.publicUrl
     ? `<p class="muted">Anyone with this link can open the app without a Formelab account. They can look at it and read its shared data, but can't change anything unless they sign in and the app is shared with them.</p>
   <div class="copyrow"><pre id="public-link">${e(site.publicUrl)}</pre><button type="button" data-copy="#public-link">Copy</button></div>
   <div class="make-row">${op("new", "Make a new link", "ghost")}${op("off", "Turn off", "ghost")}</div>
-  <p class="muted">A new link stops the old one from working, including for people who already opened it.</p>`
+  <p class="muted">A new link stops the old one from working, including for people who already opened it.</p>
+  ${
+    responsesOn
+      ? `<h3>Forms and sign-ups</h3>
+  <p class="muted">${
+    site.guestResponses
+      ? "People with the link can send this app responses (form answers, sign-ups, feedback) without signing in. They can't see what anyone sent; only you and the app's editors can."
+      : "For a form, survey or sign-up sheet, let people with the link send responses without signing in. They can't see what anyone sent; only you and the app's editors can."
+  }</p>
+  <div>${responses}</div>`
+      : ""
+  }`
     : `<p class="muted">Turn on a link that opens this app for anyone who has it, without signing in. They can look at it and read its shared data, but can't change anything. You can turn it off or replace it at any time.</p>
   <div>${op("on", "Turn on public link")}</div>`;
   return `<section>
@@ -163,6 +179,21 @@ async function manageable(c: Context<AppEnv>, id: string) {
   }
 }
 
+/** Every response the app received, as a spreadsheet, for the people who can manage it. */
+export async function appResponsesCsv(c: Context<AppEnv>, id: string): Promise<Response> {
+  const site = await manageable(c, id);
+  if (!site || !(await flagOnForOwner(c.env, "responses", site.ownerEmail))) return plainPage(404, "Not found", "There is nothing here.");
+  const name = (appName(site).replace(/[^A-Za-z0-9 _-]+/g, "").trim() || "app") + " responses.csv";
+  return new Response("\uFEFF" + (await responsesCsv(c.env, site.id)), {
+    headers: {
+      "content-type": "text/csv; charset=utf-8",
+      "content-disposition": `attachment; filename="${name}"`,
+      "cache-control": "no-store",
+      "x-content-type-options": "nosniff",
+    },
+  });
+}
+
 /** An app's activity log: everything done to or in the app, for the people who can manage it. */
 export async function appActivityPage(c: Context<AppEnv>, id: string): Promise<Response> {
   const site = await manageable(c, id);
@@ -192,6 +223,9 @@ export async function appSettingsPage(c: Context<AppEnv>, id: string): Promise<R
   const activity = (await siteActivity(c.env, site.id, 5))
     .map((a) => `<tr><td class="nowrap">${e(fmtTime(a.at))}</td><td>${e(a.actor)}</td><td>${e(describeActivity(a))}</td></tr>`)
     .join("");
+  // Responses follow the app's owner (the responses flag), like the runtime API.
+  const responsesOn = await flagOnForOwner(c.env, "responses", site.ownerEmail);
+  const responseCount = responsesOn ? await countResponses(c.env, site.id) : 0;
   const fact = (label: string, value: string) => `<div><dt>${e(label)}</dt><dd>${value}</dd></div>`;
   // Change it with AI: the person's own Claude or OpenAI key rewrites the app (app_builder flag).
   const keys = c.get("features")?.has("app_builder") ? await builderKeys(c.env, user.email) : null;
@@ -260,7 +294,17 @@ export async function appSettingsPage(c: Context<AppEnv>, id: string): Promise<R
   </form>
 </section>
 
-${publicLinkSection(site)}<section>
+${publicLinkSection(site, responsesOn)}${
+  responsesOn
+    ? `<section>
+  <h2>Responses</h2>
+  <p class="muted">What people sent this app with <code>formelab.responses.submit()</code>: form answers, sign-ups, feedback. Only you and its editors can see them.</p>
+  <p>${responseCount === 0 ? "No responses yet." : `${responseCount} response${responseCount === 1 ? "" : "s"}. <a href="/apps/${e(encodeURIComponent(site.id))}/responses.csv" download>Download as a spreadsheet (CSV)</a>`}</p>
+</section>
+
+`
+    : ""
+}<section>
   <h2>Install on your devices</h2>
   <p class="muted">Open the app on your phone or computer, then add it to your home screen or install it from your browser. It gets its own icon and opens in its own window, straight to the app. Everyone it's shared with can do the same.</p>
   <p class="install-actions"><a class="ghost" href="${e(site.url)}" target="_blank" rel="noopener">Open app ↗</a> <a href="/install">How to install →</a></p>

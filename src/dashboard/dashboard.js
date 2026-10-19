@@ -113,6 +113,13 @@
         reloadSoon();
       });
     },
+    "guest-responses": function (form) {
+      var on = form.dataset.on === "true";
+      return api("PATCH", "/sites/" + encodeURIComponent(form.dataset.id), { guest_responses: on }).then(function () {
+        show(on ? "People with the link can now send responses." : "People with the link can no longer send responses.");
+        reloadSoon();
+      });
+    },
     "ns-create": function (form) {
       return api("POST", "/namespaces", { label: form.elements.label.value }).then(function () {
         show("Space created.");

@@ -688,6 +688,36 @@ Choices made while building v1, including where the build differs from the spec 
 - **Turned on only through update_site or the app's page**, never by `publish`, matching the rule
   that publishing a new version never changes sharing.
 
+## Responses: forms for anyone (src/responses.ts, behind the `responses` flag)
+
+- **Why.** Public links let guests look but not write (above), so a form shared by public link asked
+  everyone without a Formelab account to sign in. People sharing RSVPs and surveys hit that at once.
+- **Send-only, not guest writes to KV.** Guest writes to shared KV would let anyone with the link
+  overwrite or wipe the app's data, and every guest reads shared KV, so answers kept there are
+  public. Responses can only be added: whoever sends one can't read, change or delete it, or anyone
+  else's. Only the owner and editors list and delete them (`/_api/responses`, `get_responses`, a
+  CSV on the app's page). They're a separate table (migration 0019), not a KV prefix, so they never
+  count against KV's limits or show up in `kv.list`.
+- **Guests only when the owner says so.** `sites.guest_responses` (off by default, set only by
+  update_site or the app's page, never by publish) lets public-link guests send them. Signed-in
+  people who can open the app can always send them, and their email is kept; guests' is NULL.
+  Turning the public link off or replacing it stops guests at once, as with everything else.
+- **Limits against spam.** At most 16 KB of JSON each and 5,000 per app (one INSERT … WHERE COUNT
+  keeps the cap race-free, like KV); 60 a minute per app (PROXY_LIMITER, keyed `<site>:responses`)
+  and 5 a minute per guest IP per app (a new RESPONSES_LIMITER binding, since a binding's own limit
+  overrides the number passed to `rateLimit`). Turnstile was left out: it needs a site key per
+  deployment and a widget in every app; the per-IP limit and the cap bound the damage meanwhile.
+- **The SDK's size budget went from 6 KB to 7 KB** for `formelab.responses`: it was 3 bytes under
+  6 KB already.
+- **Ordered by rowid.** Ids are random; `sortableId` isn't ordered within one millisecond, so the
+  list, its `before` paging and the CSV use rowid (the order responses arrived).
+- **CSV for spreadsheets.** One column per field, in the order fields first appear, with a BOM for
+  Excel. Text starting with `= + - @` gets a leading `'` so a guest's answer can't run as a formula.
+- **Behind the `responses` flag, following the app's owner** (like `connected_apps`): off, the
+  runtime API answers 403 `not_available`, `guest_responses` is refused, and the dashboard sections,
+  CSV route, `get_responses` tool, `update_site`'s `guest_responses` field and the guide's text are
+  hidden (MCP tools follow the connecting person's flags).
+
 ## Metrics (src/metrics.ts, admin panel → Metrics)
 
 - **Computed on each page load, from the tables Formelab already has plus two new ones.** No

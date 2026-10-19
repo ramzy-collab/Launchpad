@@ -19,6 +19,11 @@ export const FLAGS = {
     description:
       "On New app, people save their own Claude (Anthropic) or OpenAI API key, and \"Make it\" builds and publishes the app right in Formelab, billed to their API account. Off: the Make it buttons open Claude or ChatGPT with the idea typed in, as before.",
   },
+  responses: {
+    label: "Responses (forms for anyone)",
+    description:
+      "Apps collect form answers, sign-ups and feedback with formelab.responses, which only their owner and editors can read (app page, CSV download, get_responses). Owners can let people with the public link send them without a Formelab account. Follows the app's owner. Off: the SDK calls fail with not_available and the settings are hidden.",
+  },
 } as const;
 
 export type FlagName = keyof typeof FLAGS;

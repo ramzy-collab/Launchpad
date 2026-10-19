@@ -47,6 +47,7 @@ const FIELD_LABEL: Record<string, string> = {
   kv_writes: "who can change its data",
   sheets: "Google Sheets it can use",
   public_link: "public link",
+  guest_responses: "whether people with the public link can send responses",
 };
 
 const list = (v: unknown) => (Array.isArray(v) ? v.map(String).join(", ") : "");
@@ -96,6 +97,10 @@ export function describeActivity(row: AuditRow): string {
               ? "made a new public link (the old one stopped working)"
               : "turned on a public link (anyone with it can open the app)",
         );
+      }
+      if (typeof d.guestResponses === "boolean") {
+        explained.add("guest_responses");
+        parts.push(d.guestResponses ? "let people with the public link send responses" : "stopped people with the public link sending responses");
       }
       if (d.dataWrites) {
         explained.add("kv_writes");

@@ -226,11 +226,14 @@ async function checkRate(env: Env, siteId: string) {
   await rateLimit(env, siteId, PROXY_RATE_PER_MINUTE, `This app made more than ${PROXY_RATE_PER_MINUTE} proxy calls in a minute.`);
 }
 
-/** At most `perMinute` calls a minute for `key` (the binding's limit applies when it's configured). */
-export async function rateLimit(env: Env, key: string, perMinute: number, message: string) {
+/**
+ * At most `perMinute` calls a minute for `key`. When the limiter binding (PROXY_LIMITER unless
+ * another is given) is configured, its own limit applies instead, so it must match `perMinute`.
+ */
+export async function rateLimit(env: Env, key: string, perMinute: number, message: string, limiter: RateLimit | undefined = env.PROXY_LIMITER) {
   let ok: boolean;
-  if (env.PROXY_LIMITER) {
-    ok = (await env.PROXY_LIMITER.limit({ key })).success;
+  if (limiter) {
+    ok = (await limiter.limit({ key })).success;
   } else {
     const minute = Math.floor(now() / 60_000);
     const row = await env.DB.prepare(

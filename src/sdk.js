@@ -74,6 +74,15 @@
       kv.mine = store("me/kv");
       return kv;
     })(),
+    // Form answers: anyone who can open the app sends them; only its owner and editors list them.
+    responses: {
+      submit: function (data) { return call("POST", "responses", data === undefined ? null : data); },
+      list: function (o) {
+        o = o || {};
+        return call("GET", "responses?limit=" + enc(o.limit || 500) + (o.before ? "&before=" + enc(o.before) : ""));
+      },
+      "delete": function (id) { return call("DELETE", "responses/" + enc(id)); }
+    },
     secrets: {
       set: function (name, value, opts) {
         return call("PUT", "secrets/" + enc(name), { value: value, hosts: opts && opts.hosts });
