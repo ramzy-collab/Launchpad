@@ -2,6 +2,10 @@
 
 Everything that has changed in Formelab, newest first. Shown in the admin panel under Changelog.
 
+## 2026-10-19
+
+- **Forms anyone can fill in (behind the new Responses feature).** Apps can now collect form answers, sign-ups, RSVPs and feedback with `formelab.responses.submit()`. Only the app's owner and editors can see what was sent: on the app's page (with a spreadsheet download) or by asking their AI (the new `get_responses` tool). Owners can let people who open the app through its public link send responses without a Formelab account (**Let people with the link send responses** under Public link, or `update_site` with `guest_responses`). Before this, anyone without an account who filled in a shared form was asked to sign in to Formelab. Guests still can't read anything, and each one can send at most 5 responses a minute. Turn it on in the admin panel under Features.
+
 ## 2026-10-17
 
 - **Metrics in the admin panel.** A new **Metrics** page shows how Formelab is growing and being used, ready to put in front of an investor: weekly active people (building apps, or using apps someone else built), stickiness, activation and time to first app up top; then growth (accounts, apps, sign-ups, waitlist demand), engagement (daily, weekly and monthly active people, new vs returning builders, retention by signup week), the activation funnel from sign-up to coming back, MCP use (tool calls by AI app, which AI apps people use, each tool, success rate and speed), hosted apps (page views, visitors, builders vs people apps were shared with, shipping pace, what apps do, the top apps) and the most engaged customers. Pick 30 days, 90 days, 12 months or all time; every number shows its change against the period before. Team accounts (admins and the owner) are left out unless you turn them on. Every chart has a hover readout and a table of its numbers, and the page works in dark mode, on a phone and printed.

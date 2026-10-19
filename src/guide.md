@@ -61,6 +61,10 @@ Apps get platform features through a small browser SDK, `window.formelab`:
    the owner and editors can change it. If viewers must write to it (votes, sign-ups, shared
    counters), publish with `data_writes: "everyone"`. Each person's own data (preferences, drafts,
    their answers) goes in `formelab.kv.mine`, which nobody else can read or change.
+<!-- flag:responses -->
+   **Forms whose answers only the owner should see** (surveys, sign-ups, RSVPs, contact and
+   feedback forms) send each answer with `formelab.responses.submit()` instead; see below.
+<!-- /flag:responses -->
 <!-- flag:connected_apps -->
 9. **For AI features, use `formelab.gemini`** (Google Gemini 3.5 Flash-Lite through the owner's
    connected key). Don't ask the user for an AI API key or put one in a secret: they connect
@@ -89,7 +93,7 @@ const me = await formelab.me(); // { email: "ana@example.com", name: null }
 `me()` returns `null` for a **guest**: someone who opened the app through its public link and isn't
 signed in (or isn't someone the app is shared with). Guests can see the app and read its shared data
 (`formelab.kv.get` and `list`), and that's all: every other call fails with code
-`sign_in_required`. If the app may be shared by public link, handle `null` and offer a sign-in
+`sign_in_required`<!-- flag:responses --> (except `formelab.responses.submit`, if the owner lets them)<!-- /flag:responses -->. If the app may be shared by public link, handle `null` and offer a sign-in
 button that calls `formelab.signIn()`, which signs them in and brings them back to the same page:
 
 ```js
@@ -123,6 +127,35 @@ read or change it, whatever `data_writes` says. Up to 200 keys per person per ap
 const prefs = (await formelab.kv.mine.get("prefs")) ?? {};
 await formelab.kv.mine.set("prefs", { ...prefs, theme: "dark" });
 ```
+
+<!-- flag:responses -->
+
+### `formelab.responses`: forms, surveys and sign-ups
+
+Answers people send the app, kept for its owner. Anyone who can open the app can **send** one; only
+the owner and editors can **list** or **delete** them (everyone else gets 403). Nobody can read
+back or change what they sent. Each response is any JSON up to 16 KB (an object of field → answer
+is best: the owner downloads them as a spreadsheet with one column per field); at most 5,000 per app.
+
+```js
+await formelab.responses.submit({ name: "Ana", email: "ana@example.com", attending: "Yes" });
+
+// Owner and editors only: newest first, up to 500 at a time.
+const { total, responses, next } = await formelab.responses.list();
+// responses: [{ id, at, email, data }]; email is who sent it, or null for a public-link guest.
+const older = next ? await formelab.responses.list({ before: next }) : null;
+await formelab.responses.delete(responses[0].id);
+```
+
+**Collecting answers from people without a Formelab account.** People who open the app through its
+public link are guests (`formelab.me()` is `null`). They can send responses only when the owner
+allows it: `update_site` with `guest_responses: true` (and `public_link: true` for the link), or
+"Let people with the link send responses" on the app's page. Otherwise `submit` fails with
+`sign_in_required`. Guests can send at most 5 a minute each, and an app takes at most 60 a minute;
+too many fails with `rate_limited` (429). The owner reads responses on the app's page in Formelab
+(with a CSV download) or by asking their AI (the `get_responses` tool).
+
+<!-- /flag:responses -->
 
 ### `formelab.secrets`
 
@@ -377,6 +410,28 @@ const mine = (await formelab.kv.mine.get("prefs")) ?? {};   // only this person 
 await formelab.kv.mine.set("prefs", { ...mine, lastSeen: Date.now() });
 ```
 
+<!-- flag:responses -->
+
+### A form for the public (survey, sign-up, RSVP)
+
+Publish it, then turn on the public link and guest responses with `update_site`
+(`public_link: true, guest_responses: true`) and give the user `site.publicUrl` to share. Don't
+put the answers in shared KV: everyone who can open the app could read them.
+
+```js
+form.addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  try {
+    await formelab.responses.submit(Object.fromEntries(new FormData(form)));
+    form.replaceWith(Object.assign(document.createElement("p"), { textContent: "Thanks! Your answer was sent." }));
+  } catch (e) {
+    showError(e.message + " " + (e.hint || ""));
+  }
+});
+```
+
+<!-- /flag:responses -->
+
 ## 5. Starter app
 
 A complete single-file app that uses `me`, `kv` and `secrets.proxy`. It greets the viewer, counts
@@ -523,6 +578,10 @@ only the changed files and `delete` lists paths to remove, one per line).
 - [ ] Every SDK call is wrapped in `try/catch`, and errors show `e.message` and `e.hint` to the user.
 - [ ] KV keys are namespaced (`"vote:" + email`), values stay well under 64 KB. Each person's own
       data is in `formelab.kv.mine`; `data_writes: "everyone"` is set only if viewers must write shared KV.
+<!-- flag:responses -->
+- [ ] Form answers only the owner should see go through `formelab.responses.submit`, not KV. If people
+      without a Formelab account must fill it in, `update_site` sets `public_link` and `guest_responses`.
+<!-- /flag:responses -->
 - [ ] Works on a phone (responsive layout, `<meta name="viewport">`), and as an installed app (every screen has a way back).
 - [ ] **Has an icon (required):** a small SVG that fits the app, linked in `<head>` as `<link rel="icon" href="data:image/svg+xml,...">` (URL-encoded SVG), or as `<link rel="icon" href="icon.svg">` with `icon.svg` in the zip. Formelab shows it on the app's tile, and the `publish` tool refuses apps without one (`icon_required`).
 - [ ] **Has a share illustration and description (recommended):** a 1200×630 SVG that shows what the app is, named by `<meta property="og:image">`, and a one-sentence `<meta name="description">`, for link previews in iMessage, Slack and the rest (see "Link previews"). No one's data in them: they're public.

@@ -12,6 +12,7 @@ import { ApiError, notFound } from "./errors";
 import { GUIDE_MD } from "./generated/assets";
 import { canViewSite } from "./auth";
 import { apexOrigin } from "./oauth";
+import { listResponses } from "./responses";
 import {
   deleteSite,
   getNamespace,
@@ -20,6 +21,7 @@ import {
   listSites,
   getSiteByMount,
   publishSite,
+  requireManageableSite,
   siteIdByMount,
   siteManifest,
   validateLabel,
@@ -47,7 +49,7 @@ async function run(fn: () => Promise<unknown>): Promise<ToolResult> {
 
 const emails = z.array(z.string()).optional();
 
-export function buildServer(ctx: Ctx, beforeTools?: (server: McpServer) => void): McpServer {
+export function buildServer(ctx: Ctx, beforeTools?: (server: McpServer) => void, features: Set<string> = new Set()): McpServer {
   const server = new McpServer(
     { name: "formelab", version: "1.0.0" },
     {
@@ -205,12 +207,48 @@ export function buildServer(ctx: Ctx, beforeTools?: (server: McpServer) => void)
               "They can look and read its shared data (formelab.kv) but can't change anything; formelab.me() is null for them. " +
               "false turns it off; \"new\" replaces it so the old link stops working. Only turn it on when the user asks to share the app publicly.",
           ),
+        // Behind the responses flag.
+        ...(features.has("responses")
+          ? {
+              guest_responses: z
+                .boolean()
+                .optional()
+                .describe(
+                  "true lets people who open the app through its public link send responses (formelab.responses.submit: form answers, sign-ups, feedback) without a Formelab account. " +
+                    "They still can't read anything they or others sent; only the owner and editors can (get_responses). Turn on for forms meant for the public.",
+                ),
+            }
+          : {}),
       },
       annotations: { idempotentHint: true },
     },
     ({ namespace, mount_path, ...patch }) =>
       run(async () => updateSite(ctx, await siteIdByMount(ctx, namespace, mount_path), patch)),
   );
+
+  // Behind the responses flag.
+  if (features.has("responses")) {
+    server.registerTool(
+      "get_responses",
+      {
+        description:
+          "Read the responses people sent an app with formelab.responses.submit (form answers, sign-ups, feedback), newest first. " +
+          "Each has its time, the sender's email (null for someone who used the app's public link) and the data they sent. Owners and editors only.",
+        inputSchema: {
+          namespace: z.string(),
+          mount_path: z.string(),
+          limit: z.number().int().min(1).max(500).optional().describe("How many to return (default and most: 500)"),
+          before: z.string().optional().describe("A response id: return the ones sent before it (pass the previous call's next)"),
+        },
+        annotations: { readOnlyHint: true },
+      },
+      ({ namespace, mount_path, limit, before }) =>
+        run(async () => {
+          const { site } = await requireManageableSite(ctx, await siteIdByMount(ctx, namespace, mount_path));
+          return listResponses(ctx.env, site.id, { limit, before });
+        }),
+    );
+  }
 
   server.registerTool(
     "delete_site",
@@ -373,7 +411,7 @@ export async function handleMcp(
 ): Promise<Response> {
   const ctx: Ctx = { env, user, waitUntil: (p) => exec.waitUntil(p), requestUrl: req.url };
   if (usage.initializing) ctx.waitUntil(recordMcpCall(env, { email: user.email, client: usage.client, tool: "initialize", ok: true, ms: 0 }).catch(() => {}));
-  const server = buildServer(ctx, (s) => countToolCalls(s, ctx, usage.client));
+  const server = buildServer(ctx, (s) => countToolCalls(s, ctx, usage.client), await enabledFlags(env, user));
   const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
   await server.connect(transport);
   try {

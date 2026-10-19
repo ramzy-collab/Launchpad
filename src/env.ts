@@ -6,6 +6,8 @@ export interface Env {
   WAITLIST_LIMITER?: RateLimit;
   /** Sign-in attempts (password, code, reset) per client IP. */
   LOGIN_LIMITER?: RateLimit;
+  /** Responses each public-link guest may send an app (see responses.ts). */
+  RESPONSES_LIMITER?: RateLimit;
   /** OAuth grants, clients and tokens for the Claude chat connector (workers-oauth-provider). */
   OAUTH_KV: KVNamespace;
   /** Injected by OAuthProvider into requests it hands to the default handler. */

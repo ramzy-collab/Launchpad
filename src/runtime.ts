@@ -8,6 +8,7 @@ import { geminiAvailable, geminiGenerate } from "./gemini";
 import { flagOnForOwner } from "./flags";
 import { sheetsAvailable, sheetsCall } from "./sheets";
 import { getNamespace } from "./sites";
+import { deleteResponse, listResponses, submitResponse } from "./responses";
 
 /**
  * The per-app runtime API on an app's own host, <host_label>.APP_DOMAIN/_api/*. The parent sets
@@ -38,11 +39,21 @@ export function runtimeApi() {
   });
 
   // Guests (people who came in through the app's public link) can see the app and read its shared
-  // data. Everything that writes, or spends the owner's keys and accounts, needs a sign-in.
+  // data, and send it responses if the owner allows that. Everything else that writes, or spends
+  // the owner's keys and accounts, needs a sign-in.
   api.use("*", async (c, next) => {
     if (!c.get("guest")) return next();
     const path = new URL(c.req.url).pathname;
     const reads = c.req.method === "GET" && (path === "/_api/me" || path === "/_api/kv" || path.startsWith("/_api/kv/"));
+    if (c.req.method === "POST" && path === "/_api/responses") {
+      if (c.get("site").guest_responses) return next();
+      throw err(
+        401,
+        "sign_in_required",
+        "Sign in to send this: the app's owner hasn't let people who open it through its public link send responses.",
+        "Ask the app's owner to turn on \"Let people with the link send responses\" (its Public link settings, or update_site's guest_responses).",
+      );
+    }
     if (!reads) {
       throw err(
         401,
@@ -112,12 +123,38 @@ export function runtimeApi() {
   api.put("/me/kv/*", async (c) => c.json(await kvSet(c.env, mine(c), myKey(c), await readValue(c))));
   api.delete("/me/kv/*", async (c) => c.json(await kvDelete(c.env, mine(c), myKey(c))));
 
-  const requireManage = async (c: { env: AppEnv["Bindings"]; get: <K extends keyof AppEnv["Variables"]>(k: K) => AppEnv["Variables"][K] }) => {
+  const requireManage = async (c: { env: AppEnv["Bindings"]; get: <K extends keyof AppEnv["Variables"]>(k: K) => AppEnv["Variables"][K] }, what = "manage its secrets") => {
     const nsRow = await getNamespace(c.env, c.get("namespace"));
     if (!nsRow || !canManageSite(c.get("user"), c.get("site"), nsRow)) {
-      throw forbidden("Only the app's owner or editors can manage its secrets.");
+      throw forbidden(`Only the app's owner or editors can ${what}.`);
     }
   };
+
+  // Responses (see responses.ts): anyone who can open the app sends them; only managers read them.
+  // Behind the responses flag, which follows the app's owner.
+  const responsesGate = async (c: import("hono").Context<AppEnv>, next: () => Promise<void>) => {
+    if (!(await flagOnForOwner(c.env, "responses", c.get("site").owner_email))) {
+      throw err(403, "not_available", "Responses aren't available on Formelab yet.", "Check back soon; the app can't collect responses until then.");
+    }
+    await next();
+  };
+  api.use("/responses", responsesGate);
+  api.use("/responses/*", responsesGate);
+  api.post("/responses", async (c) => {
+    const guest = !!c.get("guest");
+    const body = await c.req.text();
+    const ip = c.req.header("cf-connecting-ip") ?? null;
+    return c.json(await submitResponse(c.env, c.get("site"), guest ? null : c.get("user").email, body, ip), 201);
+  });
+  api.get("/responses", async (c) => {
+    await requireManage(c, "read its responses");
+    const limit = c.req.query("limit");
+    return c.json(await listResponses(c.env, c.get("site").id, { before: c.req.query("before"), limit: limit ? Number(limit) : undefined }));
+  });
+  api.delete("/responses/:id", async (c) => {
+    await requireManage(c, "delete its responses");
+    return c.json(await deleteResponse(c.env, c.get("site").id, c.req.param("id")));
+  });
 
   api.get("/secrets", async (c) => c.json(await secretList(c.env, c.get("site").id)));
   api.put("/secrets/:name", async (c) => {

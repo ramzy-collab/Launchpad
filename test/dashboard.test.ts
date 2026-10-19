@@ -130,13 +130,13 @@ describe("dashboard", () => {
     }
   });
 
-  it("serves the SDK under 6 KB, defining formelab and archie", async () => {
+  it("serves the SDK under 7 KB, defining formelab and archie", async () => {
     const ns = uniq();
     await publishHtml(OWNER, ns, "s", PAGE("s"));
     const res = await call(`${await appAt(ns, "s")}/_platform/sdk.js`, { as: OWNER });
     const js = await res.text();
     expect(res.headers.get("content-type")).toContain("javascript");
-    expect(new TextEncoder().encode(js).length).toBeLessThan(6 * 1024);
+    expect(new TextEncoder().encode(js).length).toBeLessThan(7 * 1024);
     expect(js).toContain("window.formelab = formelab");
     expect(js).toContain("window.archie = formelab");
   });
