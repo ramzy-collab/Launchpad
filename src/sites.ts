@@ -8,7 +8,7 @@ import { badRequest, err, forbidden, notFound } from "./errors";
 import { contentTypeFor } from "./mime";
 import type { FileMap } from "./upload";
 import { base32, isEmail, normEmail, parseJsonArray, randomBytes, randomId, sortableId } from "./util";
-import { appSharedEmail, namespaceSharedEmail, sendEach } from "./email";
+import { appSharedEmail, namespaceSharedEmail, sendEach, shareEmailAllowance } from "./email";
 import { appOrigin, siteOrigin } from "./hosts";
 import { flagOnForOwner } from "./flags";
 
@@ -19,16 +19,28 @@ const added = (next: string[], prev: string[]) => {
 };
 
 /** Emails the people newly given access to an app. */
-function notifyShared(ctx: Ctx, site: SiteRow, viewers: string[], editors: string[]) {
-  if (!viewers.length && !editors.length) return;
+/**
+ * Emails the people an app was just shared with, within the sharer's daily share email limits
+ * (see shareEmailAllowance). Returns the ones who weren't emailed, so the sharer can be told.
+ */
+async function notifyShared(ctx: Ctx, site: SiteRow, viewers: string[], editors: string[]): Promise<string[]> {
+  if (!viewers.length && !editors.length) return [];
+  const { send, held } = await shareEmailAllowance(ctx.env, ctx.user.email, [...editors, ...viewers]);
   const origin = appOrigin(ctx.env, ctx.requestUrl);
-  const by = ctx.user.name || ctx.user.email;
+  // The sender is named by their email address (verified), not their display name (which they choose).
+  const by = ctx.user.email;
   const title = site.title || `${site.namespace}/${site.mount_path}`;
   const url = siteUrl(ctx.env, site, ctx.requestUrl);
   const editorSet = new Set(editors);
-  const everyone = [...new Set([...editors, ...viewers])];
-  ctx.waitUntil(sendEach(ctx.env, everyone, ctx.user.email, (to) => appSharedEmail(origin, to, { by, title, url, canEdit: editorSet.has(to) })));
+  ctx.waitUntil(sendEach(ctx.env, send, ctx.user.email, (to) => appSharedEmail(origin, to, { by, title, url, canEdit: editorSet.has(to) })));
+  return held;
 }
+
+/** What to tell the sharer about people their share emails didn't reach today. */
+export const heldNote = (held: string[]) =>
+  held.length
+    ? `Shared, but ${held.length === 1 ? held[0] : `${held.length} people`} didn't get an email: you've reached today's limit on share emails. Send them the link yourself.`
+    : undefined;
 
 export interface NamespaceRow {
   label: string;
@@ -442,13 +454,17 @@ export async function updateNamespaceEditors(ctx: Ctx, rawLabel: string, rawEdit
   await ctx.env.DB.prepare("UPDATE namespaces SET editors = ? WHERE label = ?").bind(JSON.stringify(editors), ns.label).run();
   await audit(ctx.env, ctx.user.email, "namespace_editors", ns.label, { editors });
   const newEditors = added(editors, parseJsonArray(ns.editors));
+  let held: string[] = [];
   if (newEditors.length) {
+    const allowance = await shareEmailAllowance(ctx.env, ctx.user.email, newEditors);
+    held = allowance.held;
     const origin = appOrigin(ctx.env, ctx.requestUrl);
-    const by = ctx.user.name || ctx.user.email;
+    const by = ctx.user.email;
     const url = `${origin}/shared`;
-    ctx.waitUntil(sendEach(ctx.env, newEditors, ctx.user.email, (to) => namespaceSharedEmail(origin, to, { by, namespace: ns.label, url })));
+    ctx.waitUntil(sendEach(ctx.env, allowance.send, ctx.user.email, (to) => namespaceSharedEmail(origin, to, { by, namespace: ns.label, url })));
   }
-  return namespaceView({ ...ns, editors: JSON.stringify(editors) }, ctx.user, ctx.env, ctx.requestUrl);
+  const note = heldNote(held);
+  return { ...namespaceView({ ...ns, editors: JSON.stringify(editors) }, ctx.user, ctx.env, ctx.requestUrl), ...(note ? { note, notEmailed: held } : {}) };
 }
 
 export async function deleteNamespace(ctx: Ctx, rawLabel: string) {
@@ -760,9 +776,10 @@ export async function publishSite(ctx: Ctx, input: PublishInput) {
     files: input.files.size,
     bytes: totalBytes,
   });
-  if (!existing) notifyShared(ctx, row, allowed ?? [], editors ?? []);
+  const held = existing ? [] : await notifyShared(ctx, row, allowed ?? [], editors ?? []);
   const site = siteView(env, row, ctx.requestUrl);
-  return { url: site.url, site, replaced: !!existing, ...(sharingNote ? { note: sharingNote } : {}) };
+  const note = [sharingNote, heldNote(held)].filter(Boolean).join(" ");
+  return { url: site.url, site, replaced: !!existing, ...(note ? { note } : {}), ...(held.length ? { notEmailed: held } : {}) };
 }
 
 /** Whether publish input asked for sharing different from what the app has. */
@@ -887,8 +904,9 @@ export async function updateSite(ctx: Ctx, id: string, patch: SitePatch) {
     await audit(ctx.env, ctx.user.email, "update_site", `${site.namespace}/${site.mount_path}`, { ...detail, fields });
   }
   const updated = (await getSiteById(ctx.env, id))!;
-  notifyShared(ctx, updated, newViewers, newEditors);
-  return siteView(ctx.env, updated, ctx.requestUrl);
+  const held = await notifyShared(ctx, updated, newViewers, newEditors);
+  const note = heldNote(held);
+  return { ...siteView(ctx.env, updated, ctx.requestUrl), ...(note ? { note, notEmailed: held } : {}) };
 }
 
 /** A site the signed-in person may manage (owner, editor or namespace owner); 404 for others. */

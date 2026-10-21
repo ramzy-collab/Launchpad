@@ -327,6 +327,19 @@ Choices made while building v1, including where the build differs from the spec 
   to set, and sharing emails only to addresses newly added to `allowed_emails`, `editors` or a
   namespace's editors. The person making the change is never emailed.
 - User-supplied text (app titles, names) is HTML-escaped in the email body.
+- **Share emails can't be used as a spam or phishing relay (audit finding N7).** Anyone let in
+  could add hundreds of addresses and have Formelab, from its own domain, email each one a
+  subject line and sender name they wrote, linking to an app they control. Now:
+  - each sharer may cause at most 100 share emails a UTC day (app and space sharing together),
+    and of those at most 20 to addresses with no account that aren't on the waitlist, counted in
+    `rate_counters`. Past a limit the share still happens; the person just isn't emailed, and
+    the response says who (`note` and `notEmailed`, shown on the app's page and passed to the AI
+    by `update_site` and `publish`), so the sharer can send the link themselves;
+  - the sender is named by their email address, which is verified, not their display name;
+  - the app's title stays out of the subject and heading, and appears only in the body as
+    escaped text.
+  Sending only to existing accounts was rejected: sharing is how most people hear of Formelab.
+  Turned-away emails don't count toward the limits.
 
 
 ## Deleting users

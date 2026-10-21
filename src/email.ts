@@ -2,6 +2,7 @@
 // Without the binding or EMAIL_FROM nothing is sent; each skipped message is logged instead.
 // Sending never fails the request that triggered it: callers hand the promise to waitUntil.
 import type { Env } from "./env";
+import { now } from "./env";
 import { adminOrigin, aiOrigin } from "./hosts";
 import { escapeHtml as e, normEmail } from "./util";
 
@@ -40,6 +41,65 @@ export async function sendEmail(env: Env, msg: Email): Promise<void> {
 export function sendEach(env: Env, to: string[], except: string, build: (to: string) => Email): Promise<unknown> {
   const skip = normEmail(except);
   return Promise.all([...new Set(to.map(normEmail))].filter((t) => t && t !== skip).map((t) => sendEmail(env, build(t))));
+}
+
+// ---------------------------------------------------------------------------
+// Share emails: limits, so Formelab's sending can't be used to spam (audit finding N7)
+// ---------------------------------------------------------------------------
+
+/** Share emails one person may cause a UTC day, to anyone. */
+export const SHARE_EMAILS_PER_DAY = 100;
+/** Of those, to addresses with no Formelab account and not on the waitlist. */
+export const SHARE_EMAILS_NEW_PER_DAY = 20;
+
+/** Addresses among `emails` that have an account or are on the waitlist. */
+async function knownAddresses(env: Env, emails: string[]): Promise<Set<string>> {
+  const known = new Set<string>();
+  for (let i = 0; i < emails.length; i += 40) {
+    const chunk = emails.slice(i, i + 40);
+    const marks = chunk.map(() => "?").join(",");
+    const { results } = await env.DB.prepare(`SELECT email FROM users WHERE email IN (${marks}) UNION SELECT email FROM waitlist WHERE email IN (${marks})`)
+      .bind(...chunk, ...chunk)
+      .all<{ email: string }>();
+    for (const r of results) known.add(r.email);
+  }
+  return known;
+}
+
+/** Takes up to `want` of today's `cap` for `key` (D1 rate_counters), returning how many it got. */
+async function takeToday(env: Env, key: string, cap: number, want: number): Promise<number> {
+  if (want <= 0) return 0;
+  const day = Math.floor(now() / 86_400_000);
+  const bucket = `${key}:day${day}`;
+  const used = (await env.DB.prepare("SELECT count FROM rate_counters WHERE bucket = ?").bind(bucket).first<{ count: number }>())?.count ?? 0;
+  const take = Math.max(0, Math.min(want, cap - used));
+  if (take) {
+    await env.DB.prepare(
+      `INSERT INTO rate_counters (bucket, count, expires_at) VALUES (?1, ?2, ?3)
+       ON CONFLICT(bucket) DO UPDATE SET count = count + ?2`,
+    )
+      .bind(bucket, take, (day + 2) * 86_400_000)
+      .run();
+  }
+  return take;
+}
+
+/**
+ * Which of `recipients` `sender` may email about a share today: everyone with an account or on
+ * the waitlist up to SHARE_EMAILS_PER_DAY, and new addresses up to SHARE_EMAILS_NEW_PER_DAY of
+ * those. The rest are `held`: they still get access, but no email.
+ */
+export async function shareEmailAllowance(env: Env, sender: string, recipients: string[]): Promise<{ send: string[]; held: string[] }> {
+  const me = normEmail(sender);
+  const list = [...new Set(recipients.map(normEmail))].filter((t) => t && t !== me);
+  if (!list.length) return { send: [], held: [] };
+  const known = await knownAddresses(env, list);
+  const fresh = list.filter((t) => !known.has(t));
+  const freshOk = fresh.slice(0, await takeToday(env, `share-mail-new:${me}`, SHARE_EMAILS_NEW_PER_DAY, fresh.length));
+  const candidates = list.filter((t) => known.has(t) || freshOk.includes(t));
+  const send = candidates.slice(0, await takeToday(env, `share-mail:${me}`, SHARE_EMAILS_PER_DAY, candidates.length));
+  const sending = new Set(send);
+  return { send, held: list.filter((t) => !sending.has(t)) };
 }
 
 // ---------------------------------------------------------------------------
@@ -103,11 +163,12 @@ export function appSharedEmail(origin: string, to: string, opts: { by: string; t
   const access = opts.canEdit ? "open and update" : "open";
   return {
     to,
-    subject: `${opts.by} shared "${opts.title}" with you on Formelab`,
+    // The title is the sharer's own text, so it stays out of the subject and heading (audit N7).
+    subject: `${opts.by} shared an app with you on Formelab`,
     html: layout(
-      `${e(opts.title)} was shared with you`,
+      "An app was shared with you",
       [
-        `<strong>${e(opts.by)}</strong> shared an app with you on Formelab. You can ${access} it, and you'll find it under <strong>Shared with me</strong>.`,
+        `<strong>${e(opts.by)}</strong> shared the app <strong>${e(opts.title)}</strong> with you on Formelab. You can ${access} it, and you'll find it under <strong>Shared with me</strong>.`,
         `Log in as <strong>${e(to)}</strong> to open it.`,
       ],
       { label: "Open the app", url: opts.url },
