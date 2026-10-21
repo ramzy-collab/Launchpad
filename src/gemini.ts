@@ -6,7 +6,7 @@ import { audit } from "./audit";
 import type { Env, User } from "./env";
 import { now } from "./env";
 import { badRequest, err } from "./errors";
-import { decryptSecret, encryptSecret, rateLimit } from "./secrets";
+import { dailyLimit, decryptSecret, encryptSecret, rateLimit, usedToday } from "./secrets";
 import type { SiteRow } from "./sites";
 
 export const GEMINI_MODEL = "gemini-3.5-flash-lite";
@@ -17,6 +17,14 @@ export const GEMINI_RATE_PER_MINUTE = 60; // the same limit as the PROXY_LIMITER
 const MAX_BODY = 1024 * 1024;
 const TIMEOUT_MS = 60_000;
 const MAX_OUTPUT_TOKENS = 8192;
+/** Gemini or Sheets calls a minute from one person using someone else's apps (VIEWER_LIMITER's limit in production). */
+export const VIEWER_PER_MINUTE = 20;
+/** Gemini calls a day from one person using someone else's apps. */
+export const GEMINI_VIEWER_PER_DAY = 100;
+/** Gemini calls a day from all of an owner's apps together, unless the owner changes it. */
+export const GEMINI_DAILY_DEFAULT = 1000;
+export const GEMINI_DAILY_MAX = 100_000;
+const ownerDayKey = (owner: string) => `gemini-owner:${owner}`;
 
 // The key is encrypted like app secrets, bound to the person: AAD "user:<email>:gemini".
 const scope = (email: string) => `user:${email}`;
@@ -26,18 +34,41 @@ export interface ServiceStatus {
   hint?: string;
   createdAt?: number;
   lastUsedAt?: number | null;
+  /** The most Gemini calls the person's apps may make a day, and how many they made today. */
+  dailyLimit?: number;
+  usedToday?: number;
 }
 
-type Row = { iv: string; ciphertext: string; hint: string; created_at: number; last_used_at: number | null };
+type Row = { iv: string; ciphertext: string; hint: string; created_at: number; last_used_at: number | null; daily_limit: number | null };
 
 const loadRow = (env: Env, email: string) =>
-  env.DB.prepare("SELECT iv, ciphertext, hint, created_at, last_used_at FROM service_keys WHERE owner_email = ? AND service = ?")
+  env.DB.prepare("SELECT iv, ciphertext, hint, created_at, last_used_at, daily_limit FROM service_keys WHERE owner_email = ? AND service = ?")
     .bind(email, SERVICE)
     .first<Row>();
 
 export async function geminiStatus(env: Env, email: string): Promise<ServiceStatus> {
   const row = await loadRow(env, email);
-  return row ? { connected: true, hint: row.hint, createdAt: row.created_at, lastUsedAt: row.last_used_at } : { connected: false };
+  if (!row) return { connected: false };
+  return {
+    connected: true,
+    hint: row.hint,
+    createdAt: row.created_at,
+    lastUsedAt: row.last_used_at,
+    dailyLimit: row.daily_limit ?? GEMINI_DAILY_DEFAULT,
+    usedToday: await usedToday(env, ownerDayKey(email)),
+  };
+}
+
+/** Sets the most Gemini calls the person's apps may make a day (all apps and people together). */
+export async function setGeminiDailyLimit(env: Env, user: User, raw: unknown): Promise<ServiceStatus> {
+  const n = typeof raw === "number" ? raw : typeof raw === "string" && /^\s*\d+\s*$/.test(raw) ? Number(raw) : NaN;
+  if (!Number.isInteger(n) || n < 0 || n > GEMINI_DAILY_MAX) {
+    throw badRequest(`dailyLimit must be a whole number from 0 to ${GEMINI_DAILY_MAX}.`, `The most Gemini calls your apps may make in a day (the default is ${GEMINI_DAILY_DEFAULT}).`);
+  }
+  const res = await env.DB.prepare("UPDATE service_keys SET daily_limit = ? WHERE owner_email = ? AND service = ?").bind(n, user.email, SERVICE).run();
+  if (!res.meta.changes) throw notConnected();
+  await audit(env, user.email, "service_limit", null, { service: "Google Gemini", dailyLimit: n });
+  return geminiStatus(env, user.email);
 }
 
 const googleError = async (res: Response) => {
@@ -106,6 +137,33 @@ export interface GenerateResult {
   usage: { inputTokens: number; outputTokens: number; totalTokens: number };
 }
 
+/**
+ * The limits on someone using another person's apps with that owner's Gemini key or Google account:
+ * VIEWER_PER_MINUTE a minute for Gemini and Sheets each, and GEMINI_VIEWER_PER_DAY Gemini calls a
+ * day. Keyed by owner and person, so moving between the owner's apps doesn't reset them. The owner
+ * is only held to the app's and their own daily limit.
+ */
+export async function viewerLimits(env: Env, site: SiteRow, viewer: User, service: "gemini" | "sheets") {
+  if (viewer.email === site.owner_email) return;
+  const name = service === "gemini" ? "Gemini" : "Google Sheets";
+  await rateLimit(
+    env,
+    `${service}-viewer:${site.owner_email}:${viewer.email}`,
+    VIEWER_PER_MINUTE,
+    `You used ${name} through this person's apps more than ${VIEWER_PER_MINUTE} times in a minute.`,
+    env.VIEWER_LIMITER,
+  );
+  if (service === "gemini") {
+    await dailyLimit(
+      env,
+      `gemini-viewer:${site.owner_email}:${viewer.email}`,
+      GEMINI_VIEWER_PER_DAY,
+      `You used Gemini through this person's apps ${GEMINI_VIEWER_PER_DAY} times today, the most for one day.`,
+      "Try again tomorrow. Each person can use an app owner's Gemini key a limited number of times a day.",
+    );
+  }
+}
+
 const notConnected = () =>
   err(409, "gemini_not_connected", "This app's owner hasn't connected Google Gemini to Formelab.", "The owner can add their Gemini API key in Formelab under Connected apps → Google Gemini.");
 
@@ -145,6 +203,15 @@ export async function geminiGenerate(env: Env, site: SiteRow, viewer: User, req:
   if (payload.length > MAX_BODY) throw err(413, "body_too_large", "The request to Gemini is larger than 1 MB.", "Send a shorter prompt or smaller images.");
 
   await rateLimit(env, `gemini:${site.id}`, GEMINI_RATE_PER_MINUTE, `This app asked Gemini more than ${GEMINI_RATE_PER_MINUTE} times in a minute.`);
+  await viewerLimits(env, site, viewer, "gemini");
+  const ownerCap = row.daily_limit ?? GEMINI_DAILY_DEFAULT;
+  await dailyLimit(
+    env,
+    ownerDayKey(site.owner_email),
+    ownerCap,
+    `This app's owner allows ${ownerCap} Gemini calls a day across their apps, and today's are used up.`,
+    "Try again tomorrow. The owner can raise the limit in Formelab under Connected apps → Google Gemini.",
+  );
   const key = await decryptSecret(env, scope(site.owner_email), SERVICE, row.iv, row.ciphertext);
   const target = `${site.namespace}/${site.mount_path}`;
   const done = (detail: Record<string, unknown>) =>

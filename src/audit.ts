@@ -155,6 +155,8 @@ export function describeActivity(row: AuditRow): string {
     }
     case "service_connect":
       return `Connected ${d.service ?? "a service"} for their apps`;
+    case "service_limit":
+      return `Set ${d.service ?? "a service"} to at most ${d.dailyLimit} calls a day across their apps`;
     case "service_disconnect":
       return `Disconnected ${d.service ?? "a service"}`;
     case "delete_site":

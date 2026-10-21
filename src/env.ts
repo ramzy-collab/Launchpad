@@ -8,6 +8,8 @@ export interface Env {
   LOGIN_LIMITER?: RateLimit;
   /** Responses each public-link guest may send an app (see responses.ts). */
   RESPONSES_LIMITER?: RateLimit;
+  /** Gemini and Sheets calls from each person using someone else's app (see gemini.ts). */
+  VIEWER_LIMITER?: RateLimit;
   /** OAuth grants, clients and tokens for the Claude chat connector (workers-oauth-provider). */
   OAUTH_KV: KVNamespace;
   /** Injected by OAuthProvider into requests it hands to the default handler. */

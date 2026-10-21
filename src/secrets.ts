@@ -250,6 +250,27 @@ export async function rateLimit(env: Env, key: string, perMinute: number, messag
   }
 }
 
+/**
+ * At most `perDay` calls a UTC day for `key`, counted in D1 (rate limiter bindings only count by
+ * the minute). Every call counts, including ones turned away, so a caller can't keep retrying.
+ */
+export async function dailyLimit(env: Env, key: string, perDay: number, message: string, hint: string) {
+  const day = Math.floor(now() / 86_400_000);
+  const row = await env.DB.prepare(
+    `INSERT INTO rate_counters (bucket, count, expires_at) VALUES (?1, 1, ?2)
+     ON CONFLICT(bucket) DO UPDATE SET count = count + 1 RETURNING count`,
+  )
+    .bind(`${key}:day${day}`, (day + 2) * 86_400_000)
+    .first<{ count: number }>();
+  if ((row?.count ?? 0) > perDay) throw err(429, "rate_limited", message, hint);
+}
+
+/** How many calls `key` has made today (see dailyLimit). */
+export async function usedToday(env: Env, key: string): Promise<number> {
+  const day = Math.floor(now() / 86_400_000);
+  return (await env.DB.prepare("SELECT count FROM rate_counters WHERE bucket = ?").bind(`${key}:day${day}`).first<{ count: number }>())?.count ?? 0;
+}
+
 // ---------------------------------------------------------------------------
 // Proxy
 // ---------------------------------------------------------------------------

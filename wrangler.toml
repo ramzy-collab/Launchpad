@@ -69,6 +69,13 @@ name = "RESPONSES_LIMITER"
 namespace_id = "1004"
 simple = { limit = 5, period = 60 }
 
+# 20 Gemini or Google Sheets calls per minute from each person using someone else's app (keyed by
+# owner and person, so moving between the owner's apps doesn't reset it); see src/gemini.ts.
+[[ratelimits]]
+name = "VIEWER_LIMITER"
+namespace_id = "1005"
+simple = { limit = 20, period = 60 }
+
 # Notification emails through Cloudflare Email Service (Workers Paid). Only this sender may be used.
 [[send_email]]
 name = "EMAIL"
@@ -123,6 +130,11 @@ simple = { limit = 20, period = 60 }
 name = "RESPONSES_LIMITER"
 namespace_id = "1004"
 simple = { limit = 5, period = 60 }
+
+[[env.dev.ratelimits]]
+name = "VIEWER_LIMITER"
+namespace_id = "1005"
+simple = { limit = 20, period = 60 }
 
 # In local dev, emails are logged by wrangler instead of being sent.
 [[env.dev.send_email]]
