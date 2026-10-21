@@ -308,9 +308,14 @@ export function parseGuestResponsesPerDay(raw: unknown): number | undefined {
 }
 
 /** siteView for a list that also holds apps the person can only open: the public link is for managers. */
+/**
+ * siteView for a list that also holds apps the person can only open: who else it's shared with,
+ * its editors and its spreadsheets are for the people who manage it (audit A4), like the public link.
+ */
 const listedView = (env: Env, s: SiteRow, canManage: boolean, requestUrl?: string) => {
   const v = siteView(env, s, requestUrl);
-  return { ...v, publicUrl: canManage ? v.publicUrl : null, canManage };
+  if (canManage) return { ...v, canManage };
+  return { ...v, publicUrl: null, allowedEmails: [], editors: [], sharers: [], sheets: [], canManage };
 };
 
 /** true (turn the public link on, keeping one that exists), false (off) or "new" (replace it). */
@@ -660,6 +665,8 @@ export async function deletePrefix(bucket: R2Bucket, prefix: string) {
 /** Creates or atomically replaces the site at namespace/mountPath. */
 export async function publishSite(ctx: Ctx, input: PublishInput) {
   const { env, user } = ctx;
+  // Waitlisted people can open what's shared with them, but not publish, even as someone's editor (audit A5).
+  if (!user.active) throw waitlisted();
   const label = validateLabel(input.namespace);
   const mount = validateMountPath(input.mountPath);
   const title = parseTitle(input.title);

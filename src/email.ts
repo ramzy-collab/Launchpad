@@ -66,22 +66,22 @@ async function knownAddresses(env: Env, emails: string[]): Promise<Set<string>> 
   return known;
 }
 
-/** Takes up to `want` of today's `cap` for `key` (D1 rate_counters), returning how many it got. */
+/**
+ * Takes up to `want` of today's `cap` for `key` (D1 rate_counters), returning how many it got. One
+ * statement adds the whole `want` and returns the new count, so requests at the same moment each
+ * see where they landed and can't share out the same allowance (audit A6).
+ */
 async function takeToday(env: Env, key: string, cap: number, want: number): Promise<number> {
   if (want <= 0) return 0;
   const day = Math.floor(now() / 86_400_000);
-  const bucket = `${key}:day${day}`;
-  const used = (await env.DB.prepare("SELECT count FROM rate_counters WHERE bucket = ?").bind(bucket).first<{ count: number }>())?.count ?? 0;
-  const take = Math.max(0, Math.min(want, cap - used));
-  if (take) {
-    await env.DB.prepare(
-      `INSERT INTO rate_counters (bucket, count, expires_at) VALUES (?1, ?2, ?3)
-       ON CONFLICT(bucket) DO UPDATE SET count = count + ?2`,
-    )
-      .bind(bucket, take, (day + 2) * 86_400_000)
-      .run();
-  }
-  return take;
+  const row = await env.DB.prepare(
+    `INSERT INTO rate_counters (bucket, count, expires_at) VALUES (?1, ?2, ?3)
+     ON CONFLICT(bucket) DO UPDATE SET count = count + ?2 RETURNING count`,
+  )
+    .bind(`${key}:day${day}`, want, (day + 2) * 86_400_000)
+    .first<{ count: number }>();
+  const before = (row?.count ?? want) - want;
+  return Math.max(0, Math.min(want, cap - before));
 }
 
 /**

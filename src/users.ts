@@ -73,12 +73,16 @@ export async function deleteUser(env: Env, admin: User, rawEmail: string) {
 
   // 3. Their place on other apps' and namespaces' share and editor lists.
   const pattern = `%"${email}"%`;
-  const sites = (await env.DB.prepare("SELECT id, editors, allowed_emails FROM sites WHERE editors LIKE ? OR allowed_emails LIKE ?").bind(pattern, pattern).all<Pick<SiteRow, "id" | "editors" | "allowed_emails">>()).results;
+  const sites = (
+    await env.DB.prepare("SELECT id, editors, allowed_emails, sharers FROM sites WHERE editors LIKE ?1 OR allowed_emails LIKE ?1 OR sharers LIKE ?1")
+      .bind(pattern)
+      .all<Pick<SiteRow, "id" | "editors" | "allowed_emails" | "sharers">>()
+  ).results;
   const namespaces = (await env.DB.prepare("SELECT label, editors FROM namespaces WHERE editors LIKE ?").bind(pattern).all<Pick<NamespaceRow, "label" | "editors">>()).results;
   const updates = [
     ...sites.map((s) =>
-      env.DB.prepare("UPDATE sites SET editors = COALESCE(?, editors), allowed_emails = COALESCE(?, allowed_emails) WHERE id = ?")
-        .bind(without(s.editors, email), without(s.allowed_emails, email), s.id),
+      env.DB.prepare("UPDATE sites SET editors = COALESCE(?, editors), allowed_emails = COALESCE(?, allowed_emails), sharers = COALESCE(?, sharers) WHERE id = ?")
+        .bind(without(s.editors, email), without(s.allowed_emails, email), without(s.sharers ?? "[]", email), s.id),
     ),
     ...namespaces.map((n) => env.DB.prepare("UPDATE namespaces SET editors = COALESCE(?, editors) WHERE label = ?").bind(without(n.editors, email), n.label)),
   ];

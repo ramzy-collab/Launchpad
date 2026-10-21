@@ -95,6 +95,23 @@ export async function destroySession(env: Env, sessionId: string): Promise<{ wor
   return { workosSid: root?.workos_sid ?? null };
 }
 
+/**
+ * Ends every session of `email` except the sign-in `keepSessionId` belongs to (and the sessions
+ * handed over from it), e.g. after a password change, so a stolen session stops working.
+ */
+export async function endOtherSessions(env: Env, email: string, keepSessionId?: string): Promise<void> {
+  let keep = "-"; // no session id looks like this, so with nothing to keep every session goes
+  if (keepSessionId) {
+    const row = await env.DB.prepare("SELECT parent_id FROM sessions WHERE id = ?").bind(keepSessionId).first<{ parent_id: string | null }>();
+    keep = row?.parent_id ?? keepSessionId;
+  }
+  const others = "SELECT id FROM sessions WHERE email = ?1 AND id != ?2 AND COALESCE(parent_id, '') != ?2";
+  await env.DB.batch([
+    env.DB.prepare(`DELETE FROM auth_codes WHERE session_id IN (${others})`).bind(email, keep),
+    env.DB.prepare(`DELETE FROM sessions WHERE id IN (${others})`).bind(email, keep),
+  ]);
+}
+
 /** When the person behind a session last signed in (the apex sign-in it was handed over from). */
 export async function signedInAt(env: Env, sessionId: string): Promise<number | null> {
   const row = await env.DB.prepare(
