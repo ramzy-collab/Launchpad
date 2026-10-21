@@ -7,6 +7,7 @@ import { APP, appAt, call, OWNER, publishHtml, publishZip, uniq } from "./helper
 
 const IMESSAGE = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_11_1) AppleWebKit/601.2.4 (KHTML, like Gecko) Version/9.0.1 Safari/601.2.4 facebookexternalhit/1.1 Facebot Twitterbot/1.0";
 const CHROME = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36";
+const ALL = { visibility: "all" };
 const bot = (ua = IMESSAGE) => ({ headers: { "user-agent": ua } });
 const ICON = `<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23FF6B4A'/%3E%3C/svg%3E">`;
 const SHARE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630"><rect width="1200" height="630" fill="#2BC48A"/><text x="80" y="330" font-family="system-ui" font-size="90">Hoops</text></svg>`;
@@ -22,7 +23,7 @@ const realPng = (height: number) =>
 describe("link previews for apps", () => {
   it("gives preview fetchers the app's title, description and image instead of the sign-in", async () => {
     const ns = uniq();
-    await publishHtml(OWNER, ns, "wedding", `<!doctype html><html><head><title>Wedding &amp; party</title><meta name="description" content="RSVP and pick a meal."><meta property="og:image" content="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1200 630'%3E%3Crect width='1200' height='630' fill='red'/%3E%3C/svg%3E">${ICON}</head><body>SECRET GUEST LIST</body></html>`);
+    await publishHtml(OWNER, ns, "wedding", `<!doctype html><html><head><title>Wedding &amp; party</title><meta name="description" content="RSVP and pick a meal."><meta property="og:image" content="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1200 630'%3E%3Crect width='1200' height='630' fill='red'/%3E%3C/svg%3E">${ICON}</head><body>SECRET GUEST LIST</body></html>`, ALL);
     const origin = await appAt(ns, "wedding");
 
     const res = await call(`${origin}/`, bot());
@@ -55,9 +56,9 @@ describe("link previews for apps", () => {
     expect((await call(`${origin}/_platform/sdk.js`, bot())).status).not.toBe(200);
   });
 
-  it("previews restricted apps and every page of an app, with Slack, WhatsApp and Signal too", async () => {
+  it("previews every page of an app, with Slack, WhatsApp and Signal too", async () => {
     const ns = uniq();
-    await publishHtml(OWNER, ns, "poll", `<!doctype html><html><head><title>Lunch poll</title>${ICON}</head><body>x</body></html>`, { visibility: "restricted" });
+    await publishHtml(OWNER, ns, "poll", `<!doctype html><html><head><title>Lunch poll</title>${ICON}</head><body>x</body></html>`, ALL);
     const origin = await appAt(ns, "poll");
     for (const ua of ["Slackbot-LinkExpanding 1.0 (+https://api.slack.com/robots)", "WhatsApp/2.23.20.0 A", "WhatsApp", "Mozilla/5.0 (compatible; Discordbot/2.0; +https://discordapp.com)", "TelegramBot (like TwitterBot)"]) {
       const res = await call(`${origin}/results?x=1`, bot(ua));
@@ -69,9 +70,59 @@ describe("link previews for apps", () => {
     }
   });
 
+  it("gives apps only some people can open a private card that names nothing, unless the owner chooses a full preview", async () => {
+    const ns = uniq();
+    const page = `<!doctype html><html><head><title>Layoff plan</title><meta name="description" content="Who goes in March."><meta property="og:image" content="share.svg">${ICON}</head><body>x</body></html>`;
+    await publishZip(OWNER, ns, "plan", { "index.html": page, "share.svg": SHARE_SVG }, { visibility: "restricted" });
+    await publishHtml(OWNER, ns, "other", `<!doctype html><html><head><title>Other secret</title>${ICON}</head><body>x</body></html>`, { visibility: "restricted" });
+    const origin = await appAt(ns, "plan");
+    const id = (await env.DB.prepare("SELECT id FROM sites WHERE namespace = ? AND mount_path = ?").bind(ns, "plan").first<{ id: string }>())!.id;
+    const patch = (body: Record<string, unknown>) => call(`/_api/admin/sites/${id}`, { as: OWNER, method: "PATCH", json: body });
+
+    const privateHtml = async () => {
+      const res = await call(`${origin}/`, bot("Slackbot-LinkExpanding 1.0 (+https://api.slack.com/robots)"));
+      expect(res.status).toBe(200);
+      return res.text();
+    };
+    let html = await privateHtml();
+    expect(html).not.toContain("Layoff");
+    expect(html).not.toContain("March");
+    expect(html).not.toContain("/_platform/app-icon/");
+    expect(ogContent(html, "og:title")).toBe("A private app on Formelab");
+    expect(ogContent(html, "og:description")).toBe("Sign in to Formelab to open it.");
+    expect(ogContent(html, "og:image")).toBe(`${origin}/_platform/share.png?p=private`);
+    expect(html).toContain("/auth/app?return=");
+
+    // The image is the same plain card for every private app, whatever its own illustration.
+    const bytes = async (url: string) => new Uint8Array(await (await call(url)).arrayBuffer());
+    const card = await bytes(`${origin}/_platform/share.png`);
+    expect(pngSize(card)).toEqual({ width: 1200, height: 630 });
+    expect(await bytes(`${await appAt(ns, "other")}/_platform/share.png?v=x`)).toEqual(card);
+
+    // The owner can choose a full preview; "auto" goes back to deciding from who can open it.
+    expect((await patch({ link_preview: "full" })).status).toBe(200);
+    html = await privateHtml();
+    expect(ogContent(html, "og:title")).toBe("Layoff plan");
+    expect(await bytes(`${origin}/_platform/share.png`)).not.toEqual(card);
+    const view = await (await patch({ link_preview: "auto" })).json<{ linkPreview: string; linkPreviewSetting: string }>();
+    expect(view).toMatchObject({ linkPreview: "private", linkPreviewSetting: "auto" });
+    expect(ogContent(await privateHtml(), "og:title")).toBe("A private app on Formelab");
+
+    // A public link means the app is meant to be shared: full previews, unless the owner says private.
+    expect((await (await patch({ public_link: true })).json<{ linkPreview: string }>()).linkPreview).toBe("full");
+    expect(ogContent(await privateHtml(), "og:title")).toBe("Layoff plan");
+    await patch({ link_preview: "private" });
+    expect(ogContent(await privateHtml(), "og:title")).toBe("A private app on Formelab");
+    expect(await bytes(`${origin}/_platform/share.png`)).toEqual(card);
+
+    expect((await patch({ link_preview: "everyone" })).status).toBe(400);
+    const activity = await env.DB.prepare("SELECT detail FROM audit WHERE site_id = ? AND action = 'update_site' ORDER BY id DESC LIMIT 1").bind(id).first<{ detail: string }>();
+    expect(JSON.parse(activity!.detail).linkPreview).toBe("private");
+  });
+
   it("draws a card for apps without their own illustration", async () => {
     const ns = uniq();
-    await publishHtml(OWNER, ns, "plain", `<!doctype html><html><head><title>Plain</title>${ICON}</head><body>x</body></html>`, { title: "Book club" });
+    await publishHtml(OWNER, ns, "plain", `<!doctype html><html><head><title>Plain</title>${ICON}</head><body>x</body></html>`, { title: "Book club", visibility: "all" });
     const origin = await appAt(ns, "plain");
     const html = await (await call(`${origin}/`, bot())).text();
     expect(ogContent(html, "og:title")).toBe("Book club"); // the app's own title setting wins
@@ -84,7 +135,7 @@ describe("link previews for apps", () => {
 
   it("uses share.svg, share.png or an https og:image from a zip", async () => {
     const ns = uniq();
-    await publishZip(OWNER, ns, "hoops", { "index.html": `<!doctype html><html><head><title>Hoops</title>${ICON}</head><body>x</body></html>`, "share.svg": SHARE_SVG });
+    await publishZip(OWNER, ns, "hoops", { "index.html": `<!doctype html><html><head><title>Hoops</title>${ICON}</head><body>x</body></html>`, "share.svg": SHARE_SVG }, ALL);
     let row = await env.DB.prepare("SELECT share_path FROM sites WHERE namespace = ? AND mount_path = ?").bind(ns, "hoops").first<{ share_path: string }>();
     expect(row?.share_path).toBe("share.svg");
     expect(await png(await call(`${await appAt(ns, "hoops")}/_platform/share.png`))).toEqual({ width: 1200, height: 630 });
@@ -92,29 +143,29 @@ describe("link previews for apps", () => {
     await publishZip(OWNER, ns, "photo", {
       "index.html": `<!doctype html><html><head><title>Photo</title>${ICON}<meta property="og:image" content="img/cover.png"></head><body>x</body></html>`,
       "img/cover.png": await realPng(600),
-    });
+    }, ALL);
     const photo = await appAt(ns, "photo");
     const html = await (await call(`${photo}/`, bot())).text();
     expect(ogContent(html, "og:image:width")).toBe("1200");
     expect(ogContent(html, "og:image:height")).toBe("600");
     expect(await png(await call(`${photo}/_platform/share.png`))).toEqual({ width: 1200, height: 600 });
 
-    await publishHtml(OWNER, ns, "cdn", `<!doctype html><html><head><title>CDN</title>${ICON}<meta property="og:image" content="https://cdn.example.net/cover.png?a=1&amp;b=2"></head><body>x</body></html>`);
+    await publishHtml(OWNER, ns, "cdn", `<!doctype html><html><head><title>CDN</title>${ICON}<meta property="og:image" content="https://cdn.example.net/cover.png?a=1&amp;b=2"></head><body>x</body></html>`, ALL);
     const cdn = await (await call(`${await appAt(ns, "cdn")}/`, bot())).text();
     expect(ogContent(cdn, "og:image")).toBe("https://cdn.example.net/cover.png?a=1&amp;b=2");
 
     // A new version without one goes back to the drawn card.
-    await publishHtml(OWNER, ns, "hoops", `<!doctype html><html><head><title>Hoops</title>${ICON}</head><body>v2</body></html>`);
+    await publishHtml(OWNER, ns, "hoops", `<!doctype html><html><head><title>Hoops</title>${ICON}</head><body>v2</body></html>`, ALL);
     row = await env.DB.prepare("SELECT share_path FROM sites WHERE namespace = ? AND mount_path = ?").bind(ns, "hoops").first<{ share_path: string }>();
     expect(row?.share_path).toBe("");
   });
 
   it("falls back to the card for an illustration that can't be drawn, and looks again for apps published before previews", async () => {
     const ns = uniq();
-    await publishZip(OWNER, ns, "broken", { "index.html": `<!doctype html><html><head><title>Broken</title>${ICON}</head><body>x</body></html>`, "share.svg": "<svg not really" });
+    await publishZip(OWNER, ns, "broken", { "index.html": `<!doctype html><html><head><title>Broken</title>${ICON}</head><body>x</body></html>`, "share.svg": "<svg not really" }, ALL);
     expect(await png(await call(`${await appAt(ns, "broken")}/_platform/share.png`))).toEqual({ width: 1200, height: 630 });
 
-    await publishZip(OWNER, ns, "old", { "index.html": `<!doctype html><html><head><title>Old</title>${ICON}</head><body>x</body></html>`, "share.svg": SHARE_SVG });
+    await publishZip(OWNER, ns, "old", { "index.html": `<!doctype html><html><head><title>Old</title>${ICON}</head><body>x</body></html>`, "share.svg": SHARE_SVG }, ALL);
     await env.DB.prepare("UPDATE sites SET share_path = NULL WHERE namespace = ? AND mount_path = ?").bind(ns, "old").run();
     expect((await call(`${await appAt(ns, "old")}/`, bot())).status).toBe(200);
     const row = await env.DB.prepare("SELECT share_path FROM sites WHERE namespace = ? AND mount_path = ?").bind(ns, "old").first<{ share_path: string }>();

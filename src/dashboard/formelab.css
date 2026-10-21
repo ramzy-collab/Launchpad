@@ -345,6 +345,11 @@ th[aria-sort="descending"] .arrow::after { content: "↓"; color: var(--fl-accen
 .dash main button.linkish { background: none; border: 0; padding: 0; min-height: 0; font: inherit; font-size: .875rem; text-decoration: underline; color: var(--fl-ink-soft); }
 .dash main button.linkish:hover { color: var(--fl-ink); transform: none; filter: none; }
 .splash-sub { margin: -12px 0 0; font-size: 14px; color: var(--fl-ink-soft); text-align: center; max-width: 22rem; }
+.splash.done .splash-mark, .splash.done .splash-mark::after { animation: none; }
+.splash.done .splash-bar { display: none; }
+.splash-actions { margin: 0; display: flex; gap: 16px; align-items: center; flex-wrap: wrap; justify-content: center; }
+.build-opt { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 12px; font-weight: 500; }
+.build-opt-hint { margin-top: 4px; }
 .ai-mini { width: 28px; height: 28px; border-radius: 8px; background: #fff; display: inline-flex; align-items: center; justify-content: center; padding: 4px; color: #0D0D0D; flex: none; }
 .ai-mini svg { width: 100%; height: 100%; }
 

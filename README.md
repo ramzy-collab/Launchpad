@@ -260,6 +260,10 @@ Then smoke-test the live domain (section 2.2).
   counted, and the Metrics page fails. MCP and app-visit charts start from the day it's deployed.
 - **`0020_auth_code_nonce`** ties each sign-in hand-off code to the browser that asked for it
   (login CSRF). Nothing to do: hand-offs in flight when you deploy fall back to starting again.
+- **`0021_preview_and_guest_cap`** adds each app's link preview setting and its daily limit on
+  responses from the public link (500 by default). Apply it before deploying. After it, link
+  previews of apps only some people can open show a private card instead of the app's name and
+  picture, until their owner chooses "Full preview" in the app's settings.
 
 ### 2.2 Smoke test
 

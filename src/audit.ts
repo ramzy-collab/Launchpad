@@ -48,6 +48,8 @@ const FIELD_LABEL: Record<string, string> = {
   sheets: "Google Sheets it can use",
   public_link: "public link",
   guest_responses: "whether people with the public link can send responses",
+  guest_responses_per_day: "daily limit on responses from the public link",
+  link_preview: "link previews",
 };
 
 const list = (v: unknown) => (Array.isArray(v) ? v.map(String).join(", ") : "");
@@ -101,6 +103,20 @@ export function describeActivity(row: AuditRow): string {
       if (typeof d.guestResponses === "boolean") {
         explained.add("guest_responses");
         parts.push(d.guestResponses ? "let people with the public link send responses" : "stopped people with the public link sending responses");
+      }
+      if (typeof d.guestResponsesPerDay === "number") {
+        explained.add("guest_responses_per_day");
+        parts.push(`let people with the public link send at most ${d.guestResponsesPerDay} responses a day`);
+      }
+      if (d.linkPreview) {
+        explained.add("link_preview");
+        parts.push(
+          d.linkPreview === "full"
+            ? "set link previews to show the app's name and picture"
+            : d.linkPreview === "private"
+              ? "set link previews to a private card"
+              : "set link previews to follow who can open it",
+        );
       }
       if (d.dataWrites) {
         explained.add("kv_writes");

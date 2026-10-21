@@ -2,7 +2,7 @@ import type { Env } from "./env";
 import { now } from "./env";
 import { badRequest, err, notFound } from "./errors";
 import { rateLimit } from "./secrets";
-import type { SiteRow } from "./sites";
+import { DEFAULT_GUEST_RESPONSES_PER_DAY, type SiteRow } from "./sites";
 import { randomId } from "./util";
 
 /**
@@ -10,7 +10,9 @@ import { randomId } from "./util";
  * who can open the app may send one, and so may guests from its public link when the owner allows
  * it (sites.guest_responses). Only the app's owner and editors can read or delete them. Responses
  * can only be added, never read back or changed by whoever sent them, so letting anonymous people
- * send them doesn't open the app's data the way guest writes to shared KV would.
+ * send them doesn't open the app's data the way guest writes to shared KV would. Guests may send at
+ * most sites.guest_responses_per_day a UTC day (the owner sets it; 500 unless they do), so a
+ * leaked link can't fill the app with junk; signed-in people don't count toward it.
  */
 
 export const RESPONSE_MAX_BYTES = 16 * 1024;
@@ -49,14 +51,26 @@ export async function submitResponse(env: Env, site: SiteRow, email: string | nu
   }
   const id = randomId("r_", 20);
   const at = now();
-  // Insert only while under the cap; one statement keeps it race-free.
+  const dayStart = at - (at % 86_400_000);
+  const guestCap = email === null ? (site.guest_responses_per_day ?? DEFAULT_GUEST_RESPONSES_PER_DAY) : null;
+  // Insert only while under the caps; one statement keeps it race-free.
   const res = await env.DB.prepare(
     `INSERT INTO responses (id, site_id, at, email, data)
-       SELECT ?1, ?2, ?3, ?4, ?5 WHERE (SELECT COUNT(*) FROM responses WHERE site_id = ?2) < ?6`,
+       SELECT ?1, ?2, ?3, ?4, ?5
+        WHERE (SELECT COUNT(*) FROM responses WHERE site_id = ?2) < ?6
+          AND (?7 IS NULL OR (SELECT COUNT(*) FROM responses WHERE site_id = ?2 AND email IS NULL AND at >= ?8) < ?7)`,
   )
-    .bind(id, site.id, at, email, data, RESPONSES_MAX)
+    .bind(id, site.id, at, email, data, RESPONSES_MAX, guestCap, dayStart)
     .run();
   if (!res.meta.changes) {
+    if (guestCap !== null && (await countResponses(env, site.id)) < RESPONSES_MAX) {
+      throw err(
+        429,
+        "rate_limited",
+        `This app has taken its ${guestCap} responses for today from people without an account.`,
+        "Try again tomorrow, or sign in to Formelab if the app is shared with you. The app's owner can raise the limit in its Public link settings.",
+      );
+    }
     throw err(409, "too_many_responses", `This app already has ${RESPONSES_MAX} responses.`, "Ask the app's owner to download and delete old responses.");
   }
   return { id, at };

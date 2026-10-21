@@ -53,6 +53,27 @@ describe("admin: users", () => {
     expect(await count("SELECT COUNT(*) AS n FROM audit WHERE action = 'user_delete' AND target = ?", gone)).toBe(1);
   });
 
+  it("keeps a deleted user's usage in the metrics under a stand-in instead of their email", async () => {
+    const gone = `metrics-${uniq()}@example.com`;
+    const other = `stays-${uniq()}@example.com`;
+    await call("/_api/admin/whoami", { as: gone });
+    await env.DB.batch([
+      env.DB.prepare("INSERT INTO mcp_calls (at, email, client, tool, ok, ms) VALUES (1, ?, 'Claude', 'publish', 1, 5), (2, ?, 'Claude', 'list_sites', 1, 5), (3, ?, 'Claude', 'publish', 1, 5)").bind(gone, gone, other),
+      env.DB.prepare("INSERT INTO app_visits (site_id, day, email, own, views, first_at) VALUES ('s_x', '2026-01-01', ?, 0, 4, 1), ('s_x', '2026-01-02', ?, 0, 2, 2), ('s_x', '2026-01-01', ?, 0, 1, 1)").bind(gone, gone, other),
+    ]);
+
+    expect((await del(gone)).status).toBe(200);
+    expect(await count("SELECT COUNT(*) AS n FROM mcp_calls WHERE email = ?", gone)).toBe(0);
+    expect(await count("SELECT COUNT(*) AS n FROM app_visits WHERE email = ?", gone)).toBe(0);
+    // Same counts, one stand-in for all their rows, and other people's rows untouched.
+    const calls = (await env.DB.prepare("SELECT DISTINCT email FROM mcp_calls WHERE at IN (1, 2)").all<{ email: string }>()).results;
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.email).toMatch(/^deleted-user-[a-z2-7]{10}$/);
+    expect(await count("SELECT SUM(views) AS n FROM app_visits WHERE email = ?", calls[0]!.email)).toBe(6);
+    expect(await count("SELECT COUNT(*) AS n FROM mcp_calls WHERE email = ?", other)).toBe(1);
+    expect(await count("SELECT COUNT(*) AS n FROM app_visits WHERE email = ?", other)).toBe(1);
+  });
+
   it("the admin area is for admins only, and shows the numbers", async () => {
     const res = await call("/admin", { as: OWNER });
     expect(res.status).toBe(200);

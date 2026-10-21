@@ -1,6 +1,6 @@
 import { audit } from "./audit";
 import { findIcon, iconPathFor } from "./icons";
-import { findShareImage } from "./share";
+import { findShareImage, linkPreviewOf } from "./share";
 import { canManageSite, canPublishTo, canViewSite, isNamespaceEditor, isNamespaceOwner, ownerOnly } from "./auth";
 import type { Env, User } from "./env";
 import { now } from "./env";
@@ -67,6 +67,10 @@ export interface SiteRow {
   public_link?: string | null;
   /** 1 when guests from the public link may send responses (formelab.responses.submit); see src/responses.ts. */
   guest_responses?: number;
+  /** The most responses guests may send the app in a UTC day (see src/responses.ts). */
+  guest_responses_per_day?: number;
+  /** What link previews show: "full", "private", or NULL to decide from who can open it (see linkPreviewOf). */
+  link_preview?: "full" | "private" | null;
 }
 
 /** Everything a service call needs: bindings, the acting user, and a way to defer work. */
@@ -232,6 +236,11 @@ export interface SiteView {
   publicUrl: string | null;
   /** Whether people who open the app through its public link may send it responses. */
   guestResponses: boolean;
+  guestResponsesPerDay: number;
+  /** What link previews of the app show now. */
+  linkPreview: "full" | "private";
+  /** "auto" when it follows who can open the app (see linkPreviewOf), else the owner's choice. */
+  linkPreviewSetting: "auto" | "full" | "private";
 }
 
 export const siteView = (env: Env, s: SiteRow, requestUrl?: string): SiteView => ({
@@ -255,7 +264,31 @@ export const siteView = (env: Env, s: SiteRow, requestUrl?: string): SiteView =>
   dataWrites: s.kv_writes === "editors" ? "editors" : "everyone",
   publicUrl: publicLinkUrl(env, s, requestUrl),
   guestResponses: !!s.guest_responses,
+  guestResponsesPerDay: s.guest_responses_per_day ?? DEFAULT_GUEST_RESPONSES_PER_DAY,
+  linkPreview: linkPreviewOf(s),
+  linkPreviewSetting: s.link_preview ?? "auto",
 });
+
+/** "auto" | "full" | "private" → the stored link_preview value (null for "auto"). */
+export function parseLinkPreview(raw: unknown): "full" | "private" | null | undefined {
+  if (raw === undefined || raw === "") return undefined;
+  if (raw === null || raw === "auto") return null;
+  if (raw === "full" || raw === "private") return raw;
+  throw badRequest(`link_preview must be "auto", "full" or "private".`, "\"full\" shows the app's name, description and picture when its link is shared in a chat; \"private\" shows a plain Formelab card; \"auto\" picks from who can open it.");
+}
+
+export const DEFAULT_GUEST_RESPONSES_PER_DAY = 500;
+export const MAX_GUEST_RESPONSES_PER_DAY = 5000;
+
+/** A whole number of guest responses a day, 0 to MAX_GUEST_RESPONSES_PER_DAY. */
+export function parseGuestResponsesPerDay(raw: unknown): number | undefined {
+  if (raw === undefined || raw === null || raw === "") return undefined;
+  const n = typeof raw === "number" ? raw : typeof raw === "string" && /^\s*\d+\s*$/.test(raw) ? Number(raw) : NaN;
+  if (!Number.isInteger(n) || n < 0 || n > MAX_GUEST_RESPONSES_PER_DAY) {
+    throw badRequest(`guest_responses_per_day must be a whole number from 0 to ${MAX_GUEST_RESPONSES_PER_DAY}.`, `The most responses people with the public link may send the app in a day (the default is ${DEFAULT_GUEST_RESPONSES_PER_DAY}).`);
+  }
+  return n;
+}
 
 /** siteView for a list that also holds apps the person can only open: the public link is for managers. */
 const listedView = (env: Env, s: SiteRow, canManage: boolean, requestUrl?: string) => {
@@ -750,6 +783,8 @@ export interface SitePatch {
   data_writes?: unknown;
   public_link?: unknown;
   guest_responses?: unknown;
+  guest_responses_per_day?: unknown;
+  link_preview?: unknown;
 }
 
 export async function updateSite(ctx: Ctx, id: string, patch: SitePatch) {
@@ -822,6 +857,16 @@ export async function updateSite(ctx: Ctx, id: string, patch: SitePatch) {
   if (guestResponses !== undefined) {
     set("guest_responses", guestResponses ? 1 : 0);
     if (changed.includes("guest_responses")) detail.guestResponses = guestResponses;
+  }
+  const perDay = parseGuestResponsesPerDay(patch.guest_responses_per_day);
+  if (perDay !== undefined) {
+    set("guest_responses_per_day", perDay);
+    if (changed.includes("guest_responses_per_day")) detail.guestResponsesPerDay = perDay;
+  }
+  const linkPreview = parseLinkPreview(patch.link_preview);
+  if (linkPreview !== undefined) {
+    set("link_preview", linkPreview);
+    if (changed.includes("link_preview")) detail.linkPreview = linkPreview ?? "auto";
   }
   if (patch.sheets !== undefined) {
     // The spreadsheets are reached with the owner's own Google account, so only the owner chooses them.

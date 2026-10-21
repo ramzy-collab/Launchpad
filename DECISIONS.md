@@ -318,6 +318,11 @@ Choices made while building v1, including where the build differs from the spec 
   namespaces with all their apps, the user's other apps (R2 files, KV, secrets), their entries
   on other apps' and namespaces' share and editor lists, tokens, sessions, OAuth grants, the
   waitlist row, and the WorkOS user (best effort). Audit rows are kept as history.
+- **Usage metrics keep their rows, not the email.** `mcp_calls` and `app_visits` rows are kept so
+  the Metrics page's history and counts stay whole, but their email becomes a stand-in,
+  `deleted-user-<random>`, the same for all of that person's rows (so counts of people stay
+  right) and different for each deleted person (so `app_visits`' primary key can't collide).
+  Responses they sent to other people's apps are those apps' data and stay as they are.
 - Admins can't delete themselves or the `OWNER_EMAIL` account. Someone who is deleted can sign in
   again later; they start over on the waitlist.
 
@@ -465,8 +470,16 @@ Choices made while building v1, including where the build differs from the spec 
   once the Formelab connector is set up there (and in ChatGPT, Developer mode turned on). That
   was the hard part for new people. Now a person can save an **Anthropic or OpenAI API key** on
   the New app page; "Make it" then builds the app on the server (`src/builder.ts`) and publishes
-  it to their space, data writes set to everyone. Without a key, the old flow stays for people
-  whose Claude or ChatGPT app is already connected.
+  it to their space. Without a key, the old flow stays for people whose Claude or ChatGPT app
+  is already connected.
+- **Who can change a built app's data is asked, with "Decide for me" as the default.** It used to
+  be everyone, so any app built here let everyone it was shared with change or wipe its shared KV.
+  Now New app asks: "Decide for me" looks at the generated HTML and picks everyone only when it
+  writes shared KV (`formelab.kv.set`/`delete`; `kv.mine` is each person's own and doesn't
+  count), else only the owner and editors; or the person picks either. It's a guess from the
+  code (an app that aliases the SDK oddly can be missed), so the result screen says which it
+  used and why, with a link to the app's settings to change it. "Change it with AI" keeps the
+  app's setting.
 - **API keys, not Claude/ChatGPT plans.** Claude Pro/Max and ChatGPT Plus/Pro subscriptions can't
   be used by other apps; only API keys can, billed by usage on the person's own API account.
   The key pop-up says so.
@@ -643,9 +656,26 @@ Choices made while building v1, including where the build differs from the spec 
   a link inside those apps still signs in. A user agent can be faked, but the page shows only what
   the preview shows anyway: the title, the description and the image, never the app's files, data
   or API (`/_api`, `/_platform` stay closed). The page is `noindex`.
-- **Previews are public for every app, restricted ones included** (the owner's choice: a shared
-  link should look right wherever it's sent). The title and description come from the app's title
+- **Full previews only for apps meant to be seen widely, unless the owner chooses.** Fetchers never
+  sign in, so a preview shows the app's name, description and picture to everyone in the chat,
+  including people who can't open it (a Slack channel with guests, a forwarded message). A
+  private app's name can say a lot ("Layoff plan", "Acme acquisition"). So each app has a **Link
+  preview** setting (`sites.link_preview`, migration 0021; app settings, `update_site`'s
+  `link_preview`): "full", "private", or NULL for automatic, which is full for apps open to all
+  members or with a public link and private otherwise. A private preview is a plain card ("A
+  private app on Formelab", "Sign in to Formelab to open it.") with Formelab's icon, and
+  `/_platform/share.png` serves the same plain card, so neither names anything. Signed-in people
+  are unaffected. The title and description of a full preview come from the app's title
   setting, else its `og:title`/`<title>` and `og:description`/`<meta name="description">`.
+- **Later, for Formelab for business: full previews inside the same company, especially in Slack.**
+  Link previews can't know who is in a chat, so the private card is the most a public preview can
+  safely do. The plan once Formelab has organizations and a "Share with everyone at your company
+  domain" setting (which comes first): a Formelab Slack app that handles `link_shared` events and
+  answers with `chat.unfurl`, showing the full preview (and maybe live details) when the Slack
+  workspace belongs to the app's organization and the app is shared with that organization, and
+  the private card otherwise. Slack Connect channels (shared with other companies) and external
+  members get the private card. Microsoft Teams works the same way with a messaging extension's
+  link unfurling. Until then, owners who want full previews in their team's Slack choose "full".
 - **The image is the app's own drawing.** The AI that builds the app knows what it is, so the guide,
   the MCP publish tool and the in-Formelab builder ask for a 1200×630 SVG illustration named by
   `<meta property="og:image">` (a file or an inline data URI, since the builder writes one HTML
@@ -705,7 +735,10 @@ Choices made while building v1, including where the build differs from the spec 
 - **Limits against spam.** At most 16 KB of JSON each and 5,000 per app (one INSERT … WHERE COUNT
   keeps the cap race-free, like KV); 60 a minute per app (PROXY_LIMITER, keyed `<site>:responses`)
   and 5 a minute per guest IP per app (a new RESPONSES_LIMITER binding, since a binding's own limit
-  overrides the number passed to `rateLimit`). Turnstile was left out: it needs a site key per
+  overrides the number passed to `rateLimit`). Guests together may also send at most
+  `sites.guest_responses_per_day` a UTC day (migration 0021; default 500, 0 to 5,000, set in the
+  app's Public link settings or `update_site`), checked in the same INSERT, so a link that leaks
+  can't fill the app in an afternoon; signed-in people don't count toward it. Turnstile was left out: it needs a site key per
   deployment and a widget in every app; the per-IP limit and the cap bound the damage meanwhile.
 - **The SDK's size budget went from 6 KB to 7 KB** for `formelab.responses`: it was 3 bytes under
   6 KB already.

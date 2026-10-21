@@ -21,7 +21,7 @@ import { filesForPublish } from "./changes";
 import { listConnections, revokeConnection } from "./oauth";
 import { approveWaitlist, setPassword } from "./login";
 import { connectGemini, disconnectGemini, geminiStatus } from "./gemini";
-import { buildApp, connectBuilder, editApp, disconnectBuilder, parseBuilder } from "./builder";
+import { buildApp, connectBuilder, editApp, disconnectBuilder, parseBuildDataWrites, parseBuilder } from "./builder";
 import { addFlagUser, flagOn, removeFlagUser, setFlag } from "./flags";
 import { sheetsDisconnect, sheetsStatus } from "./sheets";
 import { deleteUser, listUsers, setAdmin } from "./users";
@@ -182,6 +182,7 @@ export function managementApi(kind: "admin" | "deploy") {
     api.post("/build", async (c) => {
       const body = await jsonBody(c);
       const provider = parseBuilder(body.provider);
+      const dataWrites = parseBuildDataWrites(body.data_writes);
       // A build takes a minute or more: stream progress lines (NDJSON) so the page can show it and
       // the connection stays busy. The last line is { done } or { error }.
       const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>();
@@ -199,7 +200,7 @@ export function managementApi(kind: "admin" | "deploy") {
       send({ progress: 0 });
       // With a site_id, change that app; otherwise make a new one from the idea.
       const onProgress = (n: number) => (chars = n);
-      const job = body.site_id !== undefined ? editApp(ctxOf(c), provider, body.site_id, body.change, onProgress) : buildApp(ctxOf(c), provider, body.idea, onProgress);
+      const job = body.site_id !== undefined ? editApp(ctxOf(c), provider, body.site_id, body.change, onProgress) : buildApp(ctxOf(c), provider, body.idea, onProgress, dataWrites);
       const work = job
         .then((done) => send({ done }))
         .catch((e) => {
