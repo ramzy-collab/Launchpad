@@ -43,6 +43,8 @@ interface McpProps {
   tokenId?: string;
   /** The AI app: the OAuth client's name, or the name an access key's app last gave. */
   client?: string;
+  /** "read" for a connection allowed only to look (no publish, update_site or delete_site). */
+  access?: "read";
 }
 
 /** The client name in an MCP initialize message (a single message or a batch), if this is one. */
@@ -85,7 +87,7 @@ const mcpApiHandler = {
     // Which AI app made the call, for the admin panel's Metrics. Connections approved before
     // grants carried the client's name fall back to the User-Agent.
     const client = initializing ?? ctx.props?.client ?? userAgentClient(req);
-    return handleMcp(req, env, user, ctx, { client, initializing: !!initializing });
+    return handleMcp(req, env, user, ctx, { client, initializing: !!initializing }, ctx.props?.access === "read");
   },
 };
 
@@ -179,12 +181,18 @@ ${nav("/app")}
   <h1>Connect ${e(d.clientName)} to Formelab?</h1>
   <p>${who} Access will be sent to <strong>${e(d.redirectHost)}</strong>.</p>
   ${local}
-  <p>If you allow it, <strong>${e(d.clientName)}</strong> can act as <strong>${e(user)}</strong> on Formelab: list your namespaces and sites, publish and update apps, and delete sites.</p>
-  <p class="muted">You can disconnect it at any time from the Formelab dashboard, under Connected apps.</p>
-  <form method="post" action="${AUTHORIZE_PATH}" class="inline">
+  <p>If you allow it, <strong>${e(d.clientName)}</strong> acts as <strong>${e(user)}</strong> on Formelab. Choose what it can do:</p>
+  <form method="post" action="${AUTHORIZE_PATH}">
+    <fieldset class="access" aria-label="What it can do">
+      <label><input type="radio" name="access" value="write" checked> <strong>Make and change apps</strong><span class="muted">: publish and update apps, change their sharing, and delete them, plus everything below.</span></label>
+      <label><input type="radio" name="access" value="read"> <strong>Only look</strong><span class="muted">: list your spaces and apps and read the ones you own or edit. It can't change anything.</span></label>
+    </fieldset>
+    <p class="muted">You can disconnect it at any time from the Formelab dashboard, under Connect your AI.</p>
     <input type="hidden" name="handle" value="${e(handle)}">
-    <button name="decision" value="approve">Allow</button>
-    <button name="decision" value="deny" class="danger">Deny</button>
+    <div class="inline">
+      <button name="decision" value="approve">Allow</button>
+      <button name="decision" value="deny" class="danger">Deny</button>
+    </div>
   </form>
 </section>
 </main>
@@ -263,18 +271,20 @@ export async function authorizePost(c: Context<AppEnv>): Promise<Response> {
       return new Response(null, { status: 302, headers: denied.headers });
     }
     // One scope covers every Formelab tool; refresh tokens come with the code grant regardless.
+    // A read-only connection is marked in its props (mcp.ts then offers only read-only tools).
     const scope = [MCP_SCOPE];
+    const readOnly = form.get("access") === "read";
     const approved = await oauth.approveConsent(c.req.raw, handle, { scope });
     const client = await oauth.lookupClient(approved.request.clientId);
     const clientName = client?.clientName ?? approved.request.clientId;
     const { redirectTo } = await oauth.completeAuthorization({
       request: approved.request,
       userId: user.email,
-      metadata: { clientName, connectedAt: Date.now() },
+      metadata: { clientName, connectedAt: Date.now(), ...(readOnly ? { access: "read" } : {}) },
       scope,
-      props: { email: user.email, via: "oauth", client: clientName.slice(0, 100) } satisfies McpProps,
+      props: { email: user.email, via: "oauth", client: clientName.slice(0, 100), ...(readOnly ? { access: "read" as const } : {}) } satisfies McpProps,
     });
-    await audit(c.env, user.email, "oauth_connect", null, { client: clientName.slice(0, 100) });
+    await audit(c.env, user.email, "oauth_connect", null, { client: clientName.slice(0, 100), ...(readOnly ? { access: "read" } : {}) });
     approved.headers.set("location", redirectTo);
     return new Response(null, { status: 302, headers: approved.headers });
   } catch (err) {
@@ -291,6 +301,8 @@ export interface ConnectionView {
   clientName: string;
   createdAt: number;
   expiresAt: number | null;
+  /** True for a connection allowed only to look. */
+  readOnly: boolean;
 }
 
 export async function listConnections(env: Env, email: string): Promise<ConnectionView[]> {
@@ -301,6 +313,7 @@ export async function listConnections(env: Env, email: string): Promise<Connecti
       clientName: typeof g.metadata?.clientName === "string" ? g.metadata.clientName : g.clientId,
       createdAt: g.createdAt * (g.createdAt < 1e12 ? 1000 : 1),
       expiresAt: g.expiresAt ? g.expiresAt * (g.expiresAt < 1e12 ? 1000 : 1) : null,
+      readOnly: g.metadata?.access === "read",
     }))
     .sort((a, b) => b.createdAt - a.createdAt);
 }

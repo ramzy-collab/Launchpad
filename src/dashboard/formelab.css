@@ -424,6 +424,9 @@ table.vendors td:nth-child(2) { min-width: 16rem; }
 /* ---------- Consent ---------- */
 .consent h1 { font-size: 1.75rem; line-height: 1.15; letter-spacing: -.02em; margin: 0 0 16px; }
 .consent .inline { margin-top: 20px; }
+.consent .access { border: 0; padding: 0; margin: 0 0 8px; display: grid; gap: 10px; }
+.consent .access label { display: block; padding: 12px 14px; border: 1.5px solid var(--fl-line); border-radius: 14px; cursor: pointer; }
+.consent .access label:has(input:checked) { border-color: var(--fl-accent); }
 .consent button { border-radius: 999px; padding: 10px 22px; font-weight: 600; cursor: pointer; min-height: 44px; border: 1.5px solid var(--fl-accent); background: var(--fl-accent); color: var(--fl-accent-ink); }
 .consent button.danger { background: transparent; color: var(--fl-danger); border-color: var(--fl-line); }
 .warn { padding: 12px 16px; border-radius: var(--fl-radius-md); background: var(--fl-err-bg); color: var(--fl-err-ink) !important; }
