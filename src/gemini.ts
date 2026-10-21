@@ -198,7 +198,9 @@ export async function geminiGenerate(env: Env, site: SiteRow, viewer: User, req:
   }
   const body: Record<string, unknown> = { contents };
   if (typeof req.system === "string" && req.system.trim()) body.systemInstruction = { parts: [{ text: req.system }] };
-  if (Object.keys(generationConfig).length) body.generationConfig = generationConfig;
+  // Always cap the answer: without one, the model's own (much higher) limit would apply (audit A8).
+  generationConfig.maxOutputTokens ??= MAX_OUTPUT_TOKENS;
+  body.generationConfig = generationConfig;
   const payload = JSON.stringify(body);
   if (payload.length > MAX_BODY) throw err(413, "body_too_large", "The request to Gemini is larger than 1 MB.", "Send a shorter prompt or smaller images.");
 

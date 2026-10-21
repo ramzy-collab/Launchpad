@@ -57,7 +57,10 @@ describe("publish and serve", () => {
     const css = await call(`${base}/css/site.css`, { as: OWNER });
     expect(css.status).toBe(200);
     expect(css.headers.get("content-type")).toBe("text/css; charset=utf-8");
-    expect(css.headers.get("cache-control")).toBe("public, max-age=300");
+    // A restricted app's files stay out of shared caches; an app anyone can open may use them.
+    expect(css.headers.get("cache-control")).toBe("private, max-age=300");
+    await call(`/_api/admin/sites/${site.id}`, { as: OWNER, method: "PATCH", json: { visibility: "all" } });
+    expect((await call(`${base}/css/site.css`, { as: OWNER })).headers.get("cache-control")).toBe("public, max-age=300");
     const etag = css.headers.get("etag")!;
     expect(etag).toBeTruthy();
     const cached = await call(`${base}/css/site.css`, { as: OWNER, headers: { "if-none-match": etag } });

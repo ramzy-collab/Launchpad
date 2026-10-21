@@ -27,7 +27,7 @@ import { htmlResponse, PAGE_CSP } from "./dashboard/layout";
 import { appOrigin, siteOrigin } from "./hosts";
 import { identifyBrowser } from "./auth";
 import { formelabShareTags } from "./share";
-import { cookieHeader, readCookie, SESSION_COOKIE } from "./session";
+import { cookieHeader, endOtherSessions, readCookie, SESSION_COOKIE } from "./session";
 import { escapeHtml as e, isEmail, normEmail } from "./util";
 
 /** A sign-in waiting for an emailed code: "m" (code to log in) or "v" (confirm the email address). */
@@ -404,6 +404,8 @@ export async function resetPost(c: Context<AppEnv>): Promise<Response> {
   const email = normEmail(res.data.user?.email ?? "");
   if (!isEmail(email)) return signInForm({ ...v, info: "Password saved. Log in with it now." });
   await markHasPassword(c.env, email);
+  // Whoever reset it may not be the person signed in elsewhere: end every session (audit A7).
+  await endOtherSessions(c.env, email);
   return passwordForm({ ...v, info: "Password saved. Log in with it now." }, email);
 }
 

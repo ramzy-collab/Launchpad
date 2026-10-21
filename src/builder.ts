@@ -137,8 +137,9 @@ app, a <link rel="icon"> with an inline SVG that fits the app, a one-sentence
 whose content is an inline, URL-encoded SVG data URI (viewBox 0 0 1200 630, under 20 KB) drawing the
 app's name and a simple stylized picture of what it's for (see the guide's "Link previews"). It
 must work well on a phone and follow the guide's ground rules and checklist. Save data with formelab.kv (or formelab.kv.mine for each
-person's own data) so it lasts; the app is published with data_writes "everyone", so every viewer
-can write shared data.`;
+person's own data) so it lasts. Use formelab.kv for what people share (votes, sign-ups, a shared
+list): when the app writes it, Formelab lets everyone who can open the app write it too, unless its
+owner chose otherwise. Use formelab.kv.mine for each person's own data.`;
 
 const EDIT_RULES = `You are changing an existing Formelab web app for its owner. The guide below
 describes Formelab. Formelab publishes what you write for you, so ignore the guide's publishing
@@ -563,7 +564,8 @@ export async function editApp(ctx: Ctx, b: Builder, siteId: unknown, rawChange: 
   const generated = await generate(ctx, b, key, `${EDIT_RULES}\n\n---\n\n${guide}`, prompt, progress);
 
   files.set("index.html", new TextEncoder().encode(generated.html));
-  const published = await publishSite(ctx, { namespace: site.namespace, mountPath: site.mount_path, files });
+  // If someone published while the AI was writing, keep their version rather than overwrite it (audit A12).
+  const published = await publishSite(ctx, { namespace: site.namespace, mountPath: site.mount_path, files, expectedVersion: site.current_version });
   const target = `${site.namespace}/${site.mount_path}`;
   await audit(env, user.email, "ai_edit", target, { siteId: site.id, builder: BUILDERS[b].name, model: generated.model, tokens: generated.tokens, change: change.slice(0, 200) });
   return { url: published.url, title: published.site.title ?? titleOf(generated.html), namespace: site.namespace, mountPath: site.mount_path, model: generated.model };

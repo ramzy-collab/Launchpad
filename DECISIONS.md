@@ -344,7 +344,9 @@ Choices made while building v1, including where the build differs from the spec 
   - the app's title stays out of the subject and heading, and appears only in the body as
     escaped text.
   Sending only to existing accounts was rejected: sharing is how most people hear of Formelab.
-  Turned-away emails don't count toward the limits.
+  Turned-away emails count toward the limits too, since each request adds what it asked for in
+  one statement and works out its share from the result (so requests at the same moment can't
+  each take the whole allowance).
 
 
 ## Deleting users
@@ -894,4 +896,27 @@ Choices made while building v1, including where the build differs from the spec 
 - The check runs on what actually changes, because the settings form sends every field: an editor
   saving the form with sharing untouched is fine. For editors who can't share, the page shows the
   sharing fields disabled with a note naming the owner, and hides the public link section.
+
+## Second security audit pass: A4–A9, A11, A12
+
+- **A4, what viewers see in lists.** App lists (by space, Shared with me, MCP `list_sites`) gave
+  people who can only open an app its share list, editors, sharers and spreadsheet ids. For
+  non-managers those now come back empty, like the public link already did.
+- **A5, waitlisted editors.** The waitlist was only checked when creating a space and in the
+  builder, so someone waitlisted but made an editor of a space or app could publish there.
+  `publishSite` now refuses anyone not let in.
+- **A6, share email limits under load.** The allowance was read and then added to in two
+  statements, so requests at the same moment could each take all of it. Now one statement adds what
+  the request asked for and returns the new count, and the request's share is worked out from that.
+- **A7, password changes end other sessions.** A reset ends every session of that person; setting a
+  password from the web app ends all but the current sign-in (and the sessions handed over from
+  it), so a stolen session stops working.
+- **A8, Gemini answers are always capped** at 8,192 tokens; before, leaving the cap out let the
+  model's own, much higher limit apply on the owner's key.
+- **A9, deleting a user** removes them from other apps' `sharers` too.
+- **A11, caching.** Files of apps anyone can open (visibility "all" or a public link) are
+  `public, max-age=300`; other apps' are `private`, so shared caches don't keep them.
+- **A12, AI edits.** "Change it with AI" publishes only if the app is still at the version it
+  started from, so a publish made during the build isn't overwritten. The build prompt no longer
+  says every app lets everyone write its data.
 

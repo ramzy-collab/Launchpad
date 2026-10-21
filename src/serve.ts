@@ -110,7 +110,8 @@ async function serveFromSite(req: Request, env: Env, site: SiteRow, rel: string,
     if (html) {
       headers.set("cache-control", "no-cache");
     } else {
-      headers.set("cache-control", "public, max-age=300");
+      // Shared caches may keep files of apps anyone can open; a restricted app's stay in the browser (audit A11).
+      headers.set("cache-control", `${site.visibility === "all" || site.public_link ? "public" : "private"}, max-age=300`);
       headers.set("etag", obj.httpEtag);
     }
     if (!("body" in obj) || !obj.body) {

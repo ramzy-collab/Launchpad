@@ -30,6 +30,7 @@ import {
   ADMIN_SESSION_TTL_MS,
   APEX_SESSION_TTL_MS,
   APP_SESSION_TTL_MS,
+  endOtherSessions,
 } from "./session";
 import { base32, escapeHtml, normEmail, randomBytes } from "./util";
 
@@ -418,5 +419,7 @@ export async function setPassword(env: Env, user: User, sessionId: string | unde
     throw err(502, "upstream", "Couldn't save your password.", "Try again in a minute.");
   }
   await markHasPassword(env, user.email);
+  // A new password should lock out anyone holding another of this person's sessions (audit A7).
+  await endOtherSessions(env, user.email, sessionId);
   await audit(env, user.email, "password_set", user.email);
 }
