@@ -212,8 +212,20 @@ export function substitute(template: string, values: Map<string, string>, where:
  * Some APIs echo request headers back (httpbin does). Scrub the secret's values from
  * anything returned to the browser so the key never reaches client code.
  */
+/**
+ * A value as an API might echo it back: as is, and base64 (standard and URL-safe, unpadded),
+ * URL-encoded and hex. Best effort (audit finding #7): a value split, reversed or re-encoded
+ * some other way still gets through, which is why secrets can only reach their own hosts.
+ */
+function encodings(v: string): string[] {
+  const bytes = new TextEncoder().encode(v);
+  const b64 = b64encode(bytes).replace(/=+$/, "");
+  const hex = [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
+  return [v, b64, b64.replace(/\+/g, "-").replace(/\//g, "_"), encodeURIComponent(v), hex, hex.toUpperCase()];
+}
+
 export function redact(text: string, values: Map<string, string>): string {
-  const needles = [...new Set(values.values())].filter((v) => v.length >= 6).sort((a, b) => b.length - a.length);
+  const needles = [...new Set([...values.values()].filter((v) => v.length >= 6).flatMap(encodings))].sort((a, b) => b.length - a.length);
   for (const n of needles) text = text.split(n).join("[redacted]");
   return text;
 }
