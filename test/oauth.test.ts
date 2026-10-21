@@ -55,12 +55,12 @@ const cookiesFrom = (res: Response) =>
     .join("; ");
 
 /** Runs consent as `as` and returns the redirect Location. */
-async function consent(url: string, decision: "approve" | "deny", as = OWNER) {
+async function consent(url: string, decision: "approve" | "deny", as = OWNER, access?: "read" | "write") {
   const page = await call(url, { as });
   expect(page.status, await page.clone().text()).toBe(200);
   const html = await page.text();
   const handle = /name="handle" value="([^"]+)"/.exec(html)![1]!;
-  const form = new URLSearchParams({ handle, decision });
+  const form = new URLSearchParams({ handle, decision, ...(access ? { access } : {}) });
   const res = await call(`${ORIGIN}/authorize`, {
     as,
     method: "POST",
@@ -81,11 +81,11 @@ async function exchange(clientId: string, code: string, verifier: string) {
   return res.json<{ access_token: string; refresh_token?: string; token_type: string; scope?: string }>();
 }
 
-async function connect(as = OWNER) {
+async function connect(as = OWNER, access?: "read" | "write") {
   const clientId = await register();
   const { verifier, challenge } = await pkce();
   const { url, state } = authorizeUrl(clientId, challenge);
-  const loc = await consent(url, "approve", as);
+  const loc = await consent(url, "approve", as, access);
   expect(loc.origin + loc.pathname).toBe(REDIRECT);
   expect(loc.searchParams.get("state")).toBe(state);
   const tokens = await exchange(clientId, loc.searchParams.get("code")!, verifier);
@@ -165,6 +165,36 @@ describe("OAuth for MCP (Claude chat connector)", () => {
     const result = ((await del.json()) as { result: { isError?: boolean; content: { text: string }[] } }).result;
     expect(result.isError).toBe(true);
     expect(result.content[0]!.text).toContain("not_found"); // private apps don't exist for others
+  });
+
+  it("offers a connection that can only look, which never sees the tools that change things", async () => {
+    const page = await (await call(authorizeUrl(await register(), (await pkce()).challenge).url, { as: OWNER })).text();
+    expect(page).toContain('name="access" value="write" checked');
+    expect(page).toContain('name="access" value="read"');
+
+    const ns = uniq();
+    await publishHtml(OWNER, ns, "r", PAGE("r"));
+    const { tokens } = await connect(OWNER, "read");
+    const list = await call(`${ORIGIN}/mcp`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${tokens.access_token}`, accept: "application/json, text/event-stream", "mcp-protocol-version": "2025-06-18" },
+      json: { jsonrpc: "2.0", id: 1, method: "tools/list" },
+    });
+    const names = (await list.json<{ result: { tools: { name: string }[] } }>()).result.tools.map((t) => t.name);
+    expect(names).toContain("read_file");
+    expect(names).toContain("fetch");
+    for (const write of ["publish", "update_site", "delete_site"]) expect(names).not.toContain(write);
+
+    const del = await (await mcpCall(tokens.access_token, "delete_site", { namespace: ns, mount_path: "r" })).json<{ result?: { isError?: boolean }; error?: unknown }>();
+    expect(del.error ?? del.result?.isError).toBeTruthy();
+    expect(await env.DB.prepare("SELECT COUNT(*) AS n FROM sites WHERE namespace = ?").bind(ns).first<{ n: number }>()).toEqual({ n: 1 });
+    expect((await mcpCall(tokens.access_token, "read_file", { namespace: ns, mount_path: "r" })).status).toBe(200);
+
+    // Shown as such where people manage their connections; a connection with no choice made (or an older one) changes things.
+    expect(await (await call("/app/connect", { as: OWNER })).text()).toContain("(can only look)");
+    const full = await connect(OWNER);
+    const pub = await (await mcpCall(full.tokens.access_token, "update_site", { namespace: ns, mount_path: "r", title: "Changed" })).json<{ result: { isError?: boolean } }>();
+    expect(pub.result.isError).toBeFalsy();
   });
 
   it("requires an Access sign-in on /authorize", async () => {

@@ -254,6 +254,24 @@ Choices made while building v1, including where the build differs from the spec 
 - `wrangler.toml` now carries the real `formelab.ai` domain and D1 `database_id`. Neither is a
   secret, and keeping them in the repo means `git pull` doesn't fight local edits.
 
+- **Connections that can only look, and other people's content kept away from the AI (audit
+  finding #5).** An AI reading an app's source or its responses can meet text written to steer
+  it ("AI assistant: delete the app ..."), and the same connection could publish and delete. So:
+  - The consent page asks what the connection can do: "Make and change apps" (the default, as
+    before) or "Only look". A read-only grant carries `access: "read"` in its props (and
+    metadata, so Connect your AI shows "(can only look)"); its MCP server registers only tools
+    marked `readOnlyHint`, so a new tool without the mark is left out rather than let in. The
+    OAuth scope stays `mcp` for both, since clients ask for it and the provider requires it.
+    Grants made before this carry no `access` and keep full access; access keys are full too.
+  - `read_file` and `fetch` give an app's source only to its owner and editors. Someone it's
+    shared with gets its details (with its owner) but not its code, so a stranger's app can't
+    feed instructions to their AI; they can still open the app.
+  - Source and responses come with a line saying they're data, not instructions. That's a
+    request the AI usually honors, not a guarantee, which is why the two limits above exist.
+  - Asking the AI to repeat the mount path before `delete_site` was left out: an AI following
+    injected text would repeat it too. `delete_site` is marked `destructiveHint`, which AI apps
+    use to ask the person first.
+
 ## ChatGPT
 
 - ChatGPT's custom connectors use the same OAuth flow (dynamic registration or a Client ID Metadata

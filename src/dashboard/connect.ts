@@ -37,7 +37,7 @@ export async function connectPage(c: Context<AppEnv>): Promise<Response> {
   const connections: Conn[] = [
     ...grants.map((k) => ({
       tile: tileFor(k.clientName),
-      text: `${k.clientName}, connected ${fmtTime(k.createdAt)}`,
+      text: `${k.clientName}, connected ${fmtTime(k.createdAt)}${k.readOnly ? " (can only look)" : ""}`,
       button: `<button class="danger" data-action="connection-revoke" data-id="${e(k.id)}">Disconnect</button>`,
     })),
     ...tokens

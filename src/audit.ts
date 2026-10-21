@@ -178,7 +178,7 @@ export function describeActivity(row: AuditRow): string {
     case "password_set":
       return "Set their password";
     case "oauth_connect":
-      return `Connected ${d.client ?? "an AI app"}`;
+      return `Connected ${d.client ?? "an AI app"}${d.access === "read" ? ", to look only" : ""}`;
     case "oauth_disconnect":
       return "Disconnected an AI app";
     default:
