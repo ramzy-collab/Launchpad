@@ -28,13 +28,33 @@ export function validateKey(key: string) {
   }
 }
 
-export async function kvList(env: Env, scope: KvScope, prefix = "") {
-  const { results } = await env.DB.prepare(
-    `SELECT key, value, updated_at FROM ${table(scope)} WHERE ${owner(scope)} AND substr(key, 1, ?3) = ?4 ORDER BY key`,
-  )
-    .bind(...ownerBinds(scope), prefix.length, prefix)
-    .all<{ key: string; value: string; updated_at: number }>();
-  return results.map((r) => ({ key: r.key, value: JSON.parse(r.value) as unknown, updatedAt: r.updated_at }));
+/** About how much of the values one list response carries; the rest comes in later pages. */
+export const KV_LIST_PAGE_BYTES = 4 * 1024 * 1024;
+const LIST_BATCH = 100;
+
+/**
+ * The scope's keys in order, starting after `after`, up to about KV_LIST_PAGE_BYTES of values
+ * (1,000 keys of 64 KB would be 64 MB in one response). `next` is the key to continue after, or
+ * null at the end; the SDK's list() follows it, so apps still get the whole list in one call.
+ */
+export async function kvList(env: Env, scope: KvScope, prefix = "", after = "") {
+  const rows: { key: string; value: unknown; updatedAt: number }[] = [];
+  let bytes = 0;
+  let cursor = after;
+  for (;;) {
+    const { results } = await env.DB.prepare(
+      `SELECT key, value, updated_at FROM ${table(scope)} WHERE ${owner(scope)} AND substr(key, 1, ?3) = ?4 AND key > ?5 ORDER BY key LIMIT ${LIST_BATCH}`,
+    )
+      .bind(...ownerBinds(scope), prefix.length, prefix, cursor)
+      .all<{ key: string; value: string; updated_at: number }>();
+    for (const r of results) {
+      rows.push({ key: r.key, value: JSON.parse(r.value) as unknown, updatedAt: r.updated_at });
+      bytes += r.value.length;
+      cursor = r.key;
+      if (bytes >= KV_LIST_PAGE_BYTES) return { rows, next: cursor };
+    }
+    if (results.length < LIST_BATCH) return { rows, next: null };
+  }
 }
 
 export async function kvGet(env: Env, scope: KvScope, key: string) {

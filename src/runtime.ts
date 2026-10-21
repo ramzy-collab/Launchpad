@@ -1,8 +1,8 @@
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { canManageSite } from "./auth";
 import type { AppEnv } from "./env";
 import { badRequest, err, forbidden, jsonError, onError } from "./errors";
-import { kvDelete, kvGet, kvList, kvSet } from "./kv";
+import { kvDelete, kvGet, kvList, kvSet, type KvScope } from "./kv";
 import { proxy, secretDelete, secretList, secretSet } from "./secrets";
 import { geminiAvailable, geminiGenerate } from "./gemini";
 import { flagOnForOwner } from "./flags";
@@ -106,7 +106,13 @@ export function runtimeApi() {
     }
   };
 
-  api.get("/kv", async (c) => c.json(await kvList(c.env, shared(c), c.req.query("prefix") ?? "")));
+  // A list too large for one response comes in pages: x-formelab-next names the key to continue after.
+  const listKv = async (c: Context<AppEnv>, scope: KvScope) => {
+    const { rows, next } = await kvList(c.env, scope, c.req.query("prefix") ?? "", c.req.query("after") ?? "");
+    if (next !== null) c.header("x-formelab-next", encodeURIComponent(next));
+    return c.json(rows);
+  };
+  api.get("/kv", (c) => listKv(c, shared(c)));
   api.get("/kv/*", async (c) => c.json(await kvGet(c.env, shared(c), sharedKey(c))));
   api.put("/kv/*", async (c) => {
     await requireDataWrite(c);
@@ -118,7 +124,7 @@ export function runtimeApi() {
   });
 
   // Each person's private data in this app: only they can read or change it.
-  api.get("/me/kv", async (c) => c.json(await kvList(c.env, mine(c), c.req.query("prefix") ?? "")));
+  api.get("/me/kv", (c) => listKv(c, mine(c)));
   api.get("/me/kv/*", async (c) => c.json(await kvGet(c.env, mine(c), myKey(c))));
   api.put("/me/kv/*", async (c) => c.json(await kvSet(c.env, mine(c), myKey(c), await readValue(c))));
   api.delete("/me/kv/*", async (c) => c.json(await kvDelete(c.env, mine(c), myKey(c))));

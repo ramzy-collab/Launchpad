@@ -5,10 +5,27 @@ import type { Env } from "./env";
 import { now } from "./env";
 
 /** Records an action. `detail` must never contain secret values; `detail.siteId` ties it to an app. */
+/** The activity rows written on every call apps make (not by people changing things), kept for a year. */
+export const HIGH_VOLUME_ACTIONS = ["proxy", "gemini", "sheets"] as const;
+export const HIGH_VOLUME_KEEP_MS = 365 * 86_400_000;
+
 export async function audit(env: Env, actor: string, action: string, target: string | null, detail?: Record<string, unknown>) {
   const siteId = typeof detail?.siteId === "string" ? detail.siteId : null;
   await env.DB.prepare("INSERT INTO audit (at, actor, action, target, detail, site_id) VALUES (?, ?, ?, ?, ?, ?)")
     .bind(now(), actor, action, target, detail ? JSON.stringify(detail) : null, siteId)
+    .run();
+  // Now and then, drop a batch of high-volume rows older than a year, so the table can't grow without
+  // end from app calls (audit finding #8). Changes people make are kept.
+  if ((HIGH_VOLUME_ACTIONS as readonly string[]).includes(action) && Math.random() < 0.01) await pruneAudit(env);
+}
+
+/** Deletes up to 1,000 high-volume activity rows older than HIGH_VOLUME_KEEP_MS. */
+export async function pruneAudit(env: Env) {
+  await env.DB.prepare(
+    `DELETE FROM audit WHERE id IN (
+       SELECT id FROM audit WHERE at < ? AND action IN (${HIGH_VOLUME_ACTIONS.map(() => "?").join(",")}) LIMIT 1000)`,
+  )
+    .bind(now() - HIGH_VOLUME_KEEP_MS, ...HIGH_VOLUME_ACTIONS)
     .run();
 }
 

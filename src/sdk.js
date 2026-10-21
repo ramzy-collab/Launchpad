@@ -29,6 +29,9 @@
           err.hint = info.hint || "";
           throw err;
         }
+        // A list sent in pages (kv.list): where the next page starts.
+        var next = res.headers.get("x-formelab-next");
+        if (next && data) data.next = decodeURIComponent(next);
         return data;
       });
     });
@@ -65,7 +68,14 @@
             return call("PUT", base + "/" + enc(key), JSON.stringify(value), true);
           },
           list: function (prefix) {
-            return call("GET", base + (prefix ? "?prefix=" + enc(prefix) : ""));
+            var all = [];
+            function page(after) {
+              return call("GET", base + "?prefix=" + enc(prefix || "") + (after ? "&after=" + enc(after) : "")).then(function (rows) {
+                all = all.concat(rows);
+                return rows.next ? page(rows.next) : all;
+              });
+            }
+            return page("");
           },
           "delete": function (key) { return call("DELETE", base + "/" + enc(key)); }
         };
