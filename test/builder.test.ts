@@ -1,6 +1,6 @@
 import { env } from "cloudflare:workers";
 import { afterEach, describe, expect, it } from "vitest";
-import { extractHtml, slugify, titleOf } from "../src/builder";
+import { extractHtml, slugify, titleOf, writesSharedData } from "../src/builder";
 import { call, onOutbound, OWNER, publishZip, uniq } from "./helpers";
 
 const GEMINI_KEY = "AIzaSyTESTKEY0123456789abcdefGEMI";
@@ -226,6 +226,45 @@ describe("building apps with the person's own API key", () => {
     expect(page).toContain("Your API key …GEMI");
   });
 
+  it("decides who can change a new app's data from what it builds, unless the person chose", async () => {
+    const me = await person("d");
+    const kvWrites = async (namespace: string, mountPath: string) =>
+      (await env.DB.prepare("SELECT kv_writes FROM sites WHERE namespace = ? AND mount_path = ?").bind(namespace, mountPath).first<{ kv_writes: string }>())!.kv_writes;
+
+    // Nothing shared to write: only the owner and editors.
+    mockAi();
+    expect((await connect(me, "claude", CLAUDE_KEY)).status).toBe(200);
+    let last = await build(me, "claude", "A lunch menu");
+    expect(last.done.dataWrites).toEqual({ value: "editors", chosen: "auto" });
+    expect(last.done.siteId).toMatch(/^s_/);
+    expect(await kvWrites(last.done.namespace, last.done.mountPath)).toBe("editors");
+
+    // A poll that saves votes in shared KV: everyone who can open it.
+    const poll = APP_HTML.replace("<h1>Lunch</h1>", `<script>await formelab.kv.set("vote:" + me.email, "pizza")</script>`);
+    mockAi({ claudeText: poll });
+    last = await build(me, "claude", "A lunch poll");
+    expect(last.done.dataWrites).toEqual({ value: "everyone", chosen: "auto" });
+    expect(await kvWrites(last.done.namespace, last.done.mountPath)).toBe("all");
+
+    // The person's choice wins either way.
+    last = await run(me, { provider: "claude", idea: "A lunch poll", data_writes: "editors" });
+    expect(last.done.dataWrites).toEqual({ value: "editors", chosen: "you" });
+    expect(await kvWrites(last.done.namespace, last.done.mountPath)).toBe("editors");
+    mockAi();
+    last = await run(me, { provider: "claude", idea: "A lunch menu", data_writes: "everyone" });
+    expect(await kvWrites(last.done.namespace, last.done.mountPath)).toBe("all");
+
+    // Changing it with AI keeps the setting, whatever the new version does.
+    mockAi({ claudeText: poll });
+    const edited = await run(me, { provider: "claude", site_id: last.done.siteId, change: "Add a poll" });
+    expect(edited.done.dataWrites).toBeUndefined();
+    expect(await kvWrites(last.done.namespace, last.done.mountPath)).toBe("all");
+
+    expect((await call("/_api/admin/build", { as: me, method: "POST", json: { provider: "claude", idea: "x", data_writes: "anyone" } })).status).toBe(400);
+    const page = await (await call("/app/new", { as: me })).text();
+    expect(page).toContain('id="build-data-writes"');
+  });
+
   it("changes an existing app from its settings page, keeping its other files and settings", async () => {
     const me = await person("e");
     const ns = uniq();
@@ -284,6 +323,14 @@ describe("building apps with the person's own API key", () => {
     const pub = await publishZip(me, uniq(), "x", { "index.html": "<!doctype html><html><head><title>x</title></head></html>" });
     const id = (await pub.json<{ site: { id: string } }>()).site.id;
     expect(await (await call(`/app/apps/${id}`, { as: me })).text()).not.toContain("Change it with AI");
+  });
+
+  it("tells shared data writes from each person's own", () => {
+    expect(writesSharedData(`formelab.kv.set("k", 1)`)).toBe(true);
+    expect(writesSharedData(`await formelab.kv . delete ("k")`)).toBe(true);
+    expect(writesSharedData(`const kv = formelab.kv; kv.set("k", 1)`)).toBe(true);
+    expect(writesSharedData(`formelab.kv.mine.set("prefs", {}); formelab.kv.get("k"); formelab.kv.list()`)).toBe(false);
+    expect(writesSharedData(`formelab.responses.submit({})`)).toBe(false);
   });
 
   it("pulls the HTML out of a chatty answer and names the app from its title", () => {

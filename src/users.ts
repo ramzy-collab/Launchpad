@@ -5,7 +5,7 @@ import type { Env, User } from "./env";
 import { badRequest, err, notFound } from "./errors";
 import { listConnections, oauthHelpers } from "./oauth";
 import { removeSite, type NamespaceRow, type SiteRow } from "./sites";
-import { normEmail, parseJsonArray } from "./util";
+import { normEmail, parseJsonArray, randomId } from "./util";
 
 export interface UserSummary {
   email: string;
@@ -46,6 +46,9 @@ function without(list: string, email: string): string | null {
  * apps (files, KV data, secrets), their place on other apps' share and editor lists, deploy tokens,
  * sessions, connected AI apps, waitlist entry, and their WorkOS user. Audit history is kept.
  */
+/** How deleted people appear in usage metrics: this, then a random code. */
+export const DELETED_USER_PREFIX = "deleted-user-";
+
 export async function deleteUser(env: Env, admin: User, rawEmail: string) {
   if (!admin.isAdmin) throw err(403, "admin_only", "Only an admin can delete users.", "Ask the Formelab owner.");
   const email = normEmail(rawEmail);
@@ -80,9 +83,13 @@ export async function deleteUser(env: Env, admin: User, rawEmail: string) {
     ...namespaces.map((n) => env.DB.prepare("UPDATE namespaces SET editors = COALESCE(?, editors) WHERE label = ?").bind(without(n.editors, email), n.label)),
   ];
 
-  // 4. Their account and sign-ins.
+  // 4. Their account and sign-ins. Usage metrics keep their rows (so counts stay whole) under a
+  // stand-in that's the same for all their rows (so counts of people stay right) but isn't their email.
+  const standIn = `${DELETED_USER_PREFIX}${randomId("", 10)}`;
   await env.DB.batch([
     ...updates,
+    env.DB.prepare("UPDATE mcp_calls SET email = ? WHERE email = ?").bind(standIn, email),
+    env.DB.prepare("UPDATE app_visits SET email = ? WHERE email = ?").bind(standIn, email),
     env.DB.prepare("DELETE FROM auth_codes WHERE session_id IN (SELECT id FROM sessions WHERE email = ?)").bind(email),
     env.DB.prepare("DELETE FROM sessions WHERE email = ?").bind(email),
     env.DB.prepare("DELETE FROM tokens WHERE owner_email = ?").bind(email),

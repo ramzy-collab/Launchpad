@@ -2,7 +2,7 @@ import type { Context } from "hono";
 import { describeActivity, siteActivity } from "../audit";
 import { listTokens } from "../auth";
 import type { AppEnv, User } from "../env";
-import { getManageableSite, listNamespaces, listOwnSites, listSharedSites } from "../sites";
+import { getManageableSite, listNamespaces, listOwnSites, listSharedSites, MAX_GUEST_RESPONSES_PER_DAY } from "../sites";
 import { escapeHtml as e } from "../util";
 import { ApiError } from "../errors";
 import { plainPage } from "../serve";
@@ -30,8 +30,19 @@ const visibilityOptions = (current: "all" | "restricted") =>
     .map((v) => `<option value="${v}"${v === current ? " selected" : ""}>${VISIBILITY_LABEL[v]}</option>`)
     .join("");
 
+/** The app page's link preview choices; "Automatic" says what it picks for the app now. */
+function linkPreviewOptions(site: { visibility: "all" | "restricted"; publicUrl: string | null; linkPreviewSetting: "auto" | "full" | "private" }): string {
+  const auto = site.visibility === "all" || site.publicUrl ? "Full preview" : "Private card";
+  const options: [string, string][] = [
+    ["auto", `Automatic (now: ${auto}, from who can open it)`],
+    ["full", "Full preview: the app's name, description and picture"],
+    ["private", "Private card: \u201cA private app on Formelab\u201d"],
+  ];
+  return options.map(([v, label]) => `<option value="${v}"${v === site.linkPreviewSetting ? " selected" : ""}>${e(label)}</option>`).join("");
+}
+
 /** The app page's "anyone with the link" controls (managers only see the page). */
-function publicLinkSection(site: { id: string; publicUrl: string | null; guestResponses: boolean }, responsesOn: boolean): string {
+function publicLinkSection(site: { id: string; publicUrl: string | null; guestResponses: boolean; guestResponsesPerDay: number }, responsesOn: boolean): string {
   const op = (value: string, label: string, cls = "") =>
     `<form class="inline" data-action="public-link" data-id="${e(site.id)}" data-op="${value}"><button${cls ? ` class="${cls}"` : ""}>${label}</button></form>`;
   const responses = `<form class="inline" data-action="guest-responses" data-id="${e(site.id)}" data-on="${site.guestResponses ? "false" : "true"}"><button class="ghost">${
@@ -50,7 +61,16 @@ function publicLinkSection(site: { id: string; publicUrl: string | null; guestRe
       ? "People with the link can send this app responses (form answers, sign-ups, feedback) without signing in. They can't see what anyone sent; only you and the app's editors can."
       : "For a form, survey or sign-up sheet, let people with the link send responses without signing in. They can't see what anyone sent; only you and the app's editors can."
   }</p>
-  <div>${responses}</div>`
+  <div>${responses}</div>${
+    site.guestResponses
+      ? `
+  <form class="inline guest-cap" data-action="guest-cap" data-id="${e(site.id)}">
+    <label>Most responses a day from people with the link <input type="number" name="per_day" min="0" max="${MAX_GUEST_RESPONSES_PER_DAY}" step="1" value="${site.guestResponsesPerDay}"></label>
+    <button class="ghost">Save</button>
+  </form>
+  <p class="muted">Stops a shared link from flooding the app. People who sign in don't count toward it.</p>`
+      : ""
+  }`
       : ""
   }`
     : `<p class="muted">Turn on a link that opens this app for anyone who has it, without signing in. They can look at it and read its shared data, but can't change anything. You can turn it off or replace it at any time.</p>
@@ -277,6 +297,8 @@ export async function appSettingsPage(c: Context<AppEnv>, id: string): Promise<R
       <option value="editors"${site.dataWrites === "editors" ? " selected" : ""}>Only the owner and editors</option>
       <option value="everyone"${site.dataWrites === "everyone" ? " selected" : ""}>Everyone who can open it (polls, sign-ups)</option>
     </select></label>
+    <label>Link previews (Slack, iMessage, WhatsApp) <select name="link_preview">${linkPreviewOptions(site)}</select></label>
+    <p class="muted">Chat apps show a preview when someone shares this app's link. They don't sign in, so a full preview shows the app's name, description and picture to everyone in the chat, even people who can't open it. A private card only says it's a private app on Formelab.</p>
     <label>Share with (can open) <input name="allowed_emails" value="${e(site.allowedEmails.join(", "))}" placeholder="friend@example.com, ..."></label>
     ${
       site.canEditEditors
@@ -533,6 +555,16 @@ export async function newAppPage(c: Context<AppEnv>): Promise<Response> {
   <p>${builderOn ? "Describe it in your own words, then press Make it. With your API key saved, the app is built and published right here." : "Describe it in your own words. We'll open your AI with it typed in; press send and it builds the app and publishes it here."}</p>
   <textarea id="idea" rows="4" maxlength="4000" placeholder="${e(IDEAS[0]!)}" aria-label="Describe your app"></textarea>
   <div class="ideas" aria-label="Ideas to start from">${IDEAS.map((i) => `<button type="button" class="idea" data-idea="${e(i)}">${e(i)}</button>`).join("")}</div>
+  ${
+    builderOn
+      ? `<label class="build-opt">Who can change its data <select id="build-data-writes">
+    <option value="auto" selected>Decide for me</option>
+    <option value="editors">Only me and editors</option>
+    <option value="everyone">Everyone who can open it</option>
+  </select></label>
+  <p class="muted build-opt-hint">Decide for me: if the app saves things people share, like votes or sign-ups, everyone who can open it can change them; otherwise only you and editors can. You can change this later in the app's settings.</p>`
+      : ""
+  }
   <div class="make-row">
     ${makers}
     <div class="make">

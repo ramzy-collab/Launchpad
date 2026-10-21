@@ -91,6 +91,7 @@
         visibility: el.visibility.value,
         allowed_emails: el.allowed_emails.value,
         data_writes: el.data_writes.value,
+        link_preview: el.link_preview.value,
         spa: el.spa.checked,
         hidden: el.hidden.checked
       };
@@ -118,6 +119,11 @@
       return api("PATCH", "/sites/" + encodeURIComponent(form.dataset.id), { guest_responses: on }).then(function () {
         show(on ? "People with the link can now send responses." : "People with the link can no longer send responses.");
         reloadSoon();
+      });
+    },
+    "guest-cap": function (form) {
+      return api("PATCH", "/sites/" + encodeURIComponent(form.dataset.id), { guest_responses_per_day: form.elements.per_day.value }).then(function () {
+        show("Daily limit saved.");
       });
     },
     "ns-create": function (form) {
@@ -256,6 +262,34 @@
   // New app, built here: the person's own API key builds the app on the server, which streams
   // progress lines ({ progress } ... then { done } or { error }) and publishes it.
   var BUILDER_NAMES = { claude: "Claude", openai: "ChatGPT", gemini: "Gemini", grok: "Grok" };
+  function dataChoice() {
+    var sel = document.getElementById("build-data-writes");
+    return sel ? sel.value : "auto";
+  }
+  // A new app is live: say who can change its data (and why, when Formelab chose), with a way to change it.
+  function built(screen, sub, done) {
+    screen.classList.add("done");
+    screen.querySelector(".splash-text").textContent = "It's live: " + done.title;
+    var everyone = done.dataWrites.value === "everyone";
+    sub.textContent = "Who can change its data: " + (everyone ? "everyone who can open it" : "only you and editors") + "." +
+      (done.dataWrites.chosen === "auto"
+        ? everyone ? " Formelab chose this because the app saves things people share, like votes or sign-ups." : " Formelab chose this because the app doesn't save shared data for everyone."
+        : "");
+    var row = document.createElement("p");
+    row.className = "splash-actions";
+    var open = document.createElement("a");
+    open.className = "cta";
+    open.href = done.url;
+    open.textContent = "Open app";
+    var settings = document.createElement("a");
+    settings.href = "/apps/" + encodeURIComponent(done.siteId);
+    settings.textContent = "Change it in settings";
+    row.appendChild(open);
+    row.appendChild(document.createTextNode(" "));
+    row.appendChild(settings);
+    screen.appendChild(row);
+    open.focus();
+  }
   function build(provider, idea, siteId) {
     var screen = splash(BUILDER_NAMES[provider] + (siteId ? " is changing your app…" : " is building your app…"));
     var sub = document.createElement("p");
@@ -274,6 +308,7 @@
       if (msg.error) { finished = true; fail(msg.error.message + (msg.error.hint ? " " + msg.error.hint : "")); }
       else if (msg.done) {
         finished = true;
+        if (msg.done.dataWrites && msg.done.siteId) { built(screen, sub, msg.done); return; }
         screen.querySelector(".splash-text").textContent = (siteId ? "Updated! Opening " : "It's live! Opening ") + msg.done.title + "…";
         sub.textContent = "";
         setTimeout(function () { location.href = msg.done.url; }, 900);
@@ -285,7 +320,7 @@
       method: "POST",
       credentials: "same-origin",
       headers: { "x-formelab-request": "1", "content-type": "application/json" },
-      body: JSON.stringify(siteId ? { provider: provider, site_id: siteId, change: idea } : { provider: provider, idea: idea })
+      body: JSON.stringify(siteId ? { provider: provider, site_id: siteId, change: idea } : { provider: provider, idea: idea, data_writes: dataChoice() })
     }).then(function (res) {
       if (!res.ok || !res.body) {
         return res.json().then(function (d) { throw new Error(d.error.message + (d.error.hint ? " " + d.error.hint : "")); }, function () { throw new Error("Request failed (" + res.status + ")"); });

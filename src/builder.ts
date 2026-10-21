@@ -475,6 +475,27 @@ export interface BuildResult {
   namespace: string;
   mountPath: string;
   model: string;
+  /** A new app only: who can change its shared data, and whether Formelab chose it from the app. */
+  dataWrites?: { value: "everyone" | "editors"; chosen: "auto" | "you" };
+  /** A new app only: its id, for a link to its settings. */
+  siteId?: string;
+}
+
+/** "auto" (decide from the app), "editors" or "everyone": who a new app lets change its shared data. */
+export function parseBuildDataWrites(raw: unknown): "auto" | "editors" | "everyone" {
+  if (raw === undefined || raw === null || raw === "" || raw === "auto") return "auto";
+  if (raw === "editors" || raw === "everyone") return raw;
+  throw badRequest(`data_writes must be "auto", "editors" or "everyone".`, "\"auto\" lets Formelab decide from the app it builds.");
+}
+
+/**
+ * Whether an app changes its shared data (formelab.kv.set or delete; formelab.kv.mine is each
+ * person's own and doesn't count). A guess from its code: an app that does gets "everyone" when
+ * the person lets Formelab decide, so its polls and sign-ups work for the people it's shared with;
+ * any other app keeps its data to the owner and editors.
+ */
+export function writesSharedData(html: string): boolean {
+  return /\bkv\s*\.\s*(?:set|delete)\s*\(/.test(html);
 }
 
 type Prepared = { key: string; guide: string };
@@ -506,18 +527,20 @@ async function generate(ctx: Ctx, b: Builder, key: string, system: string, promp
 }
 
 /** Builds an app from a description with the person's own API key, then publishes it to their space. */
-export async function buildApp(ctx: Ctx, b: Builder, rawIdea: unknown, progress: Progress): Promise<BuildResult> {
+export async function buildApp(ctx: Ctx, b: Builder, rawIdea: unknown, progress: Progress, rawDataWrites?: unknown): Promise<BuildResult> {
   const { env, user } = ctx;
   const idea = String(rawIdea ?? "").trim();
+  const choice = parseBuildDataWrites(rawDataWrites);
   const { key, guide } = await prepare(ctx, b, idea, "your app");
   const generated = await generate(ctx, b, key, `${BUILD_RULES}\n\n---\n\n${guide}`, idea, progress);
 
   const title = titleOf(generated.html);
   const namespace = await homeNamespace(ctx);
   const mountPath = await freeMount(env, namespace, title);
-  const published = await publishSite(ctx, { namespace, mountPath, files: filesFromHtml(generated.html), title, dataWrites: "everyone" });
-  await audit(env, user.email, "ai_build", `${namespace}/${mountPath}`, { siteId: published.site.id, builder: BUILDERS[b].name, model: generated.model, tokens: generated.tokens });
-  return { url: published.url, title, namespace, mountPath, model: generated.model };
+  const dataWrites = choice === "auto" ? (writesSharedData(generated.html) ? "everyone" : "editors") : choice;
+  const published = await publishSite(ctx, { namespace, mountPath, files: filesFromHtml(generated.html), title, dataWrites });
+  await audit(env, user.email, "ai_build", `${namespace}/${mountPath}`, { siteId: published.site.id, builder: BUILDERS[b].name, model: generated.model, tokens: generated.tokens, dataWrites });
+  return { url: published.url, title, namespace, mountPath, model: generated.model, dataWrites: { value: dataWrites, chosen: choice === "auto" ? "auto" : "you" }, siteId: published.site.id };
 }
 
 const MAX_EDIT_HTML = 400 * 1024;

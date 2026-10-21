@@ -152,7 +152,8 @@ public link are guests (`formelab.me()` is `null`). They can send responses only
 allows it: `update_site` with `guest_responses: true` (and `public_link: true` for the link), or
 "Let people with the link send responses" on the app's page. Otherwise `submit` fails with
 `sign_in_required`. Guests can send at most 5 a minute each, and an app takes at most 60 a minute;
-too many fails with `rate_limited` (429). The owner reads responses on the app's page in Formelab
+guests together can send at most 500 a day unless the owner changes it (`update_site`'s
+`guest_responses_per_day`). Too many fails with `rate_limited` (429). The owner reads responses on the app's page in Formelab
 (with a CSV download) or by asking their AI (the `get_responses` tool).
 
 <!-- /flag:responses -->
@@ -253,7 +254,12 @@ Safari on a Mac. Hide the button when `installed()` is true.
 When someone sends your app's link in iMessage, WhatsApp, Slack, Discord or anywhere else that
 shows link previews, Formelab answers the preview with the app's title, a line of description
 and a big picture, even though opening the app still needs a sign-in. The picture and the text
-are public, so keep anyone's data out of them. Give your app:
+are public, so keep anyone's data out of them.
+
+That full preview is for apps open to every Formelab member or with a public link. An app only
+some people can open gets a private card instead ("A private app on Formelab"), so its name
+doesn't show to everyone in a chat. The owner can choose either with `update_site`'s
+`link_preview` (`"full"`, `"private"` or `"auto"`) or on the app's page. Give your app:
 
 - **A `<meta name="description">`**: one plain sentence saying what the app does.
 - **A share illustration** that shows what the app is: a stylized drawing, not a screenshot.

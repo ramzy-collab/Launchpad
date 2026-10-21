@@ -1,3 +1,4 @@
+import { env } from "cloudflare:workers";
 import { beforeAll, describe, expect, it } from "vitest";
 import { appAt, call, OWNER, PAGE, publishHtml, uniq } from "./helpers";
 
@@ -106,6 +107,34 @@ describe("responses", () => {
     expect((await limited.json<{ error: { code: string } }>()).error.code).toBe("rate_limited");
     // Someone else still gets through.
     expect((await send("198.51.100.8")).status).toBe(201);
+  });
+
+  it("take at most the owner's daily number from guests, while signed-in people still get through", async () => {
+    const { site, patch, api } = await newSite();
+    const cookie = await guestCookie(patch);
+    expect((await (await patch({ guest_responses: true })).json<View & { guestResponsesPerDay: number }>()).guestResponsesPerDay).toBe(500);
+    expect((await patch({ guest_responses_per_day: 2 })).status).toBe(200);
+    const send = (ip: string) => api("responses", { method: "POST", body: "{}", headers: { cookie, "cf-connecting-ip": ip } });
+    expect((await send("192.0.2.1")).status).toBe(201);
+    expect((await send("192.0.2.2")).status).toBe(201);
+    const capped = await send("192.0.2.3");
+    expect(capped.status).toBe(429);
+    const body = await capped.json<{ error: { code: string; message: string } }>();
+    expect(body.error.code).toBe("rate_limited");
+    expect(body.error.message).toContain("2 responses for today");
+    expect((await api("responses", { as: OWNER, method: "POST", body: "{}" })).status).toBe(201);
+
+    // Yesterday's don't count.
+    await env.DB.prepare("UPDATE responses SET at = at - 86400000 WHERE site_id = ? AND email IS NULL").bind(site.id).run();
+    expect((await send("192.0.2.4")).status).toBe(201);
+
+    for (const bad of [-1, 5001, 1.5, "lots"]) expect((await patch({ guest_responses_per_day: bad })).status, String(bad)).toBe(400);
+    await patch({ guest_responses_per_day: 0 });
+    expect((await send("192.0.2.5")).status).toBe(429);
+    const page = await (await call(`/app/apps/${site.id}`, { as: OWNER })).text();
+    expect(page).toContain('data-action="guest-cap"');
+    const activity = await (await call(`/app/apps/${site.id}/activity`, { as: OWNER })).text();
+    expect(activity).toContain("at most 0 responses a day");
   });
 
   it("download as CSV for managers, and show on the app's page", async () => {

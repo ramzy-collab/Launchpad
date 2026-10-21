@@ -207,6 +207,13 @@ export function buildServer(ctx: Ctx, beforeTools?: (server: McpServer) => void,
               "They can look and read its shared data (formelab.kv) but can't change anything; formelab.me() is null for them. " +
               "false turns it off; \"new\" replaces it so the old link stops working. Only turn it on when the user asks to share the app publicly.",
           ),
+        link_preview: z
+          .enum(["auto", "full", "private"])
+          .optional()
+          .describe(
+            "What chat apps (Slack, iMessage, WhatsApp) show when the app's link is shared: \"full\" (its name, description and picture, to everyone in the chat, even people who can't open it), " +
+              "\"private\" (a plain card: \"A private app on Formelab\") or \"auto\" (the default: full for apps open to all members or with a public link, private otherwise).",
+          ),
         // Behind the responses flag.
         ...(features.has("responses")
           ? {
@@ -217,6 +224,13 @@ export function buildServer(ctx: Ctx, beforeTools?: (server: McpServer) => void,
                   "true lets people who open the app through its public link send responses (formelab.responses.submit: form answers, sign-ups, feedback) without a Formelab account. " +
                     "They still can't read anything they or others sent; only the owner and editors can (get_responses). Turn on for forms meant for the public.",
                 ),
+              guest_responses_per_day: z
+                .number()
+                .int()
+                .min(0)
+                .max(5000)
+                .optional()
+                .describe("The most responses people with the public link may send in a UTC day (default 500). Signed-in people don't count toward it."),
             }
           : {}),
       },

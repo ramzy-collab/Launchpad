@@ -8,13 +8,17 @@
 // it's published like its icon, or else a card drawn from its icon, name and description. It's
 // public, at /_platform/share.png on the app's host, as a PNG (the only kind every service shows).
 //
+// Fetchers never sign in, so a preview shows the app to everyone in the chat. An app only some
+// people can open gets a private card instead (it names nothing: "A private app on Formelab"),
+// unless its owner chooses a full preview; see linkPreviewOf. Signed-in people are unaffected.
+//
 // Formelab's own pages (the home page, login and the web app) share a brand card, /_assets/share.png.
 import { initWasm, Resvg } from "@resvg/resvg-wasm";
 import resvgWasm from "@resvg/resvg-wasm/index_bg.wasm";
 import type { Context } from "hono";
 import type { AppEnv, Env } from "./env";
 import { ASSET_VERSION, DISPLAY_FONT_TTF, TEXT_FONT_TTF } from "./generated/assets";
-import { aiOrigin, siteOrigin } from "./hosts";
+import { aiOrigin, appOrigin, siteOrigin } from "./hosts";
 import { appFiles, attr, hueOf, iconPathFor, iconResponse, letterOf, pngSize, resolveHref } from "./icons";
 import { contentTypeFor, extOf } from "./mime";
 import { appTitle, iconUrl } from "./pwa";
@@ -52,6 +56,17 @@ const PREVIEW_BOT =
 
 /** Whether a request comes from a service fetching a link preview (not a person). */
 export const isPreviewBot = (req: Request) => PREVIEW_BOT.test(req.headers.get("user-agent") ?? "");
+
+/**
+ * What link previews (Slack, iMessage, WhatsApp...) show for an app: "full" (its name, description
+ * and picture) or "private" (a plain Formelab card). The services that fetch previews never sign in,
+ * so a full preview shows the app to everyone in the chat, whoever can open it. Unless the owner
+ * chose, apps open to all members or with a public link get full previews and others private ones.
+ */
+export function linkPreviewOf(s: Pick<SiteRow, "link_preview" | "visibility" | "public_link">): "full" | "private" {
+  if (s.link_preview === "full" || s.link_preview === "private") return s.link_preview;
+  return s.visibility === "all" || s.public_link ? "full" : "private";
+}
 
 // ---------------------------------------------------------------------------
 // The app's own preview image, title and description
@@ -241,6 +256,30 @@ ${mark(x, 524, 44)}
 </svg>`;
 }
 
+export const PRIVATE_TITLE = "A private app on Formelab";
+export const PRIVATE_DESCRIPTION = "Sign in to Formelab to open it.";
+
+/** The card for an app whose previews are private: nothing about the app, only that it's on Formelab. */
+export function privateCardSvg(): string {
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${SHARE_W}" height="${SHARE_H}" viewBox="0 0 ${SHARE_W} ${SHARE_H}">
+<rect width="${SHARE_W}" height="${SHARE_H}" fill="${CANVAS}"/>
+<g transform="translate(936 300)">
+  <rect x="-210" y="-210" width="420" height="420" rx="96" fill="${ACCENT}" transform="rotate(-6)"/>
+  <circle cx="198" cy="-196" r="40" fill="${YELLOW}"/>
+  <circle cx="-226" cy="186" r="16" fill="${CORAL}"/>
+  <g transform="rotate(4)" fill="none" stroke="#fff" stroke-width="22" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="-82" y="-14" width="164" height="128" rx="26" fill="#fff"/>
+    <path d="M-48 -14v-38a48 48 0 0 1 96 0v38"/>
+  </g>
+  <circle cx="0" cy="44" r="16" fill="${ACCENT}" transform="rotate(4)"/>
+</g>
+<text font-family="Bricolage Grotesque" font-weight="800" font-size="76" letter-spacing="-2.3" fill="${INK}">${tspans(["A private app", "on Formelab"], 88, 194, 82)}</text>
+<text x="88" y="378" font-family="Inter" font-weight="600" font-size="30" fill="${INK_SOFT}">${xml(PRIVATE_DESCRIPTION)}</text>
+${mark(88, 524, 44)}
+<text x="152" y="556" font-family="Inter" font-weight="600" font-size="27" fill="${INK_SOFT}">Made with <tspan fill="${INK}">Formelab</tspan></text>
+</svg>`;
+}
+
 /** Formelab's own card: the home page's headline. */
 export function formelabCardSvg(): string {
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${SHARE_W}" height="${SHARE_H}" viewBox="0 0 ${SHARE_W} ${SHARE_H}">
@@ -329,6 +368,9 @@ async function ownShareImage(env: Env, site: ShareSite): Promise<Response | null
 /** GET /_platform/share.png on an app's host: its preview image, public (see the top of this file). */
 export async function appShareImage(c: Context<AppEnv>): Promise<Response> {
   const site = c.get("site") as ShareSite;
+  if (linkPreviewOf(site) === "private") {
+    return cached(c, `${aiOrigin(c.env, c.req.url)}/_platform/private-share.png?v=${ASSET_VERSION}`, async () => pngResponse(await svgToPng(privateCardSvg())));
+  }
   const key = `${siteOrigin(c.env, site.host_label, c.req.url)}/_platform/share.png?v=${encodeURIComponent(site.current_version)}`;
   return cached(c, key, async () => {
     const own = await ownShareImage(c.env, site);
@@ -423,6 +465,19 @@ ${description ? `<p>${e(description)}</p>\n` : ""}<p><a href="${e(open)}">Open i
 export async function appPreviewPage(c: Context<AppEnv>): Promise<Response> {
   const site = c.get("site") as ShareSite;
   const origin = siteOrigin(c.env, site.host_label, c.req.url);
+  const open = `${aiOrigin(c.env, c.req.url)}/auth/app?return=${encodeURIComponent(c.req.url)}`;
+  if (linkPreviewOf(site) === "private") {
+    const tags = shareTags({
+      title: PRIVATE_TITLE,
+      description: PRIVATE_DESCRIPTION,
+      url: origin + new URL(c.req.url).pathname,
+      // "p" only keeps chat apps from reusing a full preview they fetched before; the image is chosen by the setting.
+      image: `${origin}/_platform/share.png?p=private`,
+      imageAlt: PRIVATE_TITLE,
+      imageSize: { width: SHARE_W, height: SHARE_H },
+    });
+    return previewPage(PRIVATE_TITLE, PRIVATE_DESCRIPTION, tags, `${appOrigin(c.env, c.req.url)}/_assets/apple-touch-icon.png`, open);
+  }
   const { title, description } = await appPreviewText(c.env, site);
   const share = await sharePathFor(c.env, site);
   const tags = shareTags({
@@ -434,7 +489,7 @@ export async function appPreviewPage(c: Context<AppEnv>): Promise<Response> {
     imageSize: share === "" ? { width: SHARE_W, height: SHARE_H } : share.startsWith("https://") ? undefined : await ownShareSize(c.env, site, share),
   });
   const icon = origin + (await iconUrl(c.env, site, (await iconPathFor(c.env, site)) ? "icon" : "letter"));
-  return previewPage(title, description || "Made with Formelab.", tags, icon, `${aiOrigin(c.env, c.req.url)}/auth/app?return=${encodeURIComponent(c.req.url)}`);
+  return previewPage(title, description || "Made with Formelab.", tags, icon, open);
 }
 
 /** The size of the app's own share image when it's a PNG (an SVG is drawn to fit, so its height isn't known up front). */
