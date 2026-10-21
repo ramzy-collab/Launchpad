@@ -1,6 +1,6 @@
 import { env } from "cloudflare:workers";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
-import { decryptSecret, encryptSecret } from "../src/secrets";
+import { decryptSecret, encryptSecret, redact } from "../src/secrets";
 import { pruneAudit } from "../src/audit";
 import type { Env } from "../src/env";
 import { appAt, call, onOutbound, OWNER, PAGE, publishHtml, uniq } from "./helpers";
@@ -334,6 +334,21 @@ describe("secret proxy", () => {
     const other = await newSite();
     await other.api("secrets/k", { method: "PUT", json: { hosts: HOSTS, value: "v" } });
     expect((await other.api("secrets/k/proxy", { method: "POST", json: { url: "https://api.test/" } })).status).toBe(200);
+  });
+});
+
+describe("redaction", () => {
+  it("hides a secret echoed back as is, or base64-, URL- or hex-encoded (best effort)", () => {
+    const secret = "sk-live+key/0123?=";
+    const bytes = new TextEncoder().encode(secret);
+    const b64 = btoa(String.fromCharCode(...bytes)).replace(/=+$/, "");
+    const hex = [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
+    const echoed = [secret, b64, b64.replace(/\+/g, "-").replace(/\//g, "_"), encodeURIComponent(secret), hex, hex.toUpperCase()];
+    const out = redact(`{"echo": ${JSON.stringify(echoed)}}`, new Map([["value", secret]]));
+    for (const form of echoed) expect(out).not.toContain(form);
+    expect(out.match(/\[redacted\]/g)).toHaveLength(echoed.length);
+    // Short values (under 6 characters) aren't matched, so ordinary text isn't mangled.
+    expect(redact("abc and YWJj", new Map([["v", "abc"]]))).toBe("abc and YWJj");
   });
 });
 

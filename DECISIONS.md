@@ -142,6 +142,11 @@ Choices made while building v1, including where the build differs from the spec 
   replaces every substituted value of 6+ characters (and the `{{basic}}` value) with `[redacted]` in
   the returned text and `location`, so "secret values never appear in any API response" holds even
   then.
+- **Redaction is best effort (audit finding #7).** Matching only the exact value missed an API that
+  echoes it base64-encoded (confirmed in the audit). The proxy now also replaces the value's
+  base64, base64url, URL-encoded and hex (both cases) forms. A value split, reversed or encoded
+  another way still gets through, and no amount of matching fixes that; what keeps a secret safe
+  is that it's only ever sent to the hosts its owner listed (audit finding #1). The guide says so.
 - 3xx responses are returned as-is with an extra `location` field, so apps can see where a redirect
   pointed without the proxy following it.
 - Object secrets expose string, number and boolean fields as placeholders. `{{basic}}` is available

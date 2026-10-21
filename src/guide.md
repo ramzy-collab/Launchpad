@@ -217,8 +217,9 @@ Rules: only the secret's own hosts (`host_not_allowed` otherwise); `https` only;
 (no localhost, private IPs or the platform itself);
 GET/POST/PUT/PATCH/DELETE; body up to 1 MB; 20-second timeout; responses are returned as text up
 to 5 MB (`truncated: true` if cut); redirects are not followed (you get the 3xx and a `location`);
-60 calls per minute per app; an unknown placeholder is an error. If the API echoes the secret back,
-the platform replaces it with `[redacted]`.
+60 calls per minute per app; an unknown placeholder is an error. If the API echoes the secret back
+(as is, or base64-, URL- or hex-encoded), the platform replaces it with `[redacted]`. That's best
+effort: only save a secret for hosts you trust with it.
 
 ### Installing your app: `formelab.app`
 
