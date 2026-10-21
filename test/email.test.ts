@@ -92,7 +92,8 @@ describe("notification emails", () => {
     const { site } = await res.json<{ site: { id: string } }>();
 
     expect(to(viewer)).toHaveLength(1);
-    expect(to(viewer)[0]!.subject).toBe(`${OWNER} shared "Trip <planner>" with you on Formelab`);
+    // The sharer's own text (the title) stays out of the subject.
+    expect(to(viewer)[0]!.subject).toBe(`${OWNER} shared an app with you on Formelab`);
     expect(to(viewer)[0]!.text).toContain(`${await appAt(ns, "planner")}/`);
     expect(to(viewer)[0]!.text).toContain("You can open it.");
     expect(to(viewer)[0]!.html).toContain("Trip &lt;planner&gt;"); // escaped in HTML
@@ -114,6 +115,39 @@ describe("notification emails", () => {
     fd2.set("mount_path", "planner");
     expect((await w("/_api/admin/sites", { as: OWNER, method: "POST", body: fd2 })).status).toBe(200);
     expect(sent).toHaveLength(0);
+  });
+
+  it("limits share emails per sharer a day, tighter for addresses new to Formelab, and says who wasn't emailed", async () => {
+    const sharer = `sh-${uniq()}@example.com`;
+    const ns = uniq();
+    const fd = new FormData();
+    fd.set("file", new File([PAGE("x")], "index.html", { type: "text/html" }));
+    fd.set("namespace", ns);
+    fd.set("mount_path", "club");
+    const { site } = await (await w("/_api/admin/sites", { as: sharer, method: "POST", body: fd })).json<{ site: { id: string } }>();
+    // Two people with accounts, and 25 addresses Formelab has never seen.
+    const known = [`k1-${uniq()}@example.com`, `k2-${uniq()}@example.com`];
+    for (const k of known) await w("/_api/admin/whoami", { as: k });
+    const fresh = Array.from({ length: 25 }, (_, i) => `f${i}-${uniq()}@example.com`);
+    sent = [];
+    const res = await w(`/_api/admin/sites/${site.id}`, { as: sharer, method: "PATCH", json: { allowed_emails: [...known, ...fresh] } });
+    expect(res.status).toBe(200);
+    const body = await res.json<{ allowedEmails: string[]; note?: string; notEmailed?: string[] }>();
+    expect(body.allowedEmails).toHaveLength(27); // everyone gets access either way
+    expect(sent).toHaveLength(22);
+    for (const k of known) expect(to(k)).toHaveLength(1);
+    expect(body.notEmailed).toHaveLength(5);
+    expect(body.note).toContain("5 people didn't get an email");
+
+    // The overall daily limit, for addresses with accounts too.
+    const day = Math.floor(Date.now() / 86_400_000);
+    await env.DB.prepare("UPDATE rate_counters SET count = 99 WHERE bucket = ?").bind(`share-mail:${sharer}:day${day}`).run();
+    const more = [`k3-${uniq()}@example.com`, `k4-${uniq()}@example.com`];
+    for (const k of more) await w("/_api/admin/whoami", { as: k });
+    sent = [];
+    const again = await (await w(`/_api/admin/sites/${site.id}`, { as: sharer, method: "PATCH", json: { allowed_emails: [...known, ...fresh, ...more] } })).json<{ notEmailed?: string[] }>();
+    expect(sent).toHaveLength(1);
+    expect(again.notEmailed).toHaveLength(1);
   });
 
   it("tells new namespace editors", async () => {

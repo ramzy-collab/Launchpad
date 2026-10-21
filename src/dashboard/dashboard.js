@@ -99,7 +99,9 @@
       if (el.editors) patch.editors = el.editors.value;
       // Likewise the Google Sheets the app may use (the owner's Google account).
       if (el.sheets) patch.sheets = el.sheets.value;
-      return api("PATCH", "/sites/" + encodeURIComponent(form.dataset.id), patch).then(function () {
+      return api("PATCH", "/sites/" + encodeURIComponent(form.dataset.id), patch).then(function (r) {
+        // Over the daily share email limit: say who wasn't emailed, and leave the message up.
+        if (r && r.note) { show(r.note); return; }
         show("Settings saved.");
         reloadSoon();
       });
@@ -133,8 +135,8 @@
       });
     },
     "ns-editors": function (form) {
-      return api("PATCH", "/namespaces/" + encodeURIComponent(form.dataset.label), { editors: form.elements.editors.value }).then(function () {
-        show("Editors saved.");
+      return api("PATCH", "/namespaces/" + encodeURIComponent(form.dataset.label), { editors: form.elements.editors.value }).then(function (r) {
+        show(r && r.note ? r.note : "Editors saved.");
       });
     },
     "waitlist-invite": function (form) {
