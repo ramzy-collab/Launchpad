@@ -136,7 +136,7 @@ describe("notification emails", () => {
     const off = { ...EENV, EMAIL: undefined } as Env;
     const ctx = createExecutionContext();
     const headers = new Headers({ "cf-access-jwt-assertion": await accessJwt(OWNER), "content-type": "application/json", "x-formelab-request": "1" });
-    const req = new Request("https://app.example.com/_api/admin/waitlist/approve", { method: "POST", headers, body: JSON.stringify({ email: `nokey-${uniq()}@example.com` }) });
+    const req = new Request("https://admin.example.com/_api/admin/waitlist/approve", { method: "POST", headers, body: JSON.stringify({ email: `nokey-${uniq()}@example.com` }) });
     expect((await worker.fetch(req, off, ctx)).status).toBe(200);
     await waitOnExecutionContext(ctx);
     expect(sent).toHaveLength(0);

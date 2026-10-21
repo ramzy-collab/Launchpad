@@ -87,8 +87,12 @@ export async function call(url: string, opts: CallOpts = {}): Promise<Response> 
   return exports.default.fetch(new Request(full, { ...opts, headers, body, redirect: "manual" }));
 }
 
-/** Bare paths go to the host that serves them: the management API and web app on app.DOMAIN, "/admin..." on the admin host, the rest on DOMAIN. */
+/** The management API's admin-only endpoints, served only on the admin host (src/api.ts). */
+const ADMIN_ONLY_API = /^\/_api\/admin\/(users|waitlist\/approve|features\/)/;
+
+/** Bare paths go to the host that serves them: the management API and web app on app.DOMAIN (its admin-only endpoints on the admin host), "/admin..." on the admin host, the rest on DOMAIN. */
 export function resolvePath(path: string): string {
+  if (ADMIN_ONLY_API.test(path)) return ADMIN + path;
   if (path.startsWith("/_api/admin")) return APP + path;
   if (path === "/app" || path.startsWith("/app/") || path.startsWith("/app?")) return APP + (path.slice(4) || "/");
   if (path === "/admin" || path.startsWith("/admin/") || path.startsWith("/admin?")) return ADMIN + (path.slice(6) || "/");

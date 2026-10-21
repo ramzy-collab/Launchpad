@@ -1,6 +1,6 @@
 import { env } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
-import { call, OWNER, PAGE, publishHtml, r2Keys, uniq, appAt } from "./helpers";
+import { ADMIN, APP, call, OWNER, PAGE, publishHtml, r2Keys, uniq, appAt } from "./helpers";
 
 const del = (email: string, as = OWNER) => call(`/_api/admin/users/${encodeURIComponent(email)}`, { as, method: "DELETE" });
 const count = async (sql: string, ...binds: unknown[]) =>
@@ -72,6 +72,29 @@ describe("admin: users", () => {
     expect(await count("SELECT SUM(views) AS n FROM app_visits WHERE email = ?", calls[0]!.email)).toBe(6);
     expect(await count("SELECT COUNT(*) AS n FROM mcp_calls WHERE email = ?", other)).toBe(1);
     expect(await count("SELECT COUNT(*) AS n FROM app_visits WHERE email = ?", other)).toBe(1);
+  });
+
+  it("answers admin-only actions only on the admin host, not with the web app's longer session", async () => {
+    const target = `host-${uniq()}@example.com`;
+    await call("/_api/admin/whoami", { as: target });
+    const attempts: [string, string, unknown?][] = [
+      ["GET", "/_api/admin/users"],
+      ["DELETE", `/_api/admin/users/${encodeURIComponent(target)}`],
+      ["POST", `/_api/admin/users/${encodeURIComponent(target)}/admin`, { admin: true }],
+      ["POST", "/_api/admin/waitlist/approve", { email: target }],
+      ["PUT", "/_api/admin/features/responses", { state: "on" }],
+      ["POST", "/_api/admin/features/responses/users", { email: target }],
+    ];
+    for (const [method, path, json] of attempts) {
+      const res = await call(APP + path, { as: OWNER, method, json });
+      expect(res.status, `${method} ${path}`).toBe(404);
+      expect((await res.json<{ error: { hint: string } }>()).error.hint).toContain(ADMIN);
+    }
+    expect(await count("SELECT COUNT(*) AS n FROM users WHERE email = ? AND is_admin = 0", target)).toBe(1);
+    // The admin panel's own host still does them, and the web app keeps everything else.
+    expect((await call(ADMIN + "/_api/admin/users", { as: OWNER })).status).toBe(200);
+    expect((await call(APP + "/_api/admin/whoami", { as: OWNER })).status).toBe(200);
+    expect((await call(APP + "/_api/admin/namespaces", { as: OWNER })).status).toBe(200);
   });
 
   it("the admin area is for admins only, and shows the numbers", async () => {

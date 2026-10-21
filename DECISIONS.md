@@ -332,7 +332,7 @@ Choices made while building v1, including where the build differs from the spec 
 ## Deleting users
 
 - Admins delete a user from the dashboard's **Users** section (typing the email to confirm), or
-  with `DELETE /_api/admin/users/:email`. It removes the account and everything it owns: owned
+  with `DELETE /_api/admin/users/:email` on the admin host. It removes the account and everything it owns: owned
   namespaces with all their apps, the user's other apps (R2 files, KV, secrets), their entries
   on other apps' and namespaces' share and editor lists, tokens, sessions, OAuth grants, the
   waitlist row, and the WorkOS user (best effort). Audit rows are kept as history.
@@ -673,6 +673,13 @@ Choices made while building v1, including where the build differs from the spec 
   adds a unique index; the chance of two labels colliding is negligible at today's size, and a
   failed run can simply be re-run.
 - Dev: `APP_DOMAIN=apps.localhost`, since the web app now takes `app.localhost`.
+- **Admin-only actions answer only on the admin host** (the rest of N4). The admin panel has its
+  own 8-hour sign-in, but listing and deleting users, making admins, letting people in from the
+  waitlist and changing features were also served by the management API on the web app, where an
+  admin's session lasts 30 days, so the shorter session wasn't a real boundary. Those endpoints
+  now answer 404 on any host but `admin.DOMAIN` (pointing to it); everything else in the
+  management API works on both hosts. Sessions are per host (`__Host-` cookies), so a web app
+  session can't be used on the admin host.
 
 ## Link previews (src/share.ts)
 
