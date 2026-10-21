@@ -1,6 +1,7 @@
 import { env } from "cloudflare:workers";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { decryptSecret, encryptSecret } from "../src/secrets";
+import { pruneAudit } from "../src/audit";
 import type { Env } from "../src/env";
 import { appAt, call, onOutbound, OWNER, PAGE, publishHtml, uniq } from "./helpers";
 
@@ -42,6 +43,23 @@ describe("runtime API: me and kv", () => {
     const missing = await api("kv/settings");
     expect(missing.status).toBe(404);
     expect((await missing.json<{ error: { hint: string } }>()).error.hint).toBeTruthy();
+  });
+
+  it("sends a large list in pages of about 4 MB, continued with after", async () => {
+    const { api } = await newSite();
+    const big = JSON.stringify("x".repeat(60 * 1024));
+    for (let i = 0; i < 70; i++) expect((await api(`kv/k${String(i).padStart(2, "0")}`, { method: "PUT", body: big })).status).toBe(200);
+    const first = await api("kv");
+    const next = first.headers.get("x-formelab-next");
+    const page1 = await first.json<{ key: string }[]>();
+    expect(page1.length).toBeLessThan(70);
+    expect(next).toBe(encodeURIComponent(page1.at(-1)!.key));
+    const second = await api(`kv?after=${next}`);
+    expect(second.headers.get("x-formelab-next")).toBeNull();
+    const page2 = await second.json<{ key: string }[]>();
+    expect([...page1, ...page2].map((r) => r.key)).toEqual(Array.from({ length: 70 }, (_, i) => `k${String(i).padStart(2, "0")}`));
+    // Small lists come whole, as before.
+    expect((await api("kv?prefix=k0")).headers.get("x-formelab-next")).toBeNull();
   });
 
   it("enforces kv limits", async () => {
@@ -316,6 +334,36 @@ describe("secret proxy", () => {
     const other = await newSite();
     await other.api("secrets/k", { method: "PUT", json: { hosts: HOSTS, value: "v" } });
     expect((await other.api("secrets/k/proxy", { method: "POST", json: { url: "https://api.test/" } })).status).toBe(200);
+  });
+});
+
+describe("secret proxy limits per person", () => {
+  it("lets each person other than the owner make 20 calls a minute, so one can't use up the app's 60", async () => {
+    const s = await newSite({ allowed_emails: "pa@example.com, pb@example.com" });
+    await s.api("secrets/k", { method: "PUT", json: { hosts: HOSTS, value: "v" } });
+    onOutbound(() => new Response("ok"));
+    const go = (as: string) => s.api("secrets/k/proxy", { method: "POST", json: { url: "https://api.test/" }, as });
+    for (let i = 0; i < 20; i++) expect((await go("pa@example.com")).status).toBe(200);
+    const limited = await go("pa@example.com");
+    expect(limited.status).toBe(429);
+    expect((await limited.json<{ error: { message: string } }>()).error.message).toContain("You made more than 20 proxy calls");
+    expect((await go("pb@example.com")).status).toBe(200);
+    expect((await go(OWNER)).status).toBe(200);
+  });
+
+  it("drops app-call activity older than a year, and keeps changes people made", async () => {
+    const old = Date.now() - 400 * 86_400_000;
+    const tag = uniq();
+    await E.DB.batch([
+      E.DB.prepare("INSERT INTO audit (at, actor, action, target) VALUES (?, ?, 'proxy', ?)").bind(old, OWNER, tag),
+      E.DB.prepare("INSERT INTO audit (at, actor, action, target) VALUES (?, ?, 'gemini', ?)").bind(old, OWNER, tag),
+      E.DB.prepare("INSERT INTO audit (at, actor, action, target) VALUES (?, ?, 'update_site', ?)").bind(old, OWNER, tag),
+      E.DB.prepare("INSERT INTO audit (at, actor, action, target) VALUES (?, ?, 'proxy', ?)").bind(Date.now(), OWNER, tag),
+    ]);
+    await pruneAudit(E);
+    const { results } = await E.DB.prepare("SELECT action, at FROM audit WHERE target = ? ORDER BY id").bind(tag).all<{ action: string; at: number }>();
+    expect(results.map((r) => r.action)).toEqual(["update_site", "proxy"]);
+    expect(results[1]!.at).toBeGreaterThan(old);
   });
 });
 

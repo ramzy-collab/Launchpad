@@ -853,3 +853,26 @@ Choices made while building v1, including where the build differs from the spec 
 - **Return paths (N6).** `safeReturn` refuses backslashes and control characters (browsers drop
   tabs and newlines and read `\` as `/`), then accepts the path only if a URL parser keeps it on the
   same origin. `/_auth/callback` uses it too (it only refused `//` before).
+
+## Low audit findings (#8, #9, #11, #12, #13)
+
+- **#8, proxy and activity log.** The secret proxy's 60 calls a minute were per app, so one viewer
+  could use them all up. Each person other than the owner now gets 20 a minute per app (the
+  VIEWER_LIMITER binding, checked before the app's limit so turned-away calls don't spend it).
+  The `audit` table grew by a row per proxy, Gemini and Sheets call, forever: rows of those three
+  kinds older than a year are now dropped, in batches of 1,000, on about 1% of such writes (no
+  cron needed). Changes people made (publishing, sharing, settings, accounts) are kept.
+- **#9, large KV lists.** `GET /_api/kv` (and `/me/kv`) loaded every row at once, up to 1,000 ×
+  64 KB. It now reads in batches of 100 and stops after about 4 MB of values, naming the key to
+  continue after in an `x-formelab-next` header (`?after=`). The SDK's `kv.list()` follows the
+  pages, so apps still get the whole list from one call and nothing changes for them.
+- **#12, `scripts/publish.sh`.** Text fields go to curl with `--form-string`, so a value starting
+  with `@` or `<` (say, a title an AI passed in) can't make curl read a local file.
+- **#11, space names** stopped mattering much once apps got their own addresses (#2): a space
+  name is no longer part of any URL, so claiming `login` or a colleague's name gives no
+  look-alike address. Left as is.
+- **#13, the admin flag** is never cleared by sign-in, but admins can now remove admin access in
+  the admin panel, and admin actions only work there (N4). Left as is.
+- `npm run deploy` passes `--env=""`, which tells wrangler to use the top-level (production)
+  configuration and stops its warning about the `dev` environment.
+

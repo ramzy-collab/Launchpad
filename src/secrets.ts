@@ -222,8 +222,24 @@ export function redact(text: string, values: Map<string, string>): string {
 // Rate limit
 // ---------------------------------------------------------------------------
 
-async function checkRate(env: Env, siteId: string) {
-  await rateLimit(env, siteId, PROXY_RATE_PER_MINUTE, `This app made more than ${PROXY_RATE_PER_MINUTE} proxy calls in a minute.`);
+/** Proxy calls a minute from one person other than the app's owner (VIEWER_LIMITER's limit in production). */
+export const PROXY_VIEWER_PER_MINUTE = 20;
+
+/**
+ * The app's limit, and below it one for each person other than the owner, checked first so one
+ * person can't use up the app's minute for everyone else (audit finding #8).
+ */
+async function checkRate(env: Env, site: SiteRow, viewer: User) {
+  if (viewer.email !== site.owner_email) {
+    await rateLimit(
+      env,
+      `proxy-viewer:${site.id}:${viewer.email}`,
+      PROXY_VIEWER_PER_MINUTE,
+      `You made more than ${PROXY_VIEWER_PER_MINUTE} proxy calls in this app in a minute.`,
+      env.VIEWER_LIMITER,
+    );
+  }
+  await rateLimit(env, site.id, PROXY_RATE_PER_MINUTE, `This app made more than ${PROXY_RATE_PER_MINUTE} proxy calls in a minute.`);
 }
 
 /**
@@ -328,7 +344,7 @@ export async function proxy(env: Env, site: SiteRow, viewer: User, name: string,
     body = req.body;
   }
 
-  await checkRate(env, site.id);
+  await checkRate(env, site, viewer);
   const { secret, hosts } = await loadSecret(env, site.id, name);
   const values = placeholderValues(secret);
 

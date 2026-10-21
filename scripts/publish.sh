@@ -117,14 +117,15 @@ if (( upload )); then
   (( size <= 25 * 1024 * 1024 )) || die "upload is larger than 25 MB"
 fi
 
-form=(-F "namespace=${namespace}" -F "mount_path=${path}")
+# --form-string: with -F, a value starting with @ or < makes curl read a local file (audit finding #12).
+form=(--form-string "namespace=${namespace}" --form-string "mount_path=${path}")
 (( upload )) && form+=(-F "file=@${file}")
 [[ -n "$merge" ]] && form+=(-F "merge=true")
 [[ -n "$deletes" ]] && form+=(--form-string "delete=${deletes}")
-[[ -n "$title" ]] && form+=(-F "title=${title}")
+[[ -n "$title" ]] && form+=(--form-string "title=${title}")
 [[ -n "$spa" ]] && form+=(-F "spa=true")
-[[ -n "$visibility" ]] && form+=(-F "visibility=${visibility}")
-[[ -n "$allowed" ]] && form+=(-F "allowed_emails=${allowed}")
+[[ -n "$visibility" ]] && form+=(--form-string "visibility=${visibility}")
+[[ -n "$allowed" ]] && form+=(--form-string "allowed_emails=${allowed}")
 
 if (( dry_run )); then
   echo "Dry run: would POST $endpoint"
