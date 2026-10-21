@@ -67,6 +67,7 @@ const FIELD_LABEL: Record<string, string> = {
   guest_responses: "whether people with the public link can send responses",
   guest_responses_per_day: "daily limit on responses from the public link",
   link_preview: "link previews",
+  sharers: "editors who can share it",
 };
 
 const list = (v: unknown) => (Array.isArray(v) ? v.map(String).join(", ") : "");
@@ -134,6 +135,10 @@ export function describeActivity(row: AuditRow): string {
               ? "set link previews to a private card"
               : "set link previews to follow who can open it",
         );
+      }
+      if (Array.isArray(d.sharers)) {
+        explained.add("sharers");
+        parts.push(d.sharers.length ? `let ${list(d.sharers)} share it too` : "let only the owner share it");
       }
       if (d.dataWrites) {
         explained.add("kv_writes");

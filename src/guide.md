@@ -26,6 +26,9 @@ https://<name>-<code>.<APP_DOMAIN>/        e.g. https://budget-7kq2.formelab.app
 - An app is `restricted` by default (only its owner, editors and the emails on its allow-list) or
   `all` (every Formelab member). Either way its owner can also turn on a **public link** that opens
   it for anyone who has the link, no account needed (`update_site` with `public_link: true`).
+- Editors can update an app, but only its owner (and the editors the owner lists in `sharers`)
+  can change who can open it, and only the owner can delete it. If `update_site` answers
+  `sharing_not_allowed` or `delete_site` answers `owner_only`, tell the user to ask the owner.
 
 Apps get platform features through a small browser SDK, `window.formelab`:
 

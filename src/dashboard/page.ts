@@ -269,6 +269,8 @@ export async function appSettingsPage(c: Context<AppEnv>, id: string): Promise<R
 
 `
     : "";
+  // Editors the owner hasn't let share see the sharing fields but can't change them.
+  const lock = site.canShare ? "" : " disabled";
   const body = `<section class="app-head">
   <p><a href="${mine ? "/" : "/shared"}">← ${mine ? "My apps" : "Shared with me"}</a></p>
   <div class="app-title">
@@ -292,17 +294,20 @@ export async function appSettingsPage(c: Context<AppEnv>, id: string): Promise<R
   <h2>Settings and sharing</h2>
   <form class="stack wide" data-action="site-update" data-id="${e(site.id)}">
     <label>Title <input name="title" value="${e(site.title ?? "")}" placeholder="${e(appName(site))}"></label>
-    <label>Who can open it <select name="visibility">${visibilityOptions(site.visibility)}</select></label>
+    ${site.canShare ? "" : `<p class="muted">Only the owner can change who can open this app (who it's shared with, its public link and link previews). Ask ${e(site.ownerEmail)} if you need it shared.</p>`}
+    <label>Who can open it <select name="visibility"${lock}>${visibilityOptions(site.visibility)}</select></label>
     <label>Who can change its data <select name="data_writes">
       <option value="editors"${site.dataWrites === "editors" ? " selected" : ""}>Only the owner and editors</option>
       <option value="everyone"${site.dataWrites === "everyone" ? " selected" : ""}>Everyone who can open it (polls, sign-ups)</option>
     </select></label>
-    <label>Link previews (Slack, iMessage, WhatsApp) <select name="link_preview">${linkPreviewOptions(site)}</select></label>
+    <label>Link previews (Slack, iMessage, WhatsApp) <select name="link_preview"${lock}>${linkPreviewOptions(site)}</select></label>
     <p class="muted">Chat apps show a preview when someone shares this app's link. They don't sign in, so a full preview shows the app's name, description and picture to everyone in the chat, even people who can't open it. A private card only says it's a private app on Formelab.</p>
-    <label>Share with (can open) <input name="allowed_emails" value="${e(site.allowedEmails.join(", "))}" placeholder="friend@example.com, ..."></label>
+    <label>Share with (can open) <input name="allowed_emails"${lock} value="${e(site.allowedEmails.join(", "))}" placeholder="friend@example.com, ..."></label>
     ${
       site.canEditEditors
-        ? `<label>Editors (can update it) <input name="editors" value="${e(site.editors.join(", "))}" placeholder="teammate@example.com, ..."></label>`
+        ? `<label>Editors (can update it) <input name="editors" value="${e(site.editors.join(", "))}" placeholder="teammate@example.com, ..."></label>
+    <label>Editors who can also share it <input name="sharers" value="${e(site.sharers.join(", "))}" placeholder="Some of the editors above, or leave empty"></label>
+    <p class="muted">Editors can update the app. Only you, and the editors you list here, can change who can open it. Only you can delete it.</p>`
         : `<p class="muted">Editors: ${e(site.editors.join(", ") || "none")}. Only the owner can change them.</p>`
     }
     ${
@@ -316,7 +321,7 @@ export async function appSettingsPage(c: Context<AppEnv>, id: string): Promise<R
   </form>
 </section>
 
-${publicLinkSection(site, responsesOn)}${
+${site.canShare ? publicLinkSection(site, responsesOn) : ""}${
   responsesOn
     ? `<section>
   <h2>Responses</h2>

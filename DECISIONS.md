@@ -876,3 +876,17 @@ Choices made while building v1, including where the build differs from the spec 
 - `npm run deploy` passes `--env=""`, which tells wrangler to use the top-level (production)
   configuration and stops its warning about the `dev` environment.
 
+## Who can share and delete an app (audit finding #10)
+
+- **Editors update; owners share and delete.** App editors and namespace editors could change an
+  app's visibility, share list and public link, so a co-editor could quietly make a private app
+  public, and namespace editors could delete the owner's apps. Now changing who can open an app
+  (visibility, `allowed_emails`, the public link and its guest settings, link previews) takes the
+  app's owner, its namespace's owner, or an editor the owner listed in `sharers` (migration 0023;
+  only the owner sets it, and only editors can be on it, so removing an editor removes their
+  sharing too). Deleting takes the owner or the namespace's owner. Editors still publish new
+  versions, change the title and other settings, and manage data and secrets.
+- The check runs on what actually changes, because the settings form sends every field: an editor
+  saving the form with sharing untouched is fine. For editors who can't share, the page shows the
+  sharing fields disabled with a note naming the owner, and hides the public link section.
+
