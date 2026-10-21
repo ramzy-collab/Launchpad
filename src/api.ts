@@ -2,6 +2,7 @@ import { Hono, type Context } from "hono";
 import { listTokens, mintToken, revokeToken, TOKEN_DEFAULT_TTL_HOURS } from "./auth";
 import type { AppEnv } from "./env";
 import { ApiError, badRequest, err, errorBody, jsonError, onError } from "./errors";
+import { adminOrigin, hostKind } from "./hosts";
 import {
   createNamespace,
   deleteNamespace,
@@ -141,6 +142,16 @@ export function managementApi(kind: "admin" | "deploy") {
   api.delete("/sites/:id", async (c) => c.json(await deleteSite(ctxOf(c), c.req.param("id"))));
 
   if (kind === "admin") {
+    // Admin-only actions answer only on the admin host, behind its own shorter sign-in: the web
+    // app's 30-day session must not be enough to delete users or make admins (audit finding N4).
+    const adminHostOnly = async (c: Context<AppEnv>, next: () => Promise<void>) => {
+      if (hostKind(new URL(c.req.url).hostname, c.env) !== "admin") {
+        throw err(404, "not_found", "That's only available in the admin panel.", `Open ${adminOrigin(c.env, c.req.url)}/ and sign in there.`);
+      }
+      await next();
+    };
+    for (const path of ["/users", "/users/*", "/waitlist/approve", "/features/*"]) api.use(path, adminHostOnly);
+
     api.post("/tokens", async (c) => {
       const body = await jsonBody(c);
       const ttl = body.ttlHours === undefined ? TOKEN_DEFAULT_TTL_HOURS : Number(body.ttlHours);
