@@ -105,28 +105,54 @@ export async function signedInAt(env: Env, sessionId: string): Promise<number | 
   return row?.at ?? null;
 }
 
-/** A single-use code that lets `host` open its own session for the signed-in apex session. */
-export async function mintAppCode(env: Env, sessionId: string, host: string): Promise<string> {
+/** The cookie, on the host being signed in to, holding the nonce its hand-off code must carry. */
+export const HANDOFF_COOKIE = "__Host-fl_handoff";
+export const HANDOFF_TTL_S = 600;
+const NONCE_RE = /^[a-z2-7]{20,100}$/;
+export const newHandoffNonce = () => newToken();
+
+/**
+ * A single-use code that lets `host` open its own session for the signed-in apex session. `nonce`
+ * is the one the host put in the browser's HANDOFF_COOKIE; without it, the callback won't redeem
+ * the code (it restarts the hand-off with one).
+ */
+export async function mintAppCode(env: Env, sessionId: string, host: string, nonce?: string | null): Promise<string> {
   const code = newToken();
-  await env.DB.prepare("INSERT INTO auth_codes (id, session_id, host, expires_at) VALUES (?, ?, ?, ?)")
-    .bind(await sha256Hex(code), sessionId, host.toLowerCase(), now() + CODE_TTL_MS)
+  const nonceHash = nonce && NONCE_RE.test(nonce) ? await sha256Hex(nonce) : null;
+  await env.DB.prepare("INSERT INTO auth_codes (id, session_id, host, expires_at, nonce_hash) VALUES (?, ?, ?, ?, ?)")
+    .bind(await sha256Hex(code), sessionId, host.toLowerCase(), now() + CODE_TTL_MS, nonceHash)
     .run();
   return code;
 }
 
-/** Spends a code minted for this host. Returns the cookie for the new namespace-host session. */
-export async function redeemAppCode(env: Env, code: string, host: string, maxTtlMs = APP_SESSION_TTL_MS): Promise<string | null> {
-  if (!/^[a-z2-7]{20,100}$/.test(code)) return null;
-  const row = await env.DB.prepare("DELETE FROM auth_codes WHERE id = ? RETURNING session_id, host, expires_at")
+export type RedeemResult =
+  | { ok: true; cookie: string }
+  /** No usable code (unknown, used, expired, another host, signed out). */
+  | { ok: false; reason: "invalid" }
+  /** A good code minted without a nonce: restart the hand-off with one. */
+  | { ok: false; reason: "unbound" }
+  /** A good code bound to another browser's nonce (or this browser lost its cookie). */
+  | { ok: false; reason: "other_browser" };
+
+/**
+ * Spends a code minted for this host. It only signs the browser in when the code's nonce matches
+ * `nonce`, the one in this browser's HANDOFF_COOKIE; the code is spent either way.
+ */
+export async function redeemAppCode(env: Env, code: string, host: string, nonce: string | null, maxTtlMs = APP_SESSION_TTL_MS): Promise<RedeemResult> {
+  if (!/^[a-z2-7]{20,100}$/.test(code)) return { ok: false, reason: "invalid" };
+  const row = await env.DB.prepare("DELETE FROM auth_codes WHERE id = ? RETURNING session_id, host, expires_at, nonce_hash")
     .bind(await sha256Hex(code))
-    .first<{ session_id: string; host: string; expires_at: number }>();
-  if (!row || row.host !== host.toLowerCase() || row.expires_at <= now()) return null;
+    .first<{ session_id: string; host: string; expires_at: number; nonce_hash: string | null }>();
+  if (!row || row.host !== host.toLowerCase() || row.expires_at <= now()) return { ok: false, reason: "invalid" };
+  if (row.nonce_hash === null) return { ok: false, reason: "unbound" };
+  if (!nonce || !NONCE_RE.test(nonce) || (await sha256Hex(nonce)) !== row.nonce_hash) return { ok: false, reason: "other_browser" };
   const parent = await env.DB.prepare("SELECT email, expires_at FROM sessions WHERE id = ? AND parent_id IS NULL")
     .bind(row.session_id)
     .first<{ email: string; expires_at: number }>();
-  if (!parent || parent.expires_at <= now()) return null;
-  return createSession(env, parent.email, host, {
+  if (!parent || parent.expires_at <= now()) return { ok: false, reason: "invalid" };
+  const cookie = await createSession(env, parent.email, host, {
     parentId: row.session_id,
     expiresAt: Math.min(parent.expires_at, now() + maxTtlMs),
   });
+  return { ok: true, cookie };
 }

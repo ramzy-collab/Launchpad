@@ -30,7 +30,7 @@ describe("security 1: Access JWT required", () => {
     // The web app sends visitors without a sign-in to DOMAIN to sign in, then back.
     const dash = await call("https://app.example.com/");
     expect(dash.status).toBe(302);
-    expect(dash.headers.get("location")).toBe("https://example.com/auth/app?return=https%3A%2F%2Fapp.example.com%2F");
+    expect(dash.headers.get("location")).toMatch(/^https:\/\/example\.com\/auth\/app\?return=https%3A%2F%2Fapp\.example\.com%2F&n=[a-z2-7]{50,}$/);
     const handoff = await call("/auth/app?return=https%3A%2F%2Fapp.example.com%2F");
     expect(handoff.headers.get("location")).toBe("/login?return=%2Fauth%2Fapp%3Freturn%3Dhttps%253A%252F%252Fapp.example.com%252F");
   });

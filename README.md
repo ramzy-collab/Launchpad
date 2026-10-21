@@ -258,6 +258,8 @@ Then smoke-test the live domain (section 2.2).
 - **`0018_usage`** adds the `mcp_calls` and `app_visits` tables behind the admin panel's Metrics
   page. Apply it before deploying: until it exists, MCP calls and app visits still work but aren't
   counted, and the Metrics page fails. MCP and app-visit charts start from the day it's deployed.
+- **`0020_auth_code_nonce`** ties each sign-in hand-off code to the browser that asked for it
+  (login CSRF). Nothing to do: hand-offs in flight when you deploy fall back to starting again.
 
 ### 2.2 Smoke test
 

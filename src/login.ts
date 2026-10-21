@@ -19,7 +19,10 @@ import {
   cookieHeader,
   createSession,
   destroySession,
+  HANDOFF_COOKIE,
+  HANDOFF_TTL_S,
   mintAppCode,
+  newHandoffNonce,
   readCookie,
   signedInAt,
   redeemAppCode,
@@ -39,7 +42,16 @@ export const workosEnabled = (env: Env) => !!(env.WORKOS_CLIENT_ID && env.WORKOS
 /** A path on this host to return to after signing in; anything else falls back to `fallback`. */
 export function safeReturn(raw: string | null | undefined, fallback = "/app"): string {
   const v = String(raw ?? "");
-  return v.startsWith("/") && !v.startsWith("//") && !v.startsWith("/\\") ? v : fallback;
+  // Browsers drop tabs and newlines from URLs and read "\\" as "/", so "/\t/evil.test" or
+  // "/\\evil.test" would leave the site; refuse those characters, then check how a URL parser
+  // resolves what's left.
+  if (!v.startsWith("/") || /[\\\u0000-\u001f\u007f]/.test(v)) return fallback;
+  try {
+    const u = new URL(v, "https://return.invalid");
+    return u.origin === "https://return.invalid" ? u.pathname + u.search + u.hash : fallback;
+  } catch {
+    return fallback;
+  }
 }
 
 export const onAdminHost = (c: Context<AppEnv>) => hostKind(new URL(c.req.url).hostname, c.env) === "admin";
@@ -288,25 +300,46 @@ export async function appHandoff(c: Context<AppEnv>): Promise<Response> {
   // Signed in through Cloudflare Access instead: there is no session to hand over, and sending
   // the visitor back would only bring them here again. Access has to cover that host itself.
   if (!sessionId) return plainPage(403, "Sign-in required", `Log in to Formelab to open ${target.hostname}.`);
-  const code = await mintAppCode(c.env, sessionId, target.hostname);
+  const code = await mintAppCode(c.env, sessionId, target.hostname, c.req.query("n"));
   const back = new URL("/_auth/callback", target.origin);
   back.searchParams.set("code", code);
   back.searchParams.set("return", target.pathname + target.search);
   return new Response(null, { status: 302, headers: { location: back.toString(), "cache-control": "no-store" } });
 }
 
+/**
+ * Sends the browser from this host (the web app or an app) to DOMAIN to pick up a sign-in, with a
+ * fresh nonce in this host's HANDOFF_COOKIE that the code it brings back must carry (finding N5).
+ */
+export function handoffStart(c: Context<AppEnv>, returnUrl: string): Response {
+  const nonce = newHandoffNonce();
+  const to = `${aiOrigin(c.env, c.req.url)}/auth/app?return=${encodeURIComponent(returnUrl)}&n=${nonce}`;
+  const headers = new Headers({ location: to, "cache-control": "no-store" });
+  headers.append("set-cookie", cookieHeader(HANDOFF_COOKIE, nonce, HANDOFF_TTL_S));
+  return new Response(null, { status: 302, headers });
+}
+
 /** GET /_auth/callback?code=...&return=/path (the web app or an app's own host) */
 export async function appCallback(c: Context<AppEnv>): Promise<Response> {
-  const host = new URL(c.req.url).hostname;
-  const kind = hostKind(host, c.env);
+  const url = new URL(c.req.url);
+  const kind = hostKind(url.hostname, c.env);
   if (kind !== "app" && kind !== "apps") return plainPage(404, "Not found", "There is nothing here.");
   const ttl = kind === "app" ? APEX_SESSION_TTL_MS : APP_SESSION_TTL_MS;
-  const cookie = await redeemAppCode(c.env, c.req.query("code") ?? "", host, ttl);
-  if (!cookie) return plainPage(400, "Sign-in expired", "This link was already used or took too long. Open the app again.");
-  const returnTo = c.req.query("return") ?? "/";
-  const headers = new Headers({ location: returnTo.startsWith("/") && !returnTo.startsWith("//") ? returnTo : "/", "cache-control": "no-store" });
-  headers.append("set-cookie", cookie);
-  return new Response(null, { status: 302, headers });
+  const returnTo = safeReturn(c.req.query("return"), "/");
+  const result = await redeemAppCode(c.env, c.req.query("code") ?? "", url.hostname, readCookie(c.req.raw, HANDOFF_COOKIE), ttl);
+  if (result.ok) {
+    const headers = new Headers({ location: returnTo, "cache-control": "no-store" });
+    headers.append("set-cookie", result.cookie);
+    headers.append("set-cookie", cookieHeader(HANDOFF_COOKIE, "", 0));
+    return new Response(null, { status: 302, headers });
+  }
+  // A sign-in started on DOMAIN (no nonce yet): start again from here, so the code is tied to this browser.
+  if (result.reason === "unbound") return handoffStart(c, new URL(returnTo, url.origin).toString());
+  if (result.reason === "other_browser") {
+    // Someone else's link, or this browser lost the cookie: never sign in with it.
+    return plainPage(400, "Open the app again", "This sign-in link was made for another browser, so it can't sign you in here. Open the app again from Formelab.");
+  }
+  return plainPage(400, "Sign-in expired", "This link was already used or took too long. Open the app again.");
 }
 
 /** Admin: let someone in from the waitlist, or invite a new address. Emails them the first time. */

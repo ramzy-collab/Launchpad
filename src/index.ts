@@ -15,7 +15,7 @@ import { forbidden, jsonError, onError, unauthorized } from "./errors";
 import { ASSET_VERSION, CONSENT_JS, DASHBOARD_JS, FORMELAB_CSS, GUIDE_MD, HOME_CSS, INSTALL_JS, VIZ_JS, SDK_JS, SIGNIN_JS, SITE_JS, THEME_JS } from "./generated/assets";
 import { apexOrigin, AUTHORIZE_PATH, authorizeGet, authorizePost, oauthProvider } from "./oauth";
 import { runtimeApi } from "./runtime";
-import { appCallback, appHandoff, loginCallback, loginStart, logout, safeReturn, workosEnabled } from "./login";
+import { appCallback, appHandoff, handoffStart, loginCallback, loginStart, logout, safeReturn, workosEnabled } from "./login";
 import { legacyAppRedirect, noAccessPage, plainPage, serveAppFile } from "./serve";
 import { cookieHeader, readCookie, SESSION_COOKIE } from "./session";
 import { adminOrigin, aiOrigin, appOrigin, appsLabelOf, hostKind, legacyNamespaceOf } from "./hosts";
@@ -149,7 +149,7 @@ const requireSignIn: MiddlewareHandler<AppEnv> = async (c, next) => {
     // Link previews (iMessage, Slack, ...) get Formelab's card instead of the sign-in redirect.
     if ((c.req.method === "GET" || c.req.method === "HEAD") && isPreviewBot(c.req.raw)) return formelabPreviewPage(c);
     if (c.req.method !== "GET") return unauthorizedPage();
-    return c.redirect(`${aiOrigin(c.env, c.req.url)}/auth/app?return=${encodeURIComponent(c.req.url)}`, 302);
+    return handoffStart(c, c.req.url);
   }
   c.set("user", who.user);
   c.set("sessionId", who.sessionId);
@@ -298,7 +298,7 @@ siteApp.get(`${PUBLIC_LINK_PATH}:token`, (c) => {
 // Guests who want to be themselves in the app (formelab.signIn()): sign in on the apex, then back.
 siteApp.get("/_platform/sign-in", (c) => {
   const back = new URL(safeReturn(c.req.query("return"), "/"), c.req.url);
-  return c.redirect(`${apexOrigin(c.env, c.req.url)}/auth/app?return=${encodeURIComponent(back.toString())}`, 302);
+  return handoffStart(c, back.toString());
 });
 
 // Everything else: a signed-in person who may open this app, or a guest with its public link.
@@ -318,9 +318,7 @@ siteApp.use("*", async (c, next) => {
     if (c.req.path.startsWith("/_api/")) return jsonError(unauthorized());
     // Link previews (iMessage, Slack, ...) get the app's title and image instead of the sign-in redirect.
     if ((c.req.method === "GET" || c.req.method === "HEAD") && !c.req.path.startsWith("/_") && isPreviewBot(c.req.raw)) return appPreviewPage(c);
-    if (c.req.method === "GET" && workosEnabled(c.env)) {
-      return c.redirect(`${apexOrigin(c.env, c.req.url)}/auth/app?return=${encodeURIComponent(c.req.url)}`, 302);
-    }
+    if (c.req.method === "GET" && workosEnabled(c.env)) return handoffStart(c, c.req.url);
     return unauthorizedPage();
   }
   if (!allowed) {

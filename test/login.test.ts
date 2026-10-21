@@ -79,9 +79,15 @@ async function signInRaw(email: string, returnTo: string, origin: string): Promi
 
 /** Trades a DOMAIN session for one on another Formelab host, the way a browser does on its first visit. */
 async function hostCookie(cookie: string, origin: string): Promise<string> {
-  const handoff = await w(`/auth/app?return=${encodeURIComponent(origin + "/")}`, { headers: { cookie } });
+  // A browser starts on the host, which sets the hand-off nonce cookie and sends it to DOMAIN...
+  const start = await w(`${origin}/`);
+  expect(start.status).toBe(302);
+  const nonce = cookieFrom(start, "__Host-fl_handoff")!;
+  expect(nonce).toBeTruthy();
+  // ...which (signed in) sends back a code bound to that nonce, which the host redeems.
+  const handoff = await w(start.headers.get("location")!, { headers: { cookie } });
   expect(handoff.status).toBe(302);
-  const cb = await w(handoff.headers.get("location")!);
+  const cb = await w(handoff.headers.get("location")!, { headers: { cookie: nonce } });
   return cookieFrom(cb, "__Host-fl_session")!;
 }
 
@@ -187,7 +193,7 @@ describe("login page and WorkOS redirect", () => {
     const res = await w(`${APP}/shared`);
     expect(res.status).toBe(302);
     const handoff = res.headers.get("location")!;
-    expect(handoff).toBe(`https://example.com/auth/app?return=${encodeURIComponent(`${APP}/shared`)}`);
+    expect(handoff).toBe(`https://example.com/auth/app?return=${encodeURIComponent(`${APP}/shared`)}&n=${cookieFrom(res, "__Host-fl_handoff")!.split("=")[1]}`);
     const login = await w(handoff);
     expect(login.headers.get("location")).toBe(`/login?return=${encodeURIComponent(new URL(handoff).pathname + new URL(handoff).search)}`);
   });
@@ -408,10 +414,12 @@ describe("app hosts get their own session", () => {
     const app = await appAt(ns, "app");
     const { cookie } = await signIn(friend);
 
-    // 1. The app host sends the visitor to the apex.
+    // 1. The app host sends the visitor to the apex, with a nonce in a cookie on the app's host.
     const first = await w(`${app}/page?x=1`);
     const handoffUrl = first.headers.get("location")!;
-    expect(handoffUrl).toBe(`https://example.com/auth/app?return=${encodeURIComponent(`${app}/page?x=1`)}`);
+    const nonce = cookieFrom(first, "__Host-fl_handoff")!;
+    expect(handoffUrl).toBe(`https://example.com/auth/app?return=${encodeURIComponent(`${app}/page?x=1`)}&n=${nonce.split("=")[1]}`);
+    expect(first.headers.getSetCookie().find((c) => c.startsWith("__Host-fl_handoff="))).toContain("HttpOnly");
 
     // 2. The apex, signed in, sends back a code.
     const handoff = await w(handoffUrl, { headers: { cookie } });
@@ -419,8 +427,8 @@ describe("app hosts get their own session", () => {
     expect(back.origin + back.pathname).toBe(`${app}/_auth/callback`);
     expect(back.searchParams.get("return")).toBe("/page?x=1");
 
-    // 3. The app host trades the code for its own cookie.
-    const cb = await w(back.toString());
+    // 3. The app host trades the code for its own cookie, in the browser holding the nonce.
+    const cb = await w(back.toString(), { headers: { cookie: nonce } });
     expect(cb.headers.get("location")).toBe("/page?x=1");
     const appCookie = cookieFrom(cb, "__Host-fl_session")!;
     expect(appCookie).toBeTruthy();
@@ -429,7 +437,7 @@ describe("app hosts get their own session", () => {
     expect(await page.text()).toContain("hello friend");
 
     // The code works once, and only on its own host; the cookie doesn't open another app in the space.
-    expect((await w(back.toString())).status).toBe(400);
+    expect((await w(back.toString(), { headers: { cookie: nonce } })).status).toBe(400);
     const other = await appAt(ns, "other");
     expect((await w(`${other}/_auth/callback?code=${back.searchParams.get("code")}`)).status).toBe(400);
     expect((await w(`${other}/`, { headers: { cookie: appCookie } })).status).toBe(302);
@@ -440,14 +448,44 @@ describe("app hosts get their own session", () => {
     expect((await w(`${app}/`, { headers: { cookie: appCookie } })).status).toBe(302);
   });
 
+  it("a sign-in link made for another browser can't sign this one in (login CSRF)", async () => {
+    const ns = uniq();
+    const attacker = `atk-${uniq()}@example.com`;
+    const victim = `vic-${uniq()}@example.com`;
+    await publishHtml(OWNER, ns, "app", PAGE("hi"), { allowed_emails: `${attacker}, ${victim}` });
+    const app = await appAt(ns, "app");
+    const { cookie: attackerCookie } = await signIn(attacker);
+
+    // Someone mints a code in their own browser and sends the callback link to someone else.
+    const first = await w(`${app}/`);
+    const handoff = await w(first.headers.get("location")!, { headers: { cookie: attackerCookie } });
+    const link = handoff.headers.get("location")!;
+    // The other browser has no nonce cookie (or its own): no sign-in, and the code is spent.
+    const theirs = await w(`${app}/`); // the victim's browser started a sign-in of its own at some point
+    for (const cookie of [undefined, cookieFrom(theirs, "__Host-fl_handoff")!]) {
+      const res = await w(link, { headers: cookie ? { cookie } : {} });
+      expect(res.status).toBe(400);
+      expect(cookieFrom(res, "__Host-fl_session")).toBeNull();
+    }
+    expect(await (await w(link, { headers: { cookie: cookieFrom(first, "__Host-fl_handoff")! } })).text()).toContain("already used");
+
+    // A code minted without a nonce (a sign-in started on DOMAIN) never signs anyone in at the callback:
+    // the host starts the hand-off again with a nonce of its own.
+    const direct = await w(`/auth/app?return=${encodeURIComponent(`${app}/x`)}`, { headers: { cookie: attackerCookie } });
+    const restart = await w(direct.headers.get("location")!);
+    expect(restart.status).toBe(302);
+    expect(cookieFrom(restart, "__Host-fl_session")).toBeNull();
+    expect(cookieFrom(restart, "__Host-fl_handoff")).toBeTruthy();
+    expect(restart.headers.get("location")).toMatch(new RegExp(`^https://example\\.com/auth/app\\?return=${encodeURIComponent(`${app}/x`).replace(/\./g, "\\.")}&n=`));
+    void victim;
+  });
+
   it("people who weren't shared the app still can't open it", async () => {
     const ns = uniq();
     await publishHtml(OWNER, ns, "", PAGE("secret stuff"));
     const { cookie } = await signIn(`nope-${uniq()}@example.com`);
     const app = await appAt(ns, "");
-    const handoff = await w(`/auth/app?return=${encodeURIComponent(`${app}/`)}`, { headers: { cookie } });
-    const cb = await w(handoff.headers.get("location")!);
-    const page = await w(`${app}/`, { headers: { cookie: cookieFrom(cb, "__Host-fl_session")! } });
+    const page = await w(`${app}/`, { headers: { cookie: await hostCookie(cookie, app) } });
     expect(page.status).toBe(403);
     expect(await page.text()).not.toContain("secret stuff");
   });
