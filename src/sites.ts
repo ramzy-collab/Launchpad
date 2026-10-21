@@ -1,7 +1,7 @@
 import { audit } from "./audit";
 import { findIcon, iconPathFor } from "./icons";
 import { findShareImage, linkPreviewOf } from "./share";
-import { canManageSite, canPublishTo, canViewSite, isNamespaceEditor, isNamespaceOwner, ownerOnly } from "./auth";
+import { canManageSite, canPublishTo, canShareSite, canViewSite, isAppOwner, isNamespaceEditor, isNamespaceOwner, ownerOnly } from "./auth";
 import type { Env, User } from "./env";
 import { now } from "./env";
 import { badRequest, err, forbidden, notFound } from "./errors";
@@ -83,6 +83,8 @@ export interface SiteRow {
   guest_responses_per_day?: number;
   /** What link previews show: "full", "private", or NULL to decide from who can open it (see linkPreviewOf). */
   link_preview?: "full" | "private" | null;
+  /** JSON array of the editors who may also change who can open the app (see canShareSite). */
+  sharers?: string;
 }
 
 /** Everything a service call needs: bindings, the acting user, and a way to defer work. */
@@ -227,6 +229,8 @@ export interface SiteView {
   title: string | null;
   ownerEmail: string;
   editors: string[];
+  /** Editors who may also change who can open the app. */
+  sharers: string[];
   visibility: "all" | "restricted";
   allowedEmails: string[];
   hidden: boolean;
@@ -263,6 +267,7 @@ export const siteView = (env: Env, s: SiteRow, requestUrl?: string): SiteView =>
   title: s.title,
   ownerEmail: s.owner_email,
   editors: parseJsonArray(s.editors),
+  sharers: parseJsonArray(s.sharers ?? "[]"),
   visibility: s.visibility,
   allowedEmails: parseJsonArray(s.allowed_emails),
   hidden: !!s.hidden,
@@ -802,7 +807,11 @@ export interface SitePatch {
   guest_responses?: unknown;
   guest_responses_per_day?: unknown;
   link_preview?: unknown;
+  sharers?: unknown;
 }
+
+/** The columns that decide who can open an app: only canShareSite may change them. */
+const SHARING_COLUMNS = ["visibility", "allowed_emails", "public_link", "guest_responses", "guest_responses_per_day", "link_preview"];
 
 export async function updateSite(ctx: Ctx, id: string, patch: SitePatch) {
   const { site, ns } = await requireManageableSite(ctx, id);
@@ -844,16 +853,31 @@ export async function updateSite(ctx: Ctx, id: string, patch: SitePatch) {
       detail.unsharedWith = gone;
     }
   }
+  const editorsAfter = patch.editors !== undefined ? emailList(patch.editors, "editors") : parseJsonArray(site.editors);
   if (patch.editors !== undefined) {
-    if (site.owner_email !== ctx.user.email && !isNamespaceOwner(ctx.user, ns)) throw ownerOnly();
-    const list = emailList(patch.editors, "editors");
+    if (!isAppOwner(ctx.user, site, ns)) throw ownerOnly();
     const before = parseJsonArray(site.editors);
-    newEditors = added(list, before);
-    const gone = added(before, list);
+    newEditors = added(editorsAfter, before);
+    const gone = added(before, editorsAfter);
     if (newEditors.length || gone.length) {
-      set("editors", JSON.stringify(list));
+      set("editors", JSON.stringify(editorsAfter));
       detail.editorsAdded = newEditors;
       detail.editorsRemoved = gone;
+    }
+  }
+  // Which editors may also share it: the owner's choice, and always among the editors.
+  if (patch.sharers !== undefined || patch.editors !== undefined) {
+    const before = parseJsonArray(site.sharers ?? "[]");
+    let list = patch.sharers !== undefined ? emailList(patch.sharers, "sharers") : before;
+    if (patch.sharers !== undefined) {
+      if (!isAppOwner(ctx.user, site, ns)) throw ownerOnly();
+      const notEditor = list.find((s) => !editorsAfter.includes(s));
+      if (notEditor) throw badRequest(`${notEditor} isn't an editor of this app.`, "Make them an editor first; only editors can be allowed to share.");
+    }
+    list = list.filter((s) => editorsAfter.includes(s));
+    if (added(list, before).length || added(before, list).length) {
+      set("sharers", JSON.stringify(list));
+      detail.sharers = list;
     }
   }
   const dataWrites = parseDataWrites(patch.data_writes);
@@ -897,6 +921,14 @@ export async function updateSite(ctx: Ctx, id: string, patch: SitePatch) {
       detail.sheets = list.length;
     }
   }
+  if (changed.some((col) => SHARING_COLUMNS.includes(col)) && !canShareSite(ctx.user, site, ns)) {
+    throw err(
+      403,
+      "sharing_not_allowed",
+      "Only the app's owner can change who can open it.",
+      `Ask ${site.owner_email} to change it, or to let you share the app (Editors who can also share, in the app's settings).`,
+    );
+  }
   if (sets.length) {
     const fields = [...changed];
     set("updated_at", now());
@@ -910,9 +942,9 @@ export async function updateSite(ctx: Ctx, id: string, patch: SitePatch) {
 }
 
 /** A site the signed-in person may manage (owner, editor or namespace owner); 404 for others. */
-export async function getManageableSite(ctx: Ctx, id: string): Promise<SiteView & { canEditEditors: boolean }> {
+export async function getManageableSite(ctx: Ctx, id: string): Promise<SiteView & { canEditEditors: boolean; canShare: boolean }> {
   const { site, ns } = await requireManageableSite(ctx, id);
-  return { ...siteView(ctx.env, site, ctx.requestUrl), canEditEditors: site.owner_email === ctx.user.email || isNamespaceOwner(ctx.user, ns) };
+  return { ...siteView(ctx.env, site, ctx.requestUrl), canEditEditors: isAppOwner(ctx.user, site, ns), canShare: canShareSite(ctx.user, site, ns) };
 }
 
 /** Removes a site's files, KV rows, secret rows and the site row itself. */
@@ -929,7 +961,11 @@ export async function removeSite(env: Env, site: SiteRow) {
 }
 
 export async function deleteSite(ctx: Ctx, id: string) {
-  const { site } = await requireManageableSite(ctx, id);
+  const { site, ns } = await requireManageableSite(ctx, id);
+  // Editors can publish new versions, but only the owner can delete the app (audit finding #10).
+  if (!isAppOwner(ctx.user, site, ns)) {
+    throw err(403, "owner_only", "Only the app's owner can delete it.", `Ask ${site.owner_email} to delete it.`);
+  }
   await removeSite(ctx.env, site);
   await audit(ctx.env, ctx.user.email, "delete_site", `${site.namespace}/${site.mount_path}`, { deletedSiteId: id });
   return { ok: true };

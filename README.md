@@ -268,6 +268,9 @@ Then smoke-test the live domain (section 2.2).
   Apply it before deploying. The same deploy adds the `VIEWER_LIMITER` rate limit binding from
   `wrangler.toml` (20 Gemini or Sheets calls a minute for each person using someone else's apps);
   nothing to set up, `npm run deploy` creates it.
+- **`0023_sharers`** adds the list of editors an owner lets share an app. Apply it before
+  deploying. After it, only an app's owner (or its space's owner) can change who can open it or
+  delete it, until the owner lists editors under "Editors who can also share it".
 
 ### 2.2 Smoke test
 

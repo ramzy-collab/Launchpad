@@ -97,6 +97,7 @@
       };
       // Only the owner sees (and may change) the editors field.
       if (el.editors) patch.editors = el.editors.value;
+      if (el.sharers) patch.sharers = el.sharers.value;
       // Likewise the Google Sheets the app may use (the owner's Google account).
       if (el.sheets) patch.sheets = el.sheets.value;
       return api("PATCH", "/sites/" + encodeURIComponent(form.dataset.id), patch).then(function (r) {

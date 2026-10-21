@@ -195,7 +195,9 @@ export function buildServer(ctx: Ctx, beforeTools?: (server: McpServer) => void,
   server.registerTool(
     "update_site",
     {
-      description: "Change a site's settings. Fields you leave out stay as they are. Does not change the app's files (use publish for that).",
+      description:
+        "Change a site's settings. Fields you leave out stay as they are. Does not change the app's files (use publish for that). " +
+        "Who can open it (visibility, allowed_emails, public_link, link_preview) can only be changed by the app's owner and the editors they list in sharers; editors and sharers only by the owner.",
       inputSchema: {
         namespace: z.string(),
         mount_path: z.string(),
@@ -205,6 +207,7 @@ export function buildServer(ctx: Ctx, beforeTools?: (server: McpServer) => void,
         visibility: z.enum(["all", "restricted"]).optional(),
         allowed_emails: emails,
         editors: emails,
+        sharers: emails.describe("Owner only: which editors may also change who can open the app. Must be editors. Replaces the list."),
         data_writes: z
           .enum(["editors", "everyone"])
           .optional()
@@ -282,7 +285,7 @@ export function buildServer(ctx: Ctx, beforeTools?: (server: McpServer) => void,
     "delete_site",
     {
       description:
-        "PERMANENTLY delete a site: its files, KV data and secrets are erased and cannot be recovered. Only call this when the user has clearly asked to delete this exact site.",
+        "PERMANENTLY delete a site: its files, KV data and secrets are erased and cannot be recovered. Only the app's owner (or its space's owner) can. Only call this when the user has clearly asked to delete this exact site.",
       inputSchema: { namespace: z.string(), mount_path: z.string() },
       annotations: { destructiveHint: true },
     },

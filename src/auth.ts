@@ -217,5 +217,16 @@ export const canManageSite = (u: User, site: SiteRow, ns: NamespaceRow) =>
 export const canViewSite = (u: User, site: SiteRow, ns: NamespaceRow) =>
   (site.visibility !== "restricted" && u.active) || canManageSite(u, site, ns) || has(site.allowed_emails, u.email);
 
+/** The app's owner, or the owner of its namespace: the people who may delete it and choose its editors. */
+export const isAppOwner = (u: User, site: SiteRow, ns: NamespaceRow) => site.owner_email === u.email || isNamespaceOwner(u, ns);
+
+/**
+ * Changing who can open an app (visibility, share list, public link, link previews): its owners,
+ * and editors the owner listed in `sharers` (audit finding #10). Other editors and namespace
+ * editors can update the app but not widen who sees it.
+ */
+export const canShareSite = (u: User, site: SiteRow, ns: NamespaceRow) =>
+  isAppOwner(u, site, ns) || (has(site.sharers ?? "[]", u.email) && has(site.editors, u.email));
+
 export const ownerOnly = () =>
   err(403, "owner_only", "Only the namespace owner can do that.", "Ask the namespace owner to make this change.");
