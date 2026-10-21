@@ -94,6 +94,49 @@ describe("Google Gemini as a connected app", () => {
     expect(log).toContain("Asked Gemini (9 tokens)");
   });
 
+  it("limits each person using someone else's apps, and the owner's apps together each day", async () => {
+    mockGoogle();
+    const owner = `gl-${uniq()}@example.com`;
+    const [a, b] = [`gla-${uniq()}@example.com`, `glb-${uniq()}@example.com`];
+    const ns = uniq();
+    await publishHtml(owner, ns, "one", PAGE("x"), { allowed_emails: `${a}, ${b}` });
+    await publishHtml(owner, ns, "two", PAGE("x"), { allowed_emails: `${a}, ${b}` });
+    expect((await connect(owner, GOOD)).status).toBe(200);
+    const error = async (res: Response) => (await res.json<{ error: { code: string; message: string } }>()).error;
+
+    // 20 a minute for each person, across all the owner's apps.
+    for (let i = 0; i < 20; i++) expect((await ask(a, ns, i % 2 ? "one" : "two", { prompt: "hi" })).status).toBe(200);
+    const limited = await ask(a, ns, "two", { prompt: "hi" });
+    expect(limited.status).toBe(429);
+    expect((await error(limited)).message).toContain("through this person's apps more than 20 times in a minute");
+    expect((await ask(b, ns, "one", { prompt: "hi" })).status).toBe(200);
+    expect((await ask(owner, ns, "one", { prompt: "hi" })).status).toBe(200);
+
+    // 100 a day for each person.
+    const day = Math.floor(Date.now() / 86_400_000);
+    await env.DB.prepare("UPDATE rate_counters SET count = 100 WHERE bucket = ?").bind(`gemini-viewer:${owner}:${b}:day${day}`).run();
+    const daily = await ask(b, ns, "one", { prompt: "hi" });
+    expect(daily.status).toBe(429);
+    expect((await error(daily)).message).toContain("100 times today");
+
+    // The owner's daily limit, for everyone together, owner included.
+    const status = await (await call("/_api/admin/services/gemini", { as: owner })).json<{ dailyLimit: number; usedToday: number }>();
+    expect(status.dailyLimit).toBe(1000);
+    expect(status.usedToday).toBe(22);
+    const set = (dailyLimit: unknown) => call("/_api/admin/services/gemini", { as: owner, method: "PATCH", json: { dailyLimit } });
+    expect((await (await set(23)).json<{ dailyLimit: number }>()).dailyLimit).toBe(23);
+    expect((await ask(owner, ns, "two", { prompt: "hi" })).status).toBe(200);
+    const capped = await ask(owner, ns, "two", { prompt: "hi" });
+    expect(capped.status).toBe(429);
+    expect((await error(capped)).message).toContain("allows 23 Gemini calls a day");
+    for (const bad of [-1, 100_001, 2.5, "many"]) expect((await set(bad)).status, String(bad)).toBe(400);
+    expect((await call("/_api/admin/services/gemini", { as: a, method: "PATCH", json: { dailyLimit: 5 } })).status).toBe(409);
+
+    const page = await (await call("/app/connected", { as: owner })).text();
+    expect(page).toContain('data-action="gemini-limit"');
+    expect(page).toContain('value="23"');
+  });
+
   it("tells the app when its owner hasn't connected Gemini, and after they disconnect", async () => {
     mockGoogle();
     const owner = `gn-${uniq()}@example.com`;

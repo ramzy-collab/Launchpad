@@ -144,6 +144,21 @@ describe("Google Sheets as a connected app (OAuth)", () => {
     expect((await sheets(owner, ns, { method: "GET", path: "spreadsheets/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/values/Sheet1!A1:B2" })).status).toBe(409);
   });
 
+  it("limits each person using the owner's apps to 20 calls a minute", async () => {
+    mockGoogle();
+    const ns = uniq();
+    const friend = `sl-${uniq()}@example.com`;
+    await publishHtml(OWNER, ns, "s", PAGE("x"), { allowed_emails: friend });
+    await connectSheets(OWNER);
+    expect((await allowSheets(OWNER, ns, [SHEET])).status).toBe(200);
+    const read = (as: string) => sheets(as, ns, { method: "GET", path: `spreadsheets/${SHEET}/values/Sheet1!A1:B2` });
+    for (let i = 0; i < 20; i++) expect((await read(friend)).status).toBe(200);
+    const limited = await read(friend);
+    expect(limited.status).toBe(429);
+    expect((await limited.json<{ error: { message: string } }>()).error.message).toContain("Google Sheets through this person's apps");
+    expect((await read(OWNER)).status).toBe(200);
+  });
+
   it("only lets an app use the spreadsheets its owner listed for it", async () => {
     mockGoogle();
     const ns = uniq();

@@ -11,7 +11,7 @@ import { canSetPassword, workosEnabled } from "../login";
 import { ctxOf } from "../api";
 import { head, htmlResponse } from "./layout";
 import { SERVICE_ICONS, SPRITE_URL } from "./services";
-import { GEMINI_MODEL_NAME, geminiStatus } from "../gemini";
+import { GEMINI_DAILY_DEFAULT, GEMINI_DAILY_MAX, GEMINI_MODEL_NAME, GEMINI_VIEWER_PER_DAY, geminiStatus, type ServiceStatus } from "../gemini";
 import { sheetsConfigured, sheetsStatus } from "../sheets";
 import { ago, appBrowser, appName, fmtBytes, thumb } from "./apps";
 import { connectedAiApps, type AiApp } from "./aiapps";
@@ -637,7 +637,7 @@ export async function connectedPage(c: Context<AppEnv>): Promise<Response> {
   const user = c.get("user");
   // Behind the connected_apps flag (admin panel → Features): off, the page lists no apps yet.
   const on = !!c.get("features")?.has("connected_apps");
-  const gemini = on ? await geminiStatus(c.env, user.email) : { connected: false };
+  const gemini: ServiceStatus = on ? await geminiStatus(c.env, user.email) : { connected: false };
   const sheets = on ? await sheetsStatus(c.env, user.email) : { connected: false };
   const sheetsReady = sheetsConfigured(c.env);
   const SHEETS_OUTCOME: Record<string, [boolean, string]> = {
@@ -706,6 +706,12 @@ export async function connectedPage(c: Context<AppEnv>): Promise<Response> {
       gemini.connected
         ? `<div class="conn-status"><p><span class="dot" aria-hidden="true"></span><strong>Connected</strong> with the key ending in ${e(gemini.hint ?? "")}.</p>
       <p class="muted">Added ${e(fmtTime(gemini.createdAt ?? null))} · last used ${e(fmtTime(gemini.lastUsedAt ?? null))}</p></div>
+    <h3>Daily limit</h3>
+    <p class="muted">Your apps used Gemini ${gemini.usedToday ?? 0} time${gemini.usedToday === 1 ? "" : "s"} today (UTC). Past the limit, Gemini stops answering in all your apps until tomorrow, so someone you share an app with can't run up your Google bill. Each person other than you can also use it at most ${GEMINI_VIEWER_PER_DAY} times a day.</p>
+    <form class="inline" data-action="gemini-limit">
+      <label>Most calls a day, all apps together <input type="number" name="dailyLimit" min="0" max="${GEMINI_DAILY_MAX}" step="1" value="${gemini.dailyLimit ?? GEMINI_DAILY_DEFAULT}"></label>
+      <button class="ghost">Save</button>
+    </form>
     <h3>Replace the key</h3>`
         : `<h3>Connect it</h3>
     <ol>

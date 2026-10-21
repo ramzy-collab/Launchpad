@@ -20,7 +20,7 @@ import { filesFromHtml, filesFromUpload, filesFromZip, MAX_UPLOAD_BYTES, type Fi
 import { filesForPublish } from "./changes";
 import { listConnections, revokeConnection } from "./oauth";
 import { approveWaitlist, setPassword } from "./login";
-import { connectGemini, disconnectGemini, geminiStatus } from "./gemini";
+import { connectGemini, disconnectGemini, geminiStatus, setGeminiDailyLimit } from "./gemini";
 import { buildApp, connectBuilder, editApp, disconnectBuilder, parseBuildDataWrites, parseBuilder } from "./builder";
 import { addFlagUser, flagOn, removeFlagUser, setFlag } from "./flags";
 import { sheetsDisconnect, sheetsStatus } from "./sheets";
@@ -223,6 +223,7 @@ export function managementApi(kind: "admin" | "deploy") {
     api.get("/services/gemini", async (c) => c.json(await geminiStatus(c.env, c.get("user").email)));
     api.put("/services/gemini", async (c) => c.json(await connectGemini(c.env, c.get("user"), (await jsonBody(c)).apiKey)));
     api.delete("/services/gemini", async (c) => c.json(await disconnectGemini(c.env, c.get("user"))));
+    api.patch("/services/gemini", async (c) => c.json(await setGeminiDailyLimit(c.env, c.get("user"), (await jsonBody(c)).dailyLimit)));
     api.get("/services/google-sheets", async (c) => c.json(await sheetsStatus(c.env, c.get("user").email)));
     api.delete("/services/google-sheets", async (c) => c.json(await sheetsDisconnect(c.env, c.get("user"))));
     api.put("/features/:name", async (c) => c.json(await setFlag(c.env, c.get("user"), c.req.param("name"), (await jsonBody(c)).state)));

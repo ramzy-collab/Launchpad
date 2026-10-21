@@ -453,6 +453,18 @@ Choices made while building v1, including where the build differs from the spec 
   open the app, so they can use its features). Calls count toward the owner's Google usage, are
   limited to 60 a minute per app (the proxy's limiter), and each one is in the app's activity log
   with its token count. Connecting and disconnecting are in the admin activity log.
+- **Limits per person and per owner (audit finding N3).** 60 a minute per app let anyone an app
+  was shared with spend the owner's Gemini quota or bill, and more by moving between the owner's
+  apps. Now each person other than the owner gets 20 Gemini (and, separately, 20 Sheets) calls a
+  minute and 100 Gemini calls a day, keyed by owner and person so they cover all the owner's apps
+  (a new VIEWER_LIMITER binding for the minute; D1 counters in `rate_counters` for the day,
+  since limiter bindings only count by the minute). On top, all of an owner's apps together may
+  make `service_keys.daily_limit` Gemini calls a UTC day (migration 0022; 1,000 by default),
+  which the owner sets under Connected apps → Google Gemini, where
+  today's count shows. The owner is held only to the app's and their own daily limit. Turned-away
+  calls count too, so retrying doesn't help. Sheets has no daily cap: it costs nothing, and each
+  app only reaches the spreadsheets its owner listed (N1). A per-app on/off for Gemini was left
+  out for now: the caps bound the cost, and an app that doesn't call Gemini can't use it.
 - AIs learn about it from the build guide (a ground rule and an SDK section) and from `whoami`
   (`connectedApps.gemini`), so they use it instead of asking for an API key.
 - **Behind a feature flag.** Connected apps (all of them, Gemini included) are behind the

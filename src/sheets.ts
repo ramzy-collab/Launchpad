@@ -12,6 +12,7 @@ import { now } from "./env";
 import { badRequest, err } from "./errors";
 import { appOrigin } from "./hosts";
 import { decryptSecret, encryptSecret, rateLimit } from "./secrets";
+import { viewerLimits } from "./gemini";
 import { cookieHeader, readCookie } from "./session";
 import { addSiteSheet, type SiteRow } from "./sites";
 import { b64encode, base32, parseJsonArray, randomBytes } from "./util";
@@ -236,6 +237,7 @@ export async function sheetsCall(env: Env, site: SiteRow, viewer: User, req: She
 
   if (!(await loadRow(env, site.owner_email))) throw notConnected();
   await rateLimit(env, `sheets:${site.id}`, SHEETS_RATE_PER_MINUTE, `This app called Google Sheets more than ${SHEETS_RATE_PER_MINUTE} times in a minute.`);
+  await viewerLimits(env, site, viewer, "sheets");
   const token = await accessToken(env, site.owner_email);
   const target = `${site.namespace}/${site.mount_path}`;
   const done = (status: number | string) =>

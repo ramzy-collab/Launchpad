@@ -264,6 +264,10 @@ Then smoke-test the live domain (section 2.2).
   responses from the public link (500 by default). Apply it before deploying. After it, link
   previews of apps only some people can open show a private card instead of the app's name and
   picture, until their owner chooses "Full preview" in the app's settings.
+- **`0022_gemini_daily_limit`** adds each owner's daily limit on Gemini calls (1,000 by default).
+  Apply it before deploying. The same deploy adds the `VIEWER_LIMITER` rate limit binding from
+  `wrangler.toml` (20 Gemini or Sheets calls a minute for each person using someone else's apps);
+  nothing to set up, `npm run deploy` creates it.
 
 ### 2.2 Smoke test
 

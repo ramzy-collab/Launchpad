@@ -163,6 +163,12 @@
         reloadSoon();
       });
     },
+    "gemini-limit": function (form) {
+      return api("PATCH", "/services/gemini", { dailyLimit: form.elements.dailyLimit.value }).then(function () {
+        show("Daily limit saved.");
+        reloadSoon();
+      });
+    },
     "builder-connect": function (form) {
       return api("PUT", "/builders/" + encodeURIComponent(form.dataset.provider), { apiKey: form.elements.apiKey.value.trim() }).then(function () {
         form.reset();

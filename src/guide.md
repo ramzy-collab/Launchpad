@@ -282,8 +282,11 @@ Apps without a share illustration get a card made from their icon, title and des
 
 Calls Google **Gemini 3.5 Flash-Lite** (`gemini-3.5-flash-lite`) with the app owner's Gemini key,
 which they connected once in Formelab. The key never reaches the browser. Anyone who can open the
-app can use it, on the owner's key; calls are limited to 60 a minute per app and show up in the
-app's activity log.
+app can use it, on the owner's key; calls show up in the app's activity log. Limits: 60 a minute
+per app; for each person other than the owner, 20 a minute and 100 a day across the owner's apps;
+and the owner's daily limit for all their apps together (1,000 unless they change it). Past one,
+`generate` fails with `rate_limited` (429): show `e.message`, and cache answers in KV instead of
+asking again.
 
 ```js
 const { connected } = await formelab.gemini.available();   // false: the owner hasn't connected Gemini
@@ -311,7 +314,8 @@ Show `e.message` and `e.hint`. Temperature and top-P/K aren't supported by this 
 
 Reads and writes the app owner's Google Sheets with the Google account they connected once in
 Formelab. Anyone who can open the app can use it, as the owner; calls are limited to 60 a minute
-per app and show up in the app's activity log. A spreadsheet's id is the long part of its URL:
+per app (and 20 a minute for each person other than the owner, across the owner's apps) and show
+up in the app's activity log. A spreadsheet's id is the long part of its URL:
 `docs.google.com/spreadsheets/d/<id>/edit`.
 
 **An app can only use the spreadsheets listed for it.** The owner lists them in the app's settings
