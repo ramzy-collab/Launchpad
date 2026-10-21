@@ -754,3 +754,19 @@ Choices made while building v1, including where the build differs from the spec 
   a "Show the numbers" table. Series colors are the brand accent then a categorical order checked
   for color-blind separation in light and dark; each series keeps its color across charts.
 - **Admins only.** Investors see it on a screen share; the page has no shareable link (the owner's choice).
+
+## Sign-in hand-offs are tied to the browser (audit findings N5, N6)
+
+- **Login CSRF (N5).** A host (the web app or an app) gets its session from DOMAIN through a
+  single-use code at `/_auth/callback`. Codes weren't tied to a browser, so anyone could mint one
+  with their own session and send the callback link to someone else, whose browser would then be
+  signed in as them. Now the host puts a random nonce in a `__Host-fl_handoff` cookie before sending
+  the browser to `/auth/app?...&n=<nonce>`; the code stores the nonce's hash, and the callback only
+  redeems it when the browser's cookie matches. The code is spent either way.
+- A code minted without a nonce (a sign-in that started on DOMAIN, e.g. from the login page) is
+  never redeemed at the callback: the host restarts the hand-off with a nonce of its own, one extra
+  redirect. A code with another browser's nonce gets a page saying to open the app again, rather
+  than a restart, so a browser that blocks the cookie can't loop.
+- **Return paths (N6).** `safeReturn` refuses backslashes and control characters (browsers drop
+  tabs and newlines and read `\` as `/`), then accepts the path only if a URL parser keeps it on the
+  same origin. `/_auth/callback` uses it too (it only refused `//` before).
