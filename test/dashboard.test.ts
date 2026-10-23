@@ -48,10 +48,10 @@ describe("dashboard", () => {
     await call("/_api/admin/tokens", { as: OWNER, method: "POST", json: { name: "laptop-token" } });
     const html = await (await call("/app", { as: OWNER })).text();
     expect(html).toContain(`${await appAt(ns, "listed")}/`);
-    expect(html).toContain(`<a class="tile-link" href="${await appAt(ns, "listed")}/" target="_blank" rel="noopener">`); // a tile opens the app in a new tab
+    expect(html).toContain(`<a class="ac-open" href="${await appAt(ns, "listed")}/" target="_blank" rel="noopener">`); // a card opens the app in a new tab
     expect(html).toContain("Listed app");
     expect(html).not.toContain("Recent activity");
-    expect(html).toMatch(/<a class="gear" href="\/apps\/[^"]+" aria-label="Settings for Listed app"/);
+    expect(html).toMatch(/<a class="ac-btn gear" href="\/apps\/[^"]+" aria-label="Settings for Listed app"/);
     expect(await (await call("/app/spaces", { as: OWNER })).text()).toContain(`>${ns}</a>`);
     expect(await (await call("/app/keys", { as: OWNER })).text()).toContain("laptop-token");
   });
@@ -177,7 +177,7 @@ describe("app activity logs", () => {
 
     // Editors see it (and get a link under Shared with me); viewers and strangers get a 404.
     expect((await call(url, { as: editor })).status).toBe(200);
-    expect(await (await call("/app/shared", { as: editor })).text()).toContain(`<a class="gear" href="/apps/${id}"`);
+    expect(await (await call("/app/shared", { as: editor })).text()).toContain(`<a class="ac-btn gear" href="/apps/${id}"`);
     expect(await (await call("/app/shared", { as: viewer })).text()).not.toContain(`href="/apps/${id}"`); // viewers get no settings
     expect((await call(url, { as: viewer })).status).toBe(404);
     expect((await call(url, { as: `x-${uniq()}@example.com` })).status).toBe(404);
@@ -199,46 +199,85 @@ describe("app activity logs", () => {
 });
 
 describe("app browser and app settings page", () => {
-  it("shows tiles grouped by space by default, and a sortable list", async () => {
+  it("shows apps as cards with search, a space filter, sort and a place for starred apps", async () => {
     const [a, b] = [uniq(), uniq()];
     await publishHtml(OWNER, a, "one", PAGE("x"), { title: "Alpha tool" });
-    await publishHtml(OWNER, a, "two", PAGE("x"), { title: "Beta tool" });
-    await publishHtml(OWNER, b, "", PAGE("x"), { title: "Gamma home" });
+    await publishHtml(OWNER, a, "two", PAGE("x"), { title: "Beta tool", allowed_emails: "pal@example.com" });
+    await publishHtml(OWNER, b, "untitled-thing", PAGE("x"));
+    const pub = await (await publishHtml(OWNER, b, "", PAGE("x"), { title: "Gamma home" })).json<{ site: { id: string } }>();
+    const { publicUrl } = await (await call(`/_api/admin/sites/${pub.site.id}`, { as: OWNER, method: "PATCH", json: { public_link: true } })).json<{ publicUrl: string }>();
     const html = await (await call("/app", { as: OWNER })).text();
-    expect(html).toContain('<div class="browser" data-browser data-view="tiles">');
-    expect(html).toContain('<div class="view-list" hidden>');
-    expect(html).toContain(`<div class="group" data-group="${a}">`);
-    expect(html).toContain(`<div class="group" data-group="${b}">`);
-    const groupA = html.slice(html.indexOf(`data-group="${a}"`), html.indexOf("</div>\n</div>", html.indexOf(`data-group="${a}"`)));
-    expect(groupA).toContain("Alpha tool");
-    expect(groupA).toContain("Beta tool");
-    expect(groupA).not.toContain("Gamma home");
-    for (const key of ["name", "space", "vis", "updated", "size"]) expect(html).toContain(`data-sort="${key}"`);
+    expect(html).toContain('<div class="browser" data-browser>');
+    expect(html).toContain("data-starred hidden");
+    expect(html).toContain("Star the apps you use most");
     expect(html).toContain("data-q");
     expect(html).toContain('data-filter="space"');
+    for (const sort of ["Recently changed", "Newest first", "Name A to Z"]) expect(html).toContain(sort);
     expect(html).toContain('data-name="alpha tool"');
+    const cardOf = (name: string) => html.slice(html.lastIndexOf('<div class="appcard"', html.indexOf(`data-name="${name}"`)), html.indexOf("</div>\n</div>", html.indexOf(`data-name="${name}"`)));
+    expect(cardOf("alpha tool")).toContain("Only you");
+    expect(cardOf("beta tool")).toContain("Shared with 1");
+    expect(cardOf("gamma home")).toContain("Public");
+    // Copying a public app's link copies the link that works without signing in.
+    expect(cardOf("gamma home")).toContain(`data-copy-url="${publicUrl}"`);
+    expect(cardOf("alpha tool")).toContain(`data-copy-url="${await appAt(a, "one")}/"`);
+    // An app without a title shows its path, in italics.
+    expect(html).toContain('<div class="ac-name untitled">untitled-thing</div>');
+    expect(cardOf("alpha tool")).toContain(`${a} · <span class="ac-updated">Updated </span>just now`);
+    expect(html).toContain("Show all apps");
+    expect(html).not.toContain("\u2014"); // no em dashes
   });
 
-  it("has a settings page per app with its details and every edit option", async () => {
+  it("has a settings page per app with Sharing, Update and Activity, and no Save buttons", async () => {
+    // Answers from people with the link (the responses feature) show their switch when the app is public.
+    await env.DB.prepare("INSERT OR REPLACE INTO feature_flags (name, state, updated_at, updated_by) VALUES ('responses', 'on', 0, 'test')").run();
     const ns = uniq();
     const editor = `sed-${uniq()}@example.com`;
-    await publishHtml(OWNER, ns, "cfg", PAGE("x"), { title: "Configured app", editors: editor });
+    await publishHtml(OWNER, ns, "cfg", PAGE("x"), { title: "Configured app", editors: editor, allowed_emails: "viewer@example.com" });
     const site = await env.DB.prepare("SELECT id FROM sites WHERE namespace = ? AND mount_path = 'cfg'").bind(ns).first<{ id: string }>();
     const res = await call(`/app/apps/${site!.id}`, { as: OWNER });
     expect(res.status).toBe(200);
     const html = await res.text();
-    expect(html).toContain("<h1>Configured app</h1>");
-    for (const fact of ["<dt>Space</dt>", "<dt>Path</dt>", "<dt>Owner</dt>", "<dt>Size</dt>", "<dt>Last updated</dt>"]) expect(html).toContain(fact);
-    expect(html).toContain('data-action="site-update"');
-    expect(html).toContain('name="editors"');
-    expect(html).toContain('data-action="site-replace"');
-    expect(html).toContain('data-action="site-delete"');
-    expect(html).toContain('data-next="/"');
+    expect(html).toContain("<title>Configured app · Formelab</title>");
+    expect(html).toContain('<input class="title-input" data-title value="Configured app"');
+    expect(html).toContain('<a href="/">My apps</a>');
+    expect(html).toContain('<span class="sharepill shared" data-pill>');
+    expect(html).toContain("<span>Shared with 2</span>");
+    for (const tab of ["Sharing", "Update", "Activity"]) expect(html).toContain(`>${tab}</button>`);
+    expect(html).not.toContain(">Connected apps</button>");
+    expect(html).not.toContain(">Save</button>");
+    for (const gone of ["<dt>Space</dt>", "SPA fallback", "Hidden from listings", 'name="link_preview"', "Everyone on Formelab", "All Formelab members"]) expect(html).not.toContain(gone);
+    // Invited only: the guest answers switch isn't shown, and the preview is the private card.
+    expect(html).toContain('aria-pressed="true" data-access-choice="invite"');
+    expect(html).toMatch(/data-guest-row hidden/);
+    expect(html).toContain('<div class="lp" data-preview="private">');
+    expect(html).toContain('<div class="lp" data-preview="full" hidden>');
+    // People: the owner first, then each person with a role picker the owner can use.
+    expect(html.indexOf(`<span class="pe">${OWNER} (you)</span><span class="ps">Owner</span>`)).toBeGreaterThan(-1);
+    expect(html.indexOf(`<span class="pe">${OWNER} (you)`)).toBeLessThan(html.indexOf('<span class="pe">viewer@example.com'));
+    expect(html).toContain('data-person="viewer@example.com" data-role="viewer" data-roles="viewer,editor,admin"');
+    expect(html).toContain(`data-person="${editor}" data-role="editor"`);
+    expect(html).toContain('id="dlg-delete"');
     expect(html).toContain(`href="/apps/${site!.id}/activity"`);
-    // Editors can manage it but not change who the editors are; strangers get a 404.
+    expect(html).toContain("You published the app");
+    expect(html).not.toContain("\u2014");
+
+    // Public: the warning, the link with Reset, the guest switch and the full preview card.
+    await call(`/_api/admin/sites/${site!.id}`, { as: OWNER, method: "PATCH", json: { public_link: true } });
+    const pub = await (await call(`/app/apps/${site!.id}`, { as: OWNER })).text();
+    expect(pub).toContain("Anyone with the link can open this app, no sign-in needed.");
+    expect(pub).toContain('aria-pressed="true" data-access-choice="public"');
+    expect(pub).toMatch(/data-guest-row>/);
+    expect(pub).toContain('<div class="lp" data-preview="full">');
+    expect(pub).toContain("/_platform/link/");
+
+    // Editors can manage it but not delete it, change who can open it, or invite people; strangers get a 404.
     const asEditor = await (await call(`/app/apps/${site!.id}`, { as: editor })).text();
-    expect(asEditor).toContain('data-action="site-update"');
-    expect(asEditor).not.toContain('name="editors"');
+    expect(asEditor).toContain("data-title");
+    expect(asEditor).not.toContain('id="dlg-delete"');
+    expect(asEditor).toContain('data-access-choice="invite" disabled');
+    expect(asEditor).not.toContain("data-invite>");
+    expect(asEditor).not.toContain("data-roles=");
     expect((await call(`/app/apps/${site!.id}`, { as: `nobody-${uniq()}@example.com` })).status).toBe(404);
   });
 });

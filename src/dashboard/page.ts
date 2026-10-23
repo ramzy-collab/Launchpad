@@ -1,8 +1,8 @@
 import type { Context } from "hono";
-import { describeActivity, siteActivity } from "../audit";
+import { describeActivity, HIGH_VOLUME_ACTIONS, siteActivity, type AuditRow } from "../audit";
 import { listTokens } from "../auth";
 import type { AppEnv, User } from "../env";
-import { getManageableSite, listNamespaces, listOwnSites, listSharedSites, MAX_GUEST_RESPONSES_PER_DAY } from "../sites";
+import { getManageableSite, getSiteById, listNamespaces, listOwnSites, listSharedSites, type SiteView } from "../sites";
 import { escapeHtml as e } from "../util";
 import { ApiError } from "../errors";
 import { plainPage } from "../serve";
@@ -13,13 +13,14 @@ import { head, htmlResponse } from "./layout";
 import { SERVICE_ICONS, SPRITE_URL } from "./services";
 import { GEMINI_DAILY_DEFAULT, GEMINI_DAILY_MAX, GEMINI_MODEL_NAME, GEMINI_VIEWER_PER_DAY, geminiStatus, type ServiceStatus } from "../gemini";
 import { sheetsConfigured, sheetsStatus } from "../sheets";
-import { ago, appBrowser, appName, fmtBytes, thumb } from "./apps";
+import { accessOf, ago, appBrowser, appName, hueClass, ICON, sharedWith, thumb } from "./apps";
 import { connectedAiApps, type AiApp } from "./aiapps";
 import { AI_LOGOS } from "./logos";
 import { BUILDER_LABEL, BUILDERS, builderKeys, type Builder } from "../builder";
 import { PWA_HEAD } from "../pwa";
 import { countResponses, responsesCsv } from "../responses";
 import { flagOnForOwner } from "../flags";
+import { appPreviewText } from "../share";
 
 export const fmtTime = (ms: number | null) => (ms ? new Date(ms).toISOString().replace("T", " ").slice(0, 16) + " UTC" : "never");
 
@@ -29,59 +30,6 @@ const visibilityOptions = (current: "all" | "restricted") =>
   (["restricted", "all"] as const)
     .map((v) => `<option value="${v}"${v === current ? " selected" : ""}>${VISIBILITY_LABEL[v]}</option>`)
     .join("");
-
-/** The app page's link preview choices; "Automatic" says what it picks for the app now. */
-function linkPreviewOptions(site: { visibility: "all" | "restricted"; publicUrl: string | null; linkPreviewSetting: "auto" | "full" | "private" }): string {
-  const auto = site.visibility === "all" || site.publicUrl ? "Full preview" : "Private card";
-  const options: [string, string][] = [
-    ["auto", `Automatic (now: ${auto}, from who can open it)`],
-    ["full", "Full preview: the app's name, description and picture"],
-    ["private", "Private card: \u201cA private app on Formelab\u201d"],
-  ];
-  return options.map(([v, label]) => `<option value="${v}"${v === site.linkPreviewSetting ? " selected" : ""}>${e(label)}</option>`).join("");
-}
-
-/** The app page's "anyone with the link" controls (managers only see the page). */
-function publicLinkSection(site: { id: string; publicUrl: string | null; guestResponses: boolean; guestResponsesPerDay: number }, responsesOn: boolean): string {
-  const op = (value: string, label: string, cls = "") =>
-    `<form class="inline" data-action="public-link" data-id="${e(site.id)}" data-op="${value}"><button${cls ? ` class="${cls}"` : ""}>${label}</button></form>`;
-  const responses = `<form class="inline" data-action="guest-responses" data-id="${e(site.id)}" data-on="${site.guestResponses ? "false" : "true"}"><button class="ghost">${
-    site.guestResponses ? "Stop taking responses from the link" : "Let people with the link send responses"
-  }</button></form>`;
-  const body = site.publicUrl
-    ? `<p class="muted">Anyone with this link can open the app without a Formelab account. They can look at it and read its shared data, but can't change anything unless they sign in and the app is shared with them.</p>
-  <div class="copyrow"><pre id="public-link">${e(site.publicUrl)}</pre><button type="button" data-copy="#public-link">Copy</button></div>
-  <div class="make-row">${op("new", "Make a new link", "ghost")}${op("off", "Turn off", "ghost")}</div>
-  <p class="muted">A new link stops the old one from working, including for people who already opened it.</p>
-  ${
-    responsesOn
-      ? `<h3>Forms and sign-ups</h3>
-  <p class="muted">${
-    site.guestResponses
-      ? "People with the link can send this app responses (form answers, sign-ups, feedback) without signing in. They can't see what anyone sent; only you and the app's editors can."
-      : "For a form, survey or sign-up sheet, let people with the link send responses without signing in. They can't see what anyone sent; only you and the app's editors can."
-  }</p>
-  <div>${responses}</div>${
-    site.guestResponses
-      ? `
-  <form class="inline guest-cap" data-action="guest-cap" data-id="${e(site.id)}">
-    <label>Most responses a day from people with the link <input type="number" name="per_day" min="0" max="${MAX_GUEST_RESPONSES_PER_DAY}" step="1" value="${site.guestResponsesPerDay}"></label>
-    <button class="ghost">Save</button>
-  </form>
-  <p class="muted">Stops a shared link from flooding the app. People who sign in don't count toward it.</p>`
-      : ""
-  }`
-      : ""
-  }`
-    : `<p class="muted">Turn on a link that opens this app for anyone who has it, without signing in. They can look at it and read its shared data, but can't change anything. You can turn it off or replace it at any time.</p>
-  <div>${op("on", "Turn on public link")}</div>`;
-  return `<section>
-  <h2>Public link</h2>
-  ${body}
-</section>
-
-`;
-}
 
 export function logoutControl(c: Context<AppEnv>): string {
   return c.get("sessionId")
@@ -108,7 +56,7 @@ const PHONE_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" s
 export const MENU_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>`;
 
 /** The page frame: the left menu (with the account menu at its foot), then the page's `body`. */
-export function shell(c: Context<AppEnv>, user: User, page: Page, body: string, title?: string): Response {
+export function shell(c: Context<AppEnv>, user: User, page: Page, body: string, title?: string, opts: { pageHead?: boolean } = {}): Response {
   const current = (p: Page) => (p === page ? ' aria-current="page"' : "");
   const link = (p: Page, href: string) => `<a href="${href}"${current(p)}>${PAGES[p].title}</a>`;
   const head_ = PAGES[page];
@@ -156,14 +104,19 @@ ${head(title ? `${title} · Formelab` : `${head_.title} · Formelab`, ["dashboar
   </details>
 </aside>
 <main class="content">
-<div class="page-head">
+${
+  opts.pageHead === false
+    ? ""
+    : `<div class="page-head">
   <h1>${e(title ?? head_.title)}</h1>
   ${title ? "" : `<p>${e(head_.intro)}</p>`}
-</div>
+</div>`
+}
 <div id="flash" role="status" hidden></div>
 ${body}
 </main>
 </div>
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 </body>
 </html>`);
 }
@@ -179,13 +132,13 @@ export async function sharedPage(c: Context<AppEnv>): Promise<Response> {
   const ctx = ctxOf(c);
   const sites = await listSharedSites(ctx);
   const body = `${ctx.user.active ? "" : waitlistedNotice}
-<section>
-  ${
-    sites.length
-      ? appBrowser(sites, { shared: true })
-      : `<p class="muted">Nothing yet. When someone adds your email to one of their apps, it shows up here.</p>`
-  }
-</section>`;
+${
+  sites.length
+    ? appBrowser(sites, { shared: true })
+    : `<section>
+  <p class="muted">Nothing yet. When someone adds your email to one of their apps, it shows up here.</p>
+</section>`
+}`;
   return shell(c, ctx.user, "shared", body);
 }
 
@@ -234,143 +187,268 @@ export async function appActivityPage(c: Context<AppEnv>, id: string): Promise<R
   return shell(c, user, site.ownerEmail === user.email ? "apps" : "shared", body, `Activity: ${appName(site)}`);
 }
 
-/** An app's own page: everything about it, its settings, a new version, recent activity, delete. */
+/** The roles on an app's People list, from its share lists. */
+type Role = "viewer" | "editor" | "admin";
+const ROLE_NAME: Record<Role, string> = { viewer: "Viewer", editor: "Editor", admin: "Admin" };
+
+function roleOf(s: SiteView, email: string): Role {
+  if (s.editors.includes(email)) return s.sharers.includes(email) ? "admin" : "editor";
+  return "viewer";
+}
+
+/** The People list: the owner first, then everyone the app is shared with by name. */
+function peopleRows(s: SiteView, me: string, isOwner: boolean, canShare: boolean): string {
+  const owner = `<li class="person"><span class="avatar" aria-hidden="true">${e(s.ownerEmail.slice(0, 1).toUpperCase())}</span><span class="pi"><span class="pe">${e(s.ownerEmail)}${s.ownerEmail === me ? " (you)" : ""}</span><span class="ps">Owner</span></span><span class="role-label">Owner</span></li>`;
+  const rows = sharedWith(s).map((email) => {
+    const role = roleOf(s, email);
+    // The owner changes every role; Admins only Viewers (the backend lets only the owner choose editors).
+    const roles = email === me ? "" : isOwner ? "viewer,editor,admin" : canShare && role === "viewer" ? "viewer" : "";
+    const control = roles
+      ? `<button type="button" class="rp-btn" data-person="${e(email)}" data-role="${role}" data-roles="${roles}" aria-haspopup="listbox" aria-expanded="false" aria-label="Role for ${e(email)}"><span>${ROLE_NAME[role]}</span>${ICON.chevron()}</button>`
+      : `<span class="role-label">${ROLE_NAME[role]}</span>`;
+    return `<li class="person"><span class="avatar soft" aria-hidden="true">${e(email.slice(0, 1).toUpperCase())}</span><span class="pi"><span class="pe">${e(email)}${email === me ? " (you)" : ""}</span><span class="ps">Invited</span></span>${control}</li>`;
+  });
+  return owner + rows.join("");
+}
+
+/** The note under the chat preview card, from what previews show now. */
+function previewNote(s: SiteView): string {
+  const lead = "This is what people see when the link is shared in iMessage, Slack or WhatsApp.";
+  if (s.linkPreview === "private") return `${lead} Because the app is invited only, it shows a private card and the app's name stays hidden.`;
+  return s.publicUrl ? `${lead} Because the link is public, it shows the app's name and picture.` : `${lead} It shows the app's name and picture.`;
+}
+
+/** An activity row as a sentence about who did it: "You turned on the public link". */
+export function activitySentence(row: AuditRow, me: string): string {
+  const s = describeActivity(row);
+  const rest = s.slice(0, 1).toLowerCase() + s.slice(1);
+  // Calls the app makes (Gemini, Sheets, keys) are the app's doing, whoever was using it.
+  if ((HIGH_VOLUME_ACTIONS as readonly string[]).includes(row.action)) return `The app ${rest}`;
+  return `${row.actor === me ? "You" : row.actor} ${rest}`;
+}
+
+const UPDATE_IDEAS = ["Add a search bar", "Make it work better on phones", "Add an export to spreadsheet button"];
+/** Which saved key "Update with ..." uses: Gemini first (it's free), then the others. */
+const UPDATE_ORDER: Builder[] = ["gemini", "claude", "openai", "grok"];
+
+/** An app's own page: its name and share pill, then Sharing, Update and Activity tabs. */
 export async function appSettingsPage(c: Context<AppEnv>, id: string): Promise<Response> {
   const site = await manageable(c, id);
   if (!site) return plainPage(404, "Not found", "There is nothing here.");
   const user = c.get("user");
   const mine = site.ownerEmail === user.email;
-  const activity = (await siteActivity(c.env, site.id, 5))
-    .map((a) => `<tr><td class="nowrap">${e(fmtTime(a.at))}</td><td>${e(a.actor)}</td><td>${e(describeActivity(a))}</td></tr>`)
-    .join("");
-  // Responses follow the app's owner (the responses flag), like the runtime API.
-  const responsesOn = await flagOnForOwner(c.env, "responses", site.ownerEmail);
+  const isOwner = site.canEditEditors;
+  const name = appName(site);
+  const row = await getSiteById(c.env, site.id);
+  const [activity, responsesOn, preview] = await Promise.all([
+    siteActivity(c.env, site.id, 8),
+    // Responses follow the app's owner (the responses flag), like the runtime API.
+    flagOnForOwner(c.env, "responses", site.ownerEmail),
+    row ? appPreviewText(c.env, row) : Promise.resolve({ title: name, description: "" }),
+  ]);
   const responseCount = responsesOn ? await countResponses(c.env, site.id) : 0;
-  const fact = (label: string, value: string) => `<div><dt>${e(label)}</dt><dd>${value}</dd></div>`;
-  // Change it with AI: the person's own Claude or OpenAI key rewrites the app (app_builder flag).
-  const keys = c.get("features")?.has("app_builder") ? await builderKeys(c.env, user.email) : null;
-  const changeButtons = keys
-    ? (["claude", "openai", "gemini", "grok"] as Builder[])
-        .filter((b) => keys[b])
-        .map((b) => `<button type="button" class="make-btn" data-build="${b}" data-site="${e(site.id)}"><span class="ai-mini">${AI_LOGOS[b === "openai" ? "chatgpt" : b]}</span>Change it with ${BUILDER_LABEL[b]}</button>`)
-        .join("")
-    : "";
-  const changeSection = keys
-    ? `<section class="maker">
-  <h2>Change it with AI</h2>
-  ${
-    changeButtons
-      ? `<p class="muted">Say what to change, in your own words. Your AI rewrites the app and publishes the new version here; its data, sharing and settings stay as they are.</p>
-  <textarea rows="3" maxlength="4000" placeholder="Add a dark mode, and a button to export everything as a spreadsheet" aria-label="What should change?"></textarea>
-  <div class="make-row">${changeButtons}</div>`
-      : `<p class="muted">Add your Claude, OpenAI, Grok or free Gemini API key on <a href="/new">New app</a> (Add your API key), then come back to change this app by describing what you want.</p>`
-  }
-</section>
-
-`
-    : "";
-  // Editors the owner hasn't let share see the sharing fields but can't change them.
+  // Update with AI: the person's own key rewrites the app (app_builder flag).
+  const builderOn = !!c.get("features")?.has("app_builder");
+  const keys = builderOn ? await builderKeys(c.env, user.email) : {};
+  const provider = UPDATE_ORDER.find((b) => keys[b]);
+  const access = accessOf(site);
+  const isPublic = !!site.publicUrl;
   const lock = site.canShare ? "" : " disabled";
-  const body = `<section class="app-head">
-  <p><a href="${mine ? "/" : "/shared"}">← ${mine ? "My apps" : "Shared with me"}</a></p>
-  <div class="app-title">
-    ${thumb(site, "lg")}
-    <div><p class="app-url"><a href="${e(site.url)}" target="_blank" rel="noopener">${e(site.url)}</a></p></div>
-    <a class="cta open-app" href="${e(site.url)}" target="_blank" rel="noopener">Open app ↗</a>
+  const appHost = new URL(site.url).host;
+  const state = {
+    id: site.id,
+    url: site.url,
+    publicUrl: site.publicUrl,
+    title: site.title,
+    fallbackName: site.mountPath || site.namespace,
+    namespace: site.namespace,
+    mountPath: site.mountPath,
+    ownerEmail: site.ownerEmail,
+    me: user.email,
+    allowedEmails: site.allowedEmails,
+    editors: site.editors,
+    sharers: site.sharers,
+    visibility: site.visibility,
+    dataWrites: site.dataWrites,
+    guestResponses: site.guestResponses,
+    linkPreview: site.linkPreview,
+    canShare: site.canShare,
+    isOwner,
+    responsesOn,
+    next: mine ? "/" : "/shared",
+  };
+  const tab = (key: string, label: string, selected = false) =>
+    `<button type="button" role="tab" id="tab-${key}" aria-controls="panel-${key}" aria-selected="${selected}" tabindex="${selected ? 0 : -1}" data-tab="${key}">${label}</button>`;
+  const setting = (key: string, title: string, hint: string, on: boolean, disabled = false, extra = "") =>
+    `<div class="setting"${extra}><div class="setting-text"><strong id="lbl-${key}">${title}</strong><span>${hint}</span></div><label class="switch"><input type="checkbox" role="switch" data-setting="${key}" aria-labelledby="lbl-${key}"${on ? " checked" : ""}${disabled ? " disabled" : ""}><span aria-hidden="true"></span></label></div>`;
+  const dropzone = (open: boolean) => `<div class="dropzone" data-dropzone${open ? "" : " hidden"}>
+    <p><strong>Drop an .html or .zip file here</strong></p>
+    <p class="muted">It replaces the app's files. Data, keys and sharing stay the same.</p>
+    <label class="file-btn"><input type="file" class="sr" accept=".html,.htm,.zip" data-upload-file>Choose file</label>
+  </div>`;
+  const updatePanel = builderOn
+    ? `<h2>What do you want to change?</h2>
+  <p class="muted">Describe it in your own words. Your app's data and sharing stay just as they are.</p>
+  <textarea data-update-prompt rows="4" maxlength="4000" placeholder="Add a dark mode, and a button to export everything as a spreadsheet" aria-label="What do you want to change?"></textarea>
+  <div class="ideas" aria-label="Ideas">${UPDATE_IDEAS.map((i) => `<button type="button" class="idea" data-append-idea="${e(i)}">${e(i)}</button>`).join("")}</div>
+  ${
+    provider
+      ? `<button type="button" class="update-btn" data-update="${provider}">Update with ${BUILDER_LABEL[provider]}</button>`
+      : `<button type="button" class="update-btn" data-dialog="dlg-key-gemini" aria-haspopup="dialog">Add your free Gemini key to update with AI</button>`
+  }
+  <div class="progress" data-progress role="status" hidden><span class="spin-s" aria-hidden="true"></span><span data-progress-text></span></div>
+  <p class="muted upload-alt">Have a file ready? <button type="button" class="linkish" data-show-upload aria-expanded="false">Upload a new version instead</button></p>
+  ${dropzone(false)}
+  ${provider ? "" : keyDialog("gemini", "gemini", keys)}`
+    : `<h2>Upload a new version</h2>
+  <p class="muted">A single <code>.html</code> file, or a <code>.zip</code> with <code>index.html</code> at the top.</p>
+  ${dropzone(true)}`;
+  const acts = activity
+    .map((a) => `<li><span class="act-what">${e(activitySentence(a, user.email))}</span><span class="act-when">${e(ago(a.at))}</span></li>`)
+    .join("");
+  const body = `<div class="app-page" data-app-page data-state="${e(JSON.stringify(state))}">
+<nav class="crumb" aria-label="Breadcrumb"><a href="${mine ? "/" : "/shared"}">${mine ? "My apps" : "Shared with me"}</a> <span aria-hidden="true">/</span> <span data-name-text>${e(name)}</span></nav>
+<section class="hero">
+  ${thumb(site, "lg")}
+  <div class="titlewrap">
+    <div class="titlerow">
+      <input class="title-input" data-title value="${e(site.title ?? "")}" placeholder="${e(state.fallbackName)}" maxlength="200" aria-label="App name">
+      <button type="button" class="star-btn" data-star="${e(site.id)}" aria-pressed="false" aria-label="Star this app" title="Star">${ICON.star(24)}</button>
+    </div>
+    <div class="iconrow">
+      <span class="sharepill ${access.kind}" data-pill>
+        <button type="button" class="sp-access" data-goto-tab="sharing" aria-label="${e(access.label)}. Change who can open it" title="Change who can open it">${access.icon}<span>${e(access.label)}</span></button>
+        <button type="button" class="sp-copy" data-copy-link aria-label="Copy link" title="Copy link">${ICON.link()}</button>
+      </span>
+      <span class="muted" data-updated>Updated ${e(ago(site.updatedAt))}</span>
+    </div>
   </div>
-  <dl class="facts">
-    ${fact("Space", e(site.namespace))}
-    ${fact("Path", e(site.mountPath ? `/${site.mountPath}/` : "/ (the space's root)"))}
-    ${fact("Owner", e(site.ownerEmail))}
-    ${fact("Who can open it", e(VISIBILITY_LABEL[site.visibility] + (site.publicUrl ? ", and anyone with the public link" : "")))}
-    ${fact("Published", e(fmtTime(site.createdAt)))}
-    ${fact("Last updated", e(`${fmtTime(site.updatedAt)} (${ago(site.updatedAt)})`))}
-    ${fact("Size", e(`${fmtBytes(site.totalBytes)} in ${site.fileCount} file${site.fileCount === 1 ? "" : "s"}`))}
-    ${fact("Options", e([site.spa ? "SPA fallback" : "", site.hidden ? "Hidden from listings" : ""].filter(Boolean).join(", ") || "None"))}
-  </dl>
+  <div class="hero-actions">
+    <a class="cta" href="${e(site.url)}" target="_blank" rel="noopener">Open app ${ICON.ext()}</a>
+    <div class="menuwrap">
+      <button type="button" class="icon-btn" data-menu-btn aria-haspopup="menu" aria-expanded="false" aria-controls="app-menu" aria-label="More">${ICON.more()}</button>
+      <div class="menu" id="app-menu" role="menu" hidden>
+        <button type="button" role="menuitem" data-dialog="dlg-install">Add to your phone or computer</button>
+        ${isOwner ? `<hr><button type="button" role="menuitem" class="red" data-dialog="dlg-delete">Delete app</button>` : ""}
+      </div>
+    </div>
+  </div>
 </section>
 
-<section>
-  <h2>Settings and sharing</h2>
-  <form class="stack wide" data-action="site-update" data-id="${e(site.id)}">
-    <label>Title <input name="title" value="${e(site.title ?? "")}" placeholder="${e(appName(site))}"></label>
-    ${site.canShare ? "" : `<p class="muted">Only the owner can change who can open this app (who it's shared with, its public link and link previews). Ask ${e(site.ownerEmail)} if you need it shared.</p>`}
-    <label>Who can open it <select name="visibility"${lock}>${visibilityOptions(site.visibility)}</select></label>
-    <label>Who can change its data <select name="data_writes">
-      <option value="editors"${site.dataWrites === "editors" ? " selected" : ""}>Only the owner and editors</option>
-      <option value="everyone"${site.dataWrites === "everyone" ? " selected" : ""}>Everyone who can open it (polls, sign-ups)</option>
-    </select></label>
-    <label>Link previews (Slack, iMessage, WhatsApp) <select name="link_preview"${lock}>${linkPreviewOptions(site)}</select></label>
-    <p class="muted">Chat apps show a preview when someone shares this app's link. They don't sign in, so a full preview shows the app's name, description and picture to everyone in the chat, even people who can't open it. A private card only says it's a private app on Formelab.</p>
-    <label>Share with (can open) <input name="allowed_emails"${lock} value="${e(site.allowedEmails.join(", "))}" placeholder="friend@example.com, ..."></label>
+<div class="tabbar" role="tablist" aria-label="App settings">
+  ${tab("sharing", "Sharing", true)}${tab("update", "Update")}${tab("activity", "Activity")}
+</div>
+
+<section class="panel" id="panel-sharing" role="tabpanel" aria-labelledby="tab-sharing">
+  <div class="block">
+    <div class="block-head">
+      <h2>Who can open it</h2>
+      <div class="seg" role="group" aria-label="Who can open it">
+        <button type="button" aria-pressed="${!isPublic}" data-access-choice="invite"${lock}>${ICON.lock()}Invited only</button>
+        <button type="button" aria-pressed="${isPublic}" data-access-choice="public"${lock}>${ICON.globe()}Public</button>
+      </div>
+    </div>
+    ${site.canShare ? "" : `<p class="note">Only ${e(site.ownerEmail)} and the app's Admins can change who can open it.</p>`}
+    <p class="muted" data-invite-hint${isPublic ? " hidden" : ""}>Only you and the people you invite below. They sign in to open it.</p>
+    <p class="note" data-members-note${!isPublic && site.visibility === "all" ? "" : " hidden"}>Anyone signed in to Formelab can open it too.${site.canShare ? ` <button type="button" class="linkish" data-limit>Limit it to people you invite</button>` : ""}</p>
+    <div class="pub-warn" data-public-warn${isPublic ? "" : " hidden"}>${ICON.alert()}<span><strong>Anyone with the link can open this app, no sign-in needed.</strong> They can see everything in it, including its data. Only share the link with people you trust. If it gets passed around, reset it below.</span></div>
+    <div class="linkbox" data-linkbox${isPublic ? "" : " hidden"}>
+      <code data-public-url>${e(site.publicUrl ?? "")}</code>
+      <button type="button" class="small" data-copy-public>Copy link</button>
+      <button type="button" class="small secondary" data-dialog="dlg-reset"${lock}>Reset link</button>
+    </div>
+    <div class="subblock">
+      <h3 class="subhead">What they can do</h3>
+      ${setting("dataWrites", "Viewers can add and change the app's data", "For polls, sign-up sheets and shared lists. When off, only you, Editors and Admins can.", site.dataWrites === "everyone")}
+      ${responsesOn ? setting("guestResponses", "Anyone with the link can send answers", "No sign-in needed. For forms, sign-ups and RSVPs. Only you and your team see what people send.", site.guestResponses, !site.canShare, ` data-guest-row${isPublic ? "" : " hidden"}`) : ""}
+    </div>
+    <div class="subblock">
+      <h3 class="subhead">Link preview in chats</h3>
+      <div class="lp-wrap">
+        <div class="lp" data-preview="full"${site.linkPreview === "full" ? "" : " hidden"}>
+          <div class="lp-img ${hueClass(site.id)}">${thumb(site, "lg")}<span class="lp-appname" data-name-text>${e(name)}</span></div>
+          <div class="lp-body"><strong data-name-text>${e(name)}</strong><span>${e(preview.description || "Made on Formelab.")}</span><span>${e(appHost)}</span></div>
+        </div>
+        <div class="lp" data-preview="private"${site.linkPreview === "private" ? "" : " hidden"}>
+          <div class="lp-img brand"><span class="lp-logo"><span class="mark"></span>Formelab</span><span class="lp-tag">${ICON.lock(14)} A private app. Sign in to open it.</span></div>
+          <div class="lp-body"><strong>A private app on Formelab</strong><span>Sign in to Formelab to open it.</span><span>${e(appHost)}</span></div>
+        </div>
+        <p class="muted lp-note" data-preview-note>${e(previewNote(site))}</p>
+      </div>
+    </div>
+  </div>
+  <div class="block">
+    <h2>People</h2>
+    <p class="muted">Invite by email and choose what each person can do. They'll find it under Shared with me.</p>
     ${
-      site.canEditEditors
-        ? `<label>Editors (can update it) <input name="editors" value="${e(site.editors.join(", "))}" placeholder="teammate@example.com, ..."></label>
-    <label>Editors who can also share it <input name="sharers" value="${e(site.sharers.join(", "))}" placeholder="Some of the editors above, or leave empty"></label>
-    <p class="muted">Editors can update the app. Only you, and the editors you list here, can change who can open it. Only you can delete it.</p>`
-        : `<p class="muted">Editors: ${e(site.editors.join(", ") || "none")}. Only the owner can change them.</p>`
-    }
-    ${
-      mine && c.get("features")?.has("connected_apps")
-        ? `<label>Google Sheets it can use (links or ids, one per line) <textarea name="sheets" rows="3" placeholder="https://docs.google.com/spreadsheets/d/...">${e(site.sheets.join("\n"))}</textarea></label>`
+      site.canShare
+        ? `<form class="invite" data-invite>
+      <input type="text" name="emails" inputmode="email" autocomplete="off" placeholder="name@example.com, another@example.com" aria-label="Email addresses to invite">
+      <button type="button" class="rp-btn invite-role" data-invite-role data-role="viewer" data-roles="${isOwner ? "viewer,editor,admin" : "viewer"}" aria-haspopup="listbox" aria-expanded="false" aria-label="Role"><span>Viewer</span>${ICON.chevron()}</button>
+      <button>Invite</button>
+    </form>`
         : ""
     }
-    <label class="check"><input type="checkbox" name="spa"${site.spa ? " checked" : ""}> SPA fallback (send unknown addresses in the app to its index.html)</label>
-    <label class="check"><input type="checkbox" name="hidden"${site.hidden ? " checked" : ""}> Hidden from listings</label>
-    <div><button>Save</button></div>
-  </form>
+    <ul class="people" data-people>${peopleRows(site, user.email, isOwner, site.canShare)}</ul>
+  </div>
 </section>
 
-${site.canShare ? publicLinkSection(site, responsesOn) : ""}${
-  responsesOn
-    ? `<section>
-  <h2>Responses</h2>
-  <p class="muted">What people sent this app with <code>formelab.responses.submit()</code>: form answers, sign-ups, feedback. Only you and its editors can see them.</p>
-  <p>${responseCount === 0 ? "No responses yet." : `${responseCount} response${responseCount === 1 ? "" : "s"}. <a href="/apps/${e(encodeURIComponent(site.id))}/responses.csv" download>Download as a spreadsheet (CSV)</a>`}</p>
+<section class="panel" id="panel-update" role="tabpanel" aria-labelledby="tab-update" hidden>
+  ${updatePanel}
 </section>
 
-`
-    : ""
-}<section>
-  <h2>Install on your devices</h2>
-  <p class="muted">Open the app on your phone or computer, then add it to your home screen or install it from your browser. It gets its own icon and opens in its own window, straight to the app. Everyone it's shared with can do the same.</p>
-  <p class="install-actions"><a class="ghost" href="${e(site.url)}" target="_blank" rel="noopener">Open app ↗</a> <a href="/install">How to install →</a></p>
-</section>
-
-${changeSection}<section>
-  <h2>Publish a new version</h2>
-  <p class="muted">Upload a new <code>.html</code> or <code>.zip</code>. It replaces the app's files; its data, secrets and sharing stay as they are.</p>
-  <form class="inline" data-action="site-replace" data-namespace="${e(site.namespace)}" data-mount="${e(site.mountPath)}">
-    <input type="file" name="file" accept=".html,.htm,.zip" required aria-label="New version">
-    <button>Publish</button>
-  </form>
-</section>
-
-<section>
+<section class="panel" id="panel-activity" role="tabpanel" aria-labelledby="tab-activity" hidden>
   <h2>Recent activity</h2>
-  ${activity ? `<div class="scroll"><table><tbody>${activity}</tbody></table></div>` : `<p class="muted">Nothing yet.</p>`}
-  <p><a href="/apps/${e(encodeURIComponent(site.id))}/activity">See all activity →</a></p>
+  ${acts ? `<ol class="acts">${acts}</ol>` : `<p class="muted">Nothing yet.</p>`}
+  ${
+    responseCount
+      ? `<p class="muted">People sent this app ${responseCount} answer${responseCount === 1 ? "" : "s"}. <a href="/apps/${e(encodeURIComponent(site.id))}/responses.csv" download>Download them as a spreadsheet</a></p>`
+      : ""
+  }
+  <p><a href="/apps/${e(encodeURIComponent(site.id))}/activity">See all activity</a></p>
 </section>
+</div>
 
+<dialog id="dlg-reset" class="howto-dialog confirm" aria-labelledby="dlg-reset-title">
+  <div class="howto">
+    <h2 id="dlg-reset-title">Reset the link?</h2>
+    <p>You'll get a new link. The current one stops working right away, including for people who already opened it.</p>
+    <div class="dialog-actions"><button type="button" class="secondary" data-close>Cancel</button><button type="button" data-reset-go>Reset link</button></div>
+  </div>
+</dialog>
+
+<dialog id="dlg-install" class="howto-dialog" aria-labelledby="dlg-install-title">
+  <form method="dialog" class="dialog-close"><button aria-label="Close">×</button></form>
+  <div class="howto">
+    <h2 id="dlg-install-title">Add it to your phone or computer</h2>
+    <p>Open the app, then add it to your home screen or install it from your browser. It gets its own icon and opens straight to the app. Everyone it's shared with can do the same.</p>
+    ${installSteps(name)}
+    <div class="dialog-actions"><a class="cta" href="${e(site.url)}" target="_blank" rel="noopener">Open app ${ICON.ext()}</a></div>
+  </div>
+</dialog>
 ${
-  mine || site.canEditEditors
-    ? `<section class="danger-zone">
-  <h2>Delete this app</h2>
-  <p class="muted">Removes its files, data and secrets for good. Its address stops working.</p>
-  <button class="danger" data-action="site-delete" data-id="${e(site.id)}" data-mount="${e(site.mountPath)}" data-namespace="${e(site.namespace)}" data-next="/">Delete app</button>
-</section>`
+  isOwner
+    ? `
+<dialog id="dlg-delete" class="howto-dialog confirm" aria-labelledby="dlg-delete-title">
+  <div class="howto">
+    <h2 id="dlg-delete-title">Delete <span data-name-text>${e(name)}</span>?</h2>
+    <p>This removes its files, data and keys for good, and its address stops working. This can't be undone.</p>
+    <label class="confirm-label"><span>Type <strong data-name-text>${e(name)}</strong> to confirm</span><input data-delete-input autocomplete="off" spellcheck="false"></label>
+    <div class="dialog-actions"><button type="button" class="secondary" data-close>Keep it</button><button type="button" class="danger-solid" data-delete-go disabled>Delete forever</button></div>
+  </div>
+</dialog>`
     : ""
 }`;
-  return shell(c, user, mine ? "apps" : "shared", body, appName(site));
+  return shell(c, user, mine ? "apps" : "shared", body, name, { pageHead: false });
 }
 
-/** My apps: the apps you own, as tiles grouped by space or a list. */
+/** My apps: the apps you own, as cards, starred ones first. */
 export async function dashboardPage(c: Context<AppEnv>): Promise<Response> {
   const ctx = ctxOf(c);
   if (!ctx.user.active) return sharedPage(c);
   const sites = await listOwnSites(ctx);
   const body = sites.length
-    ? `<section>${appBrowser(sites.map((s) => ({ ...s, canManage: true })), { shared: false })}</section>`
+    ? appBrowser(sites.map((s) => ({ ...s, canManage: true })), { shared: false })
     : `<section class="empty">
   <h2>What do you want to make?</h2>
   <p>A budget tracker, a sign-up sheet for your team, a tiny game. Describe it to your AI and it lands here, live.</p>
@@ -447,6 +525,70 @@ const IDEAS = [
   "A habit tracker with a streak for each habit",
 ];
 
+const KEY_HELP: Record<Builder, { org: string; site: string; placeholder: string; intro: string; steps: string }> = {
+  claude: {
+    org: "Anthropic",
+    site: "console.anthropic.com",
+    placeholder: "sk-ant-…",
+    intro: "What it uses is billed to your own Anthropic account.",
+    steps: "<li>Make sure the account has credits. This is separate from a Claude Pro or Max plan.</li>",
+  },
+  openai: {
+    org: "OpenAI",
+    site: "platform.openai.com",
+    placeholder: "sk-…",
+    intro: "What it uses is billed to your own OpenAI account.",
+    steps: "<li>Make sure the account has credits or billing set up. This is separate from a ChatGPT Plus or Pro plan.</li>",
+  },
+  gemini: {
+    org: "Google",
+    site: "Google AI Studio",
+    placeholder: "AIza… or AQ.…",
+    intro: "Google's free tier is enough to build apps: no credit card needed. It allows a few builds a minute and a daily limit, and Google may use free-tier requests to improve its products.",
+    steps: "<li>Click <strong>Create API key</strong>. You don't need to set up billing.</li>",
+  },
+  grok: {
+    org: "xAI",
+    site: "console.x.ai",
+    placeholder: "xai-…",
+    intro: "What it uses is billed to your own xAI account.",
+    steps: "<li>Make sure the account has credits. This is separate from a SuperGrok or X Premium plan.</li><li>Open <strong>API Keys</strong>.</li>",
+  },
+};
+
+/** Gemini only builds here (its app can't be opened with an idea typed in). */
+const buildsHereOnly = (b: Builder) => b === "gemini";
+
+/** The dialog for saving (or removing) the person's own API key for a builder. */
+function keyDialog(b: Builder, app: AiApp, keys: Partial<Record<Builder, { hint: string }>>): string {
+  const who = BUILDERS[b];
+  const help = KEY_HELP[b];
+  const name = BUILDER_LABEL[b];
+  return `<dialog id="dlg-key-${b}" class="howto-dialog" aria-labelledby="dlg-key-${b}-title">
+  <form method="dialog" class="dialog-close"><button aria-label="Close">×</button></form>
+  <div class="howto">
+    <div class="dialog-head"><span class="ai-logo">${AI_LOGOS[app]}</span><h2 id="dlg-key-${b}-title">Build with ${name} right here</h2></div>
+    <p>Paste an API key once. After that, <strong>Make it</strong> builds your app here and publishes it${buildsHereOnly(b) ? "" : `, with nothing to set up in the ${name} app`}. ${help.intro}</p>
+    <ol>
+      <li>Open <a href="${who.keyUrl}" target="_blank" rel="noopener">${help.site}</a> and sign in${b === "gemini" ? " with Google" : ""}.</li>
+      ${help.steps}
+      <li>${b === "gemini" ? "Copy the key" : "Create a key, copy it,"} and paste it below.</li>
+    </ol>
+    <form class="inline" data-action="builder-connect" data-provider="${b}">
+      <input name="apiKey" type="password" autocomplete="off" required placeholder="${help.placeholder}" aria-label="${help.org} API key">
+      <button>Save key</button>
+    </form>
+    <p class="muted">The key is encrypted and Formelab never shows it again.${
+      b === "gemini"
+        ? " It's the same key as Google Gemini under Connected apps: save or remove it in either place and it changes in both. Your apps can use it for AI features there."
+        : " It's only used when you press Make it or Update."
+    }</p>
+    ${keys[b] ? `<p><button type="button" class="danger" data-action="builder-disconnect" data-provider="${b}">Remove my key …${e(keys[b]!.hint)}</button></p>` : ""}
+    ${keys[b] || buildsHereOnly(b) ? "" : `<p class="muted">Rather use the ${name} app? <button type="button" class="linkish" data-make="${app}">Open it with your idea typed in</button> (needs <a href="/connect#${app}">Formelab connected</a> there).</p>`}
+  </div>
+</dialog>`;
+}
+
 /** New app: describe it and hand it to your AI (the easy path), or upload files you already have. */
 export async function newAppPage(c: Context<AppEnv>): Promise<Response> {
   const ctx = ctxOf(c);
@@ -474,9 +616,8 @@ export async function newAppPage(c: Context<AppEnv>): Promise<Response> {
     { b: "gemini", app: "gemini", label: "Make it with Gemini" },
     { b: "grok", app: "grok", label: "Make it with Grok" },
   ];
-  // Gemini only builds here (its app can't be opened with an idea typed in), so it shows only with the flag.
-  const buildsHereOnly = (b: Builder) => b === "gemini";
   const appName: Record<string, string> = { claude: "Claude", chatgpt: "ChatGPT", grok: "Grok" };
+  // Gemini only builds here, so it shows only with the flag.
   const makers = MAKERS.filter(({ b }) => builderOn || !buildsHereOnly(b)).map(({ b, app, label }) => {
     const key = keys[b];
     // Opening the Claude or ChatGPT app with the idea typed in, for people who connected it.
@@ -496,64 +637,7 @@ export async function newAppPage(c: Context<AppEnv>): Promise<Response> {
         : `<button type="button" class="linkish muted" data-dialog="dlg-key-${b}" aria-haspopup="dialog">${b === "gemini" ? "Add your free API key" : "Add your API key"}</button>`;
     return `<div class="make">${btn}${note}</div>`;
   }).join("\n    ");
-  const KEY_HELP: Record<Builder, { org: string; site: string; placeholder: string; intro: string; steps: string }> = {
-    claude: {
-      org: "Anthropic",
-      site: "console.anthropic.com",
-      placeholder: "sk-ant-…",
-      intro: "What it uses is billed to your own Anthropic account.",
-      steps: "<li>Make sure the account has credits. This is separate from a Claude Pro or Max plan.</li>",
-    },
-    openai: {
-      org: "OpenAI",
-      site: "platform.openai.com",
-      placeholder: "sk-…",
-      intro: "What it uses is billed to your own OpenAI account.",
-      steps: "<li>Make sure the account has credits or billing set up. This is separate from a ChatGPT Plus or Pro plan.</li>",
-    },
-    gemini: {
-      org: "Google",
-      site: "Google AI Studio",
-      placeholder: "AIza… or AQ.…",
-      intro: "Google's free tier is enough to build apps: no credit card needed. It allows a few builds a minute and a daily limit, and Google may use free-tier requests to improve its products.",
-      steps: "<li>Click <strong>Create API key</strong>. You don't need to set up billing.</li>",
-    },
-    grok: {
-      org: "xAI",
-      site: "console.x.ai",
-      placeholder: "xai-…",
-      intro: "What it uses is billed to your own xAI account.",
-      steps: "<li>Make sure the account has credits. This is separate from a SuperGrok or X Premium plan.</li><li>Open <strong>API Keys</strong>.</li>",
-    },
-  };
-  const keyDialogs = (builderOn ? MAKERS : []).map(({ b, app }) => {
-    const who = BUILDERS[b];
-    const help = KEY_HELP[b];
-    const name = BUILDER_LABEL[b];
-    return `<dialog id="dlg-key-${b}" class="howto-dialog" aria-labelledby="dlg-key-${b}-title">
-  <form method="dialog" class="dialog-close"><button aria-label="Close">×</button></form>
-  <div class="howto">
-    <div class="dialog-head"><span class="ai-logo">${AI_LOGOS[app]}</span><h2 id="dlg-key-${b}-title">Build with ${name} right here</h2></div>
-    <p>Paste an API key once. After that, <strong>Make it</strong> builds your app here and publishes it${buildsHereOnly(b) ? "" : `, with nothing to set up in the ${name} app`}. ${help.intro}</p>
-    <ol>
-      <li>Open <a href="${who.keyUrl}" target="_blank" rel="noopener">${help.site}</a> and sign in${b === "gemini" ? " with Google" : ""}.</li>
-      ${help.steps}
-      <li>${b === "gemini" ? "Copy the key" : "Create a key, copy it,"} and paste it below.</li>
-    </ol>
-    <form class="inline" data-action="builder-connect" data-provider="${b}">
-      <input name="apiKey" type="password" autocomplete="off" required placeholder="${help.placeholder}" aria-label="${help.org} API key">
-      <button>Save key</button>
-    </form>
-    <p class="muted">The key is encrypted and Formelab never shows it again.${
-      b === "gemini"
-        ? " It's the same key as Google Gemini under Connected apps: save or remove it in either place and it changes in both. Your apps can use it for AI features there."
-        : " It's only used when you press Make it or Change it."
-    }</p>
-    ${keys[b] ? `<p><button type="button" class="danger" data-action="builder-disconnect" data-provider="${b}">Remove my key …${e(keys[b]!.hint)}</button></p>` : ""}
-    ${keys[b] || buildsHereOnly(b) ? "" : `<p class="muted">Rather use the ${name} app? <button type="button" class="linkish" data-make="${app}">Open it with your idea typed in</button> (needs <a href="/connect#${app}">Formelab connected</a> there).</p>`}
-  </div>
-</dialog>`;
-  }).join("\n");
+  const keyDialogs = (builderOn ? MAKERS : []).map(({ b, app }) => keyDialog(b, app, keys)).join("\n");
   const body = `<section class="maker">
   <p class="eyebrow">The easy way</p>
   <h2>What do you want to make?</h2>

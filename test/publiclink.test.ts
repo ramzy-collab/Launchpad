@@ -111,7 +111,7 @@ describe("public links: anyone with the link", () => {
     expect(shared).not.toContain("/_platform/link/");
 
     const settings = await (await call(`/app/apps/${site.id}`, { as: OWNER })).text();
-    expect(settings).toContain("Public link");
+    expect(settings).toContain("Who can open it");
     expect(settings).toContain("/_platform/link/");
 
     const activity = await (await call(`/app/apps/${site.id}/activity`, { as: OWNER })).text();

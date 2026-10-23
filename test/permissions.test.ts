@@ -29,15 +29,16 @@ describe("who can share and delete an app (audit #10)", () => {
       expect((await patch(who, { visibility: "restricted", allowed_emails: "", title: "Same sharing" })).status).toBe(200);
     }
     const page = await (await call(`/app/apps/${id}`, { as: ed })).text();
-    expect(page).toContain('name="visibility" disabled');
-    expect(page).not.toContain('data-action="public-link"');
-    expect(page).not.toContain('name="sharers"');
+    expect(page).toContain('data-access-choice="public" disabled');
+    expect(page).toContain('data-dialog="dlg-reset" disabled');
+    expect(page).not.toContain("data-invite>");
+    expect(page).not.toContain('data-roles="viewer,editor,admin"');
 
     // Only the owner chooses who may share, and only among the editors.
     expect((await patch(ed, { sharers: ed })).status).toBe(403);
     expect((await patch(OWNER, { sharers: "stranger@example.com" })).status).toBe(400);
     expect((await (await patch(OWNER, { sharers: sharer })).json<View>()).sharers).toEqual([sharer]);
-    expect(await (await call(`/app/apps/${id}`, { as: OWNER })).text()).toContain('name="sharers"');
+    expect(await (await call(`/app/apps/${id}`, { as: OWNER })).text()).toContain('data-roles="viewer,editor,admin"');
     const shared = await (await patch(sharer, { visibility: "all", allowed_emails: "friend@example.com", public_link: true })).json<View>();
     expect(shared).toMatchObject({ visibility: "all", allowedEmails: ["friend@example.com"] });
     expect(shared.publicUrl).toBeTruthy();

@@ -132,7 +132,7 @@ describe("responses", () => {
     await patch({ guest_responses_per_day: 0 });
     expect((await send("192.0.2.5")).status).toBe(429);
     const page = await (await call(`/app/apps/${site.id}`, { as: OWNER })).text();
-    expect(page).toContain('data-action="guest-cap"');
+    expect(page).not.toContain("guest_responses_per_day"); // the cap stays, without a control
     const activity = await (await call(`/app/apps/${site.id}/activity`, { as: OWNER })).text();
     expect(activity).toContain("at most 0 responses a day");
   });
@@ -154,11 +154,11 @@ describe("responses", () => {
     expect((await call(`/app/apps/${site.id}/responses.csv`, { as: "viewer@example.com" })).status).toBe(404);
 
     const page = await (await call(`/app/apps/${site.id}`, { as: OWNER })).text();
-    expect(page).toContain("2 responses");
+    expect(page).toContain("People sent this app 2 answers.");
     expect(page).toContain("responses.csv");
 
     await patch({ public_link: true });
-    expect(await (await call(`/app/apps/${site.id}`, { as: OWNER })).text()).toContain('data-action="guest-responses"');
+    expect(await (await call(`/app/apps/${site.id}`, { as: OWNER })).text()).toContain('data-setting="guestResponses"');
     await patch({ guest_responses: true });
     const activity = await (await call(`/app/apps/${site.id}/activity`, { as: OWNER })).text();
     expect(activity).toContain("Let people with the public link send responses");
@@ -201,7 +201,7 @@ describe("the responses feature flag", () => {
       await patch({ public_link: true });
       const page = await (await call(`/app/apps/${site.id}`, { as: OWNER })).text();
       expect(page).not.toContain("<h2>Responses</h2>");
-      expect(page).not.toContain('data-action="guest-responses"');
+      expect(page).not.toContain('data-setting="guestResponses"');
       expect((await call(`/app/apps/${site.id}/responses.csv`, { as: OWNER })).status).toBe(404);
 
       const guide = await (await call("/_platform/guide.md", { as: OWNER })).text();
