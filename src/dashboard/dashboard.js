@@ -1059,4 +1059,175 @@
 
     render();
   }
+
+  // ---------- A test plan in the admin panel: a result for each case ----------
+  var tpPage = document.querySelector("[data-test-plan]");
+  if (tpPage) initTestPlan(tpPage);
+
+  function initTestPlan(root) {
+    var slug = root.dataset.testPlan;
+    var rows = Array.prototype.slice.call(root.querySelectorAll("tr[data-case]"));
+    var results = {};
+    var filter = "all";
+    rows.forEach(function (tr) {
+      var on = tr.querySelector('[data-result][aria-pressed="true"]');
+      var note = tr.querySelector(".tp-note");
+      if (on) results[tr.dataset.case] = { status: on.dataset.result, notes: note ? note.textContent : "" };
+    });
+
+    function render() {
+      var n = { pass: 0, fail: 0, blocked: 0, todo: 0 };
+      rows.forEach(function (tr) {
+        var r = results[tr.dataset.case];
+        var s = r ? r.status : "todo";
+        n[s]++;
+        tr.dataset.status = s;
+        tr.querySelectorAll("[data-result]").forEach(function (b) { b.setAttribute("aria-pressed", r && r.status === b.dataset.result ? "true" : "false"); });
+        var td = tr.querySelector("td.res");
+        if (!td.querySelector("textarea")) {
+          var note = td.querySelector(".tp-note");
+          if (r && r.notes) {
+            if (!note) { note = document.createElement("div"); note.className = "tp-note"; td.insertBefore(note, td.querySelector("[data-note]")); }
+            note.textContent = r.notes;
+          } else if (note) note.remove();
+          td.querySelector("[data-note]").textContent = r && r.notes ? "Edit note" : "Add note";
+        }
+        tr.hidden = filter !== "all" && filter !== s;
+      });
+      n.all = rows.length;
+      root.querySelectorAll("[data-tp-count]").forEach(function (b) { b.textContent = n[b.dataset.tpCount]; });
+      var bar = root.querySelector("[data-tp-bar]");
+      ["pass", "fail", "blocked"].forEach(function (s) { bar.querySelector("." + s).style.width = (rows.length ? (n[s] / rows.length) * 100 : 0) + "%"; });
+      bar.setAttribute("aria-label", n.pass + " passed, " + n.fail + " failed, " + n.blocked + " blocked, " + n.todo + " not run");
+      // With a filter on, hide the case tables (and their section headings) left with no rows.
+      root.querySelectorAll(".tp-table.has-cases").forEach(function (t) { t.hidden = !t.querySelector("tr[data-case]:not([hidden])"); });
+      root.querySelector(".tp-doc").classList.toggle("filtered", filter !== "all");
+      root.querySelectorAll(".tp-doc h2").forEach(function (h) {
+        var el = h.nextElementSibling, any = false;
+        while (el && el.tagName !== "H2") { if (el.classList.contains("has-cases") && !el.hidden) any = true; el = el.nextElementSibling; }
+        h.classList.toggle("tp-empty", filter !== "all" && !any);
+      });
+    }
+
+    function save(cases, source) {
+      return api("PUT", "/test-plans/" + encodeURIComponent(slug) + "/results", { cases: cases, source: source || "page" }).then(function (r) {
+        results = {};
+        Object.keys(r.results).forEach(function (id) { results[id] = { status: r.results[id].status, notes: r.results[id].notes }; });
+        render();
+        return r;
+      }, function (e) { toast(e.message, true); render(); throw e; });
+    }
+
+    root.addEventListener("click", function (ev) {
+      var b = ev.target.closest("[data-result]");
+      if (b) {
+        var id = b.closest("tr").dataset.case;
+        var prev = results[id];
+        // Clicking the chosen result again clears it.
+        var status = prev && prev.status === b.dataset.result ? "" : b.dataset.result;
+        var c = {}; c[id] = { status: status, notes: prev ? prev.notes : "" };
+        save(c).then(function () { toast(status ? id + ": " + b.textContent : id + " cleared"); }, function () {});
+        return;
+      }
+      var nb = ev.target.closest("[data-note]");
+      if (nb) {
+        var tr = nb.closest("tr");
+        var cid = tr.dataset.case;
+        if (!results[cid]) { toast("Pick Pass, Fail or Blocked first, then add a note.", true); return; }
+        var td = nb.closest("td");
+        var old = td.querySelector(".tp-note");
+        if (old) old.remove();
+        nb.hidden = true;
+        var ta = document.createElement("textarea");
+        ta.className = "tp-note-edit";
+        ta.rows = 3;
+        ta.maxLength = 2000;
+        ta.setAttribute("aria-label", "Note for " + cid);
+        ta.value = results[cid].notes || "";
+        td.appendChild(ta);
+        ta.focus();
+        var done = false;
+        var finish = function (keep) {
+          if (done) return;
+          done = true;
+          var notes = ta.value.trim();
+          ta.remove();
+          nb.hidden = false;
+          if (!keep || notes === (results[cid].notes || "")) { render(); return; }
+          var c2 = {}; c2[cid] = { status: results[cid].status, notes: notes };
+          save(c2).then(function () { toast("Note saved on " + cid); }, function () {});
+        };
+        ta.addEventListener("blur", function () { finish(true); });
+        ta.addEventListener("keydown", function (k) { if (k.key === "Escape") { k.preventDefault(); finish(false); nb.focus(); } });
+        return;
+      }
+      var f = ev.target.closest("[data-tp-filter]");
+      if (f) {
+        filter = f.dataset.tpFilter;
+        root.querySelectorAll("[data-tp-filter]").forEach(function (x) { x.setAttribute("aria-pressed", x === f ? "true" : "false"); });
+        render();
+        return;
+      }
+      var t = ev.target.closest("[data-tp-toggle]");
+      if (t) {
+        var panel = document.getElementById(t.dataset.tpToggle);
+        var open = panel.hidden;
+        root.querySelectorAll(".tp-panel").forEach(function (p) { p.hidden = true; });
+        root.querySelectorAll("[aria-controls]").forEach(function (x) { if (x.dataset.tpToggle) x.setAttribute("aria-expanded", "false"); });
+        panel.hidden = !open;
+        var opener = root.querySelector('[aria-controls="' + panel.id + '"]');
+        if (opener) opener.setAttribute("aria-expanded", open ? "true" : "false");
+        if (open) { var field = panel.querySelector("textarea, button"); if (field) field.focus(); } else if (opener) opener.focus();
+        return;
+      }
+      if (ev.target.closest("[data-tp-import]")) {
+        var known = {};
+        rows.forEach(function (r) { known[r.dataset.case] = true; });
+        var cases = {}, count = 0, skipped = 0;
+        document.getElementById("tp-import-text").value.split("\n").forEach(function (line) {
+          var m = line.replace(/^[\s*-]+/, "").match(/^\[?([A-Za-z]{2}-\d{2})\]?\s*[|:,\t]\s*(pass(?:ed)?|fail(?:ed)?|blocked)\b\s*(?:[|:,\t-]\s*(.*))?$/i);
+          if (!m || !known[m[1].toUpperCase()]) { if (line.trim()) skipped++; return; }
+          var status = m[2].toLowerCase();
+          status = status.indexOf("pass") === 0 ? "pass" : status.indexOf("fail") === 0 ? "fail" : "blocked";
+          cases[m[1].toUpperCase()] = { status: status, notes: (m[3] || "").trim() };
+          count++;
+        });
+        if (!count) { toast("No results found. Use one line per case, like MA-04 | fail | what happened.", true); return; }
+        save(cases, "import").then(function () {
+          document.getElementById("tp-import-text").value = "";
+          document.getElementById("tp-import").hidden = true;
+          toast("Saved " + count + " result" + (count === 1 ? "" : "s") + (skipped ? ", skipped " + skipped + " line" + (skipped === 1 ? "" : "s") : ""));
+        }, function () {});
+        return;
+      }
+      if (ev.target.closest("[data-tp-clear]")) {
+        api("DELETE", "/test-plans/" + encodeURIComponent(slug) + "/results").then(function () {
+          results = {};
+          document.getElementById("tp-clear").hidden = true;
+          render();
+          toast("Results cleared. Ready for a new run.");
+        }, function (e) { toast(e.message, true); });
+        return;
+      }
+      if (ev.target.closest("[data-tp-copy]")) {
+        var text = [
+          "You're testing a Formelab change in a real browser. Work through the test plan below and report every case.",
+          "",
+          "When you finish, reply with one line per case in exactly this format, so the results can be pasted into the plan's Import results box:",
+          "ID | pass | optional note",
+          "ID | fail | what happened instead, with the browser and screen size",
+          "ID | blocked | what's missing",
+          "Put your summary and the detailed failure reports after those lines.",
+          "",
+          "If you're working in a browser signed in to the Formelab admin panel as an admin, you can also record each result directly on the plan's page: " + location.origin + location.pathname,
+          "",
+          "---",
+          "",
+          document.getElementById("tp-markdown").value
+        ].join("\n");
+        copyText(text, "Copied the plan and how to report back. Paste it into Claude.");
+      }
+    });
+    render();
+  }
 })();

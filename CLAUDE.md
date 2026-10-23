@@ -12,15 +12,17 @@ internal fixes):
      are failures; only touch test data).
    - Setup: the accounts, feature flags and test apps to prepare, and where to test (a test deploy
      or `wrangler dev --env dev --var DEV_USER:<email>`, never production data).
-   - Cases grouped by area, each with an ID (`AREA-NN`), exact steps and the expected result,
+   - Cases grouped by area, each with an ID of two letters and two digits (`MA-04`), exact steps and the expected result,
      covering the happy path, every role and permission, edge cases and errors, phone width,
      keyboard and screen reader use, light and dark mode, and regressions in pages that share code.
    - A report format with severities (blocker, major, minor, cosmetic).
-2. Add one line to that feature's `CHANGELOG.md` entry, linking the plan:
-   `- **Test plan:** [<Feature name>](https://github.com/ramzy-collab/Launchpad/blob/main/docs/test-plans/<file>.md), N browser test cases to hand to Claude Cowork.`
-   The admin panel's Changelog renders the link.
-3. Link the plan in the PR description, and also publish it as a page with a "Copy plan for
-   Cowork" button when the session can publish artifacts, and give Ramzy the link.
+2. The plan shows up in the admin panel under **Test plans** (`/test-plans/<file name without .md>`)
+   once deployed: the files are bundled at build time, and results are recorded there (Pass, Fail,
+   Blocked and a note per case, or pasted in with Import results). Case IDs must look like `MA-04`
+   and sit in tables whose first column is headed `ID`, or the page can't track them.
+3. Add one line to that feature's `CHANGELOG.md` entry, linking the plan's admin page:
+   `- **Test plan:** [<Feature name>](/test-plans/<file name without .md>), N browser test cases to hand to Claude Cowork.`
+4. Link the plan's admin page in the PR description.
 
 ## UI copy
 

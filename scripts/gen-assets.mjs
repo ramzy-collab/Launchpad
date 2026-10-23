@@ -3,7 +3,7 @@
 // into src/generated/assets.ts so both wrangler (esbuild) and vitest (vite)
 // can import them without loader-specific configuration.
 import { createHash } from "node:crypto";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -48,6 +48,15 @@ export function generateAssets() {
     hash.update(body);
     out += `export const ${name} = ${JSON.stringify(body.toString("base64"))};\n`;
   }
+  // Feature test plans (docs/test-plans/*.md), by file name without .md, for the admin panel.
+  const plansDir = join(root, "docs/test-plans");
+  const plans = {};
+  for (const file of readdirSync(plansDir).filter((f) => f.endsWith(".md")).sort()) {
+    const body = readFileSync(join(plansDir, file), "utf8");
+    hash.update(body);
+    plans[file.slice(0, -3)] = body;
+  }
+  out += `export const TEST_PLANS: Record<string, string> = ${JSON.stringify(plans)};\n`;
   // Added to asset URLs (?v=...) so browsers fetch new scripts and styles right after a deploy.
   out += `export const ASSET_VERSION = ${JSON.stringify(hash.digest("hex").slice(0, 10))};\n`;
   const target = join(root, "src/generated/assets.ts");

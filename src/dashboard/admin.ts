@@ -11,11 +11,12 @@ import { plainPage } from "../serve";
 import { adminStats, listUsers } from "../users";
 import { escapeHtml as e } from "../util";
 import { listWaitlist } from "../waitlist";
+import { getPlan, inlineMarkdown, listPlans, planResults, RESULT_STATUSES, renderPlan, resultCounts } from "../testplans";
 import { head, htmlResponse } from "./layout";
 import { metricsBody } from "./metrics";
 import { fmtTime, logoutControl, MENU_ICON } from "./page";
 
-type Tab = "overview" | "metrics" | "users" | "waitlist" | "features" | "activity" | "changelog" | "vendors";
+type Tab = "overview" | "metrics" | "users" | "waitlist" | "features" | "activity" | "changelog" | "testplans" | "vendors";
 
 const TABS: Record<Tab, { title: string; intro: string }> = {
   overview: { title: "Overview", intro: "Formelab at a glance. Changes here affect everyone on Formelab." },
@@ -25,17 +26,18 @@ const TABS: Record<Tab, { title: string; intro: string }> = {
   activity: { title: "Activity", intro: "Formelab-level changes, newest first." },
   features: { title: "Features", intro: "Turn new features on for admins, for specific people, then for everyone." },
   changelog: { title: "Changelog", intro: "Everything that has changed in Formelab, newest first." },
+  testplans: { title: "Test plans", intro: "The browser test plan for each feature, with what passed, failed or was blocked. Hand one to Claude to run, then record what it found." },
   vendors: { title: "Vendors", intro: "Every service, AI app and open-source project Formelab uses, or used." },
 };
 
 /** The admin panel's frame: the same left menu as the web app, grouped into Users and Formelab. */
-function adminShell(c: Context<AppEnv>, tab: Tab, body: string, scripts: string[] = []): Response {
+function adminShell(c: Context<AppEnv>, tab: Tab, body: string, scripts: string[] = [], page?: { title: string; intro?: string }): Response {
   const user = c.get("user");
   const link = (t: Tab, href: string) => `<a href="${href}"${t === tab ? ' aria-current="page"' : ""}>${TABS[t].title}</a>`;
   return htmlResponse(`<!doctype html>
 <html lang="en">
 <head>
-${head(`${TABS[tab].title} · Formelab Admin Panel`, ["dashboard.js", ...scripts])}
+${head(`${page?.title ?? TABS[tab].title} · Formelab Admin Panel`, ["dashboard.js", ...scripts])}
 </head>
 <body class="dash admin${tab === "metrics" ? " metrics" : ""}">
 <div class="app-shell">
@@ -55,6 +57,7 @@ ${head(`${TABS[tab].title} · Formelab Admin Panel`, ["dashboard.js", ...scripts
     <p class="side-label">Formelab</p>
     ${link("features", "/features")}
     ${link("changelog", "/changelog")}
+    ${link("testplans", "/test-plans")}
     ${link("vendors", "/vendors")}
   </nav>
   <details class="account">
@@ -67,13 +70,14 @@ ${head(`${TABS[tab].title} · Formelab Admin Panel`, ["dashboard.js", ...scripts
 </aside>
 <main class="content">
 <div class="page-head">
-  <h1>${e(TABS[tab].title)}</h1>
-  <p>${e(TABS[tab].intro)}</p>
+  <h1>${e(page?.title ?? TABS[tab].title)}</h1>
+  ${page ? (page.intro ? `<p>${page.intro}</p>` : "") : `<p>${e(TABS[tab].intro)}</p>`}
 </div>
 <div id="flash" role="status" hidden></div>
 ${body}
 </main>
 </div>
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 </body>
 </html>`);
 }
@@ -87,6 +91,7 @@ export async function adminPage(c: Context<AppEnv>, tab: Tab): Promise<Response>
   if (tab === "activity") return adminShell(c, tab, await activityBody(c));
   if (tab === "features") return adminShell(c, tab, await featuresBody(c));
   if (tab === "changelog") return adminShell(c, tab, changelogBody());
+  if (tab === "testplans") return adminShell(c, tab, await testPlansBody(c));
   if (tab === "vendors") return adminShell(c, tab, vendorsBody());
   return adminShell(c, tab, await overviewBody(c));
 }
@@ -199,14 +204,10 @@ export function vendorsBody(): string {
 
 /**
  * CHANGELOG.md as HTML. It's our own file, in a small fixed format: "## YYYY-MM-DD" days and "- "
- * items with **bold**, `code` and [links](https://...), such as a feature's test plan.
+ * items with **bold**, `code` and [links](https://... or /path), such as a feature's test plan.
  */
 export function changelogBody(): string {
-  const inline = (s: string) =>
-    e(s)
-      .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
-      .replace(/`([^`]+)`/g, "<code>$1</code>")
-      .replace(/\[([^\]]+)\]\((https:\/\/[^)\s"]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+  const inline = inlineMarkdown;
   const day = (iso: string) => new Date(iso + "T12:00:00Z").toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric", timeZone: "UTC" });
   const sections = CHANGELOG_MD.split(/^## /m).slice(1).map((chunk) => {
     const [date, ...lines] = chunk.split("\n");
@@ -294,4 +295,73 @@ async function waitlistBody(c: Context<AppEnv>): Promise<string> {
     <button>Invite</button>
   </form>
 </section>`;
+}
+
+const STATUS_NAME = { pass: "Pass", fail: "Fail", blocked: "Blocked" } as const;
+
+/** Test plans: every feature's plan with how far its test run got. */
+async function testPlansBody(c: Context<AppEnv>): Promise<string> {
+  const [plans, counts] = [listPlans(), await resultCounts(c.env)];
+  if (!plans.length) {
+    return `<section><p class="muted">No test plans yet. Each feature PR adds one to <code>docs/test-plans</code>, and it shows up here once it's deployed.</p></section>`;
+  }
+  const rows = plans
+    .map((p) => {
+      const n = counts[p.slug] ?? { pass: 0, fail: 0, blocked: 0 };
+      const run = n.pass + n.fail + n.blocked;
+      return `<tr>
+  <td><a href="/test-plans/${e(p.slug)}"><strong>${e(p.title)}</strong></a></td>
+  <td class="nowrap">${e(p.date)}</td>
+  <td class="num">${p.cases.length}</td>
+  ${RESULT_STATUSES.map((s) => `<td class="num"><span class="tp-dot ${s}" aria-hidden="true"></span>${n[s]}</td>`).join("")}
+  <td class="num">${p.cases.length - run}</td>
+</tr>`;
+    })
+    .join("");
+  return `<section>
+  <div class="scroll"><table class="tp-list"><thead><tr><th>Plan</th><th>Added</th><th class="num">Cases</th>${RESULT_STATUSES.map((s) => `<th class="num">${STATUS_NAME[s]}</th>`).join("")}<th class="num">Not run</th></tr></thead><tbody>${rows}</tbody></table></div>
+  <p class="muted">Plans come from <code>docs/test-plans</code> in the repository, one per feature PR. Results are kept here, the latest one for each case.</p>
+</section>`;
+}
+
+/** One test plan: the plan itself, with a result for each case. */
+export async function testPlanPage(c: Context<AppEnv>, slug: string): Promise<Response> {
+  if (!c.get("user").isAdmin) return plainPage(404, "Not found", "There is nothing here.");
+  const plan = getPlan(slug);
+  if (!plan) return plainPage(404, "Not found", "There is nothing here.");
+  const results = await planResults(c.env, slug);
+  const n = { pass: 0, fail: 0, blocked: 0, todo: 0 };
+  for (const tc of plan.cases) n[results[tc.id]?.status ?? "todo"]++;
+  const filter = (key: string, label: string, count: number, on = false) =>
+    `<button type="button" class="tp-filter" data-tp-filter="${key}" aria-pressed="${on}">${key === "all" ? "" : `<span class="tp-dot ${key}" aria-hidden="true"></span>`}${label} <b data-tp-count="${key}">${count}</b></button>`;
+  const body = `<div class="tp-page" data-test-plan="${e(slug)}">
+<p class="crumb"><a href="/test-plans">Test plans</a> <span aria-hidden="true">/</span> <span>${e(plan.title)}</span></p>
+<section class="tp-summary">
+  <p class="muted">Added ${e(plan.date)} · ${plan.cases.length} cases</p>
+  <div class="tp-bar" data-tp-bar role="img" aria-label="${n.pass} passed, ${n.fail} failed, ${n.blocked} blocked, ${n.todo} not run"><span class="pass"></span><span class="fail"></span><span class="blocked"></span></div>
+  <div class="tp-filters" role="group" aria-label="Show cases">
+    ${filter("all", "All", plan.cases.length, true)}${filter("todo", "Not run", n.todo)}${filter("pass", "Pass", n.pass)}${filter("fail", "Fail", n.fail)}${filter("blocked", "Blocked", n.blocked)}
+  </div>
+  <div class="tp-actions">
+    <button type="button" data-tp-copy>Copy for Claude</button>
+    <button type="button" class="secondary" data-tp-toggle="tp-import" aria-expanded="false" aria-controls="tp-import">Import results</button>
+    <button type="button" class="secondary" data-tp-toggle="tp-clear" aria-expanded="false" aria-controls="tp-clear">Clear results</button>
+  </div>
+  <div class="tp-panel" id="tp-import" hidden>
+    <p class="muted">Paste what Claude sent back: one line per case, like <code>MA-04 | fail | The chip said Only you</code>. The result is pass, fail or blocked, and the note is optional. Other lines are skipped.</p>
+    <textarea id="tp-import-text" rows="8" spellcheck="false" aria-label="Results to import" placeholder="MA-01 | pass&#10;MA-02 | fail | Chip missing on Solo notes&#10;UP-06 | blocked | No Gemini key"></textarea>
+    <div class="tp-actions"><button type="button" data-tp-import>Save these results</button><button type="button" class="secondary" data-tp-toggle="tp-import">Cancel</button></div>
+  </div>
+  <div class="tp-panel" id="tp-clear" hidden>
+    <p class="muted">Clear every result for this plan to start a fresh test run? The plan itself stays.</p>
+    <div class="tp-actions"><button type="button" class="danger" data-tp-clear>Clear all results</button><button type="button" class="secondary" data-tp-toggle="tp-clear">Keep them</button></div>
+  </div>
+</section>
+<article class="tp-doc">
+${renderPlan(plan, results)}
+</article>
+<textarea id="tp-markdown" hidden readonly aria-hidden="true">${e(plan.markdown)}</textarea>
+</div>`;
+  // The plan's own first paragraph introduces it, so the heading has no intro of its own.
+  return adminShell(c, "testplans", body, [], { title: plan.title });
 }

@@ -26,6 +26,7 @@ import { buildApp, connectBuilder, editApp, disconnectBuilder, parseBuildDataWri
 import { addFlagUser, flagOn, removeFlagUser, setFlag } from "./flags";
 import { sheetsDisconnect, sheetsStatus } from "./sheets";
 import { deleteUser, listUsers, setAdmin } from "./users";
+import { clearResults, saveResults } from "./testplans";
 import { b64decode, isEmail } from "./util";
 
 export const ctxOf = (c: Context<AppEnv>): Ctx => ({
@@ -150,7 +151,7 @@ export function managementApi(kind: "admin" | "deploy") {
       }
       await next();
     };
-    for (const path of ["/users", "/users/*", "/waitlist/approve", "/features/*"]) api.use(path, adminHostOnly);
+    for (const path of ["/users", "/users/*", "/waitlist/approve", "/features/*", "/test-plans/*"]) api.use(path, adminHostOnly);
 
     api.post("/tokens", async (c) => {
       const body = await jsonBody(c);
@@ -178,6 +179,12 @@ export function managementApi(kind: "admin" | "deploy") {
       if (!c.get("user").isAdmin) throw err(403, "admin_only", "Only an admin can list users.", "Ask the Formelab owner.");
       return c.json(await listUsers(c.env));
     });
+    // Feature test plan results (admin panel, Test plans).
+    api.put("/test-plans/:slug/results", async (c) => {
+      const body = await jsonBody(c);
+      return c.json(await saveResults(c.env, c.get("user"), c.req.param("slug"), body.cases, body.source));
+    });
+    api.delete("/test-plans/:slug/results", async (c) => c.json(await clearResults(c.env, c.get("user"), c.req.param("slug"))));
     api.post("/users/:email/admin", async (c) => c.json(await setAdmin(c.env, c.get("user"), c.req.param("email"), (await jsonBody(c)).admin)));
     api.delete("/users/:email", async (c) => c.json(await deleteUser(c.env, c.get("user"), c.req.param("email"))));
     // The easy way, built in: the person's own Claude or OpenAI key builds and publishes the app.
