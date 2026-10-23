@@ -197,9 +197,16 @@ export function vendorsBody(): string {
     .join("\n");
 }
 
-/** CHANGELOG.md as HTML. It's our own file, in a small fixed format: "## YYYY-MM-DD" days and "- " items. */
+/**
+ * CHANGELOG.md as HTML. It's our own file, in a small fixed format: "## YYYY-MM-DD" days and "- "
+ * items with **bold**, `code` and [links](https://...), such as a feature's test plan.
+ */
 export function changelogBody(): string {
-  const inline = (s: string) => e(s).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>").replace(/`([^`]+)`/g, "<code>$1</code>");
+  const inline = (s: string) =>
+    e(s)
+      .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+      .replace(/`([^`]+)`/g, "<code>$1</code>")
+      .replace(/\[([^\]]+)\]\((https:\/\/[^)\s"]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
   const day = (iso: string) => new Date(iso + "T12:00:00Z").toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric", timeZone: "UTC" });
   const sections = CHANGELOG_MD.split(/^## /m).slice(1).map((chunk) => {
     const [date, ...lines] = chunk.split("\n");

@@ -184,6 +184,9 @@ describe("admin: changelog", () => {
     expect(html).toContain("<code>formelab.gemini.generate</code>");
     expect(html.indexOf("2026-10-13")).toBeLessThan(html.indexOf("2026-10-02"));
     expect(html).not.toContain("**");
+    // Test plans are linked from their feature's entry.
+    expect(html).toContain('<a href="https://github.com/ramzy-collab/Launchpad/blob/main/docs/test-plans/2026-10-23-settings-redesign-phase-1.md" target="_blank" rel="noopener">Settings redesign, phase 1</a>');
+    expect(html).not.toContain("](https://");
     expect((await call("https://admin.example.com/changelog", { as: `nope-${uniq()}@example.com` })).status).toBe(404);
   });
 });
