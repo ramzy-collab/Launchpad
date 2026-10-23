@@ -1,7 +1,7 @@
 import { Hono, type Context, type MiddlewareHandler } from "hono";
 import { ctxOf, managementApi } from "./api";
 import { identifyBearer, identifyBrowser } from "./auth";
-import { adminPage } from "./dashboard/admin";
+import { adminPage, testPlanPage } from "./dashboard/admin";
 import { connectPage } from "./dashboard/connect";
 import { SERVICES_SPRITE } from "./dashboard/services";
 import { appIcon } from "./icons";
@@ -248,6 +248,8 @@ adminApp.get("/activity", (c) => adminPage(c, "activity"));
 adminApp.get("/features", (c) => adminPage(c, "features"));
 adminApp.get("/changelog", (c) => adminPage(c, "changelog"));
 adminApp.get("/vendors", (c) => adminPage(c, "vendors"));
+adminApp.get("/test-plans", (c) => adminPage(c, "testplans"));
+adminApp.get("/test-plans/:slug", (c) => testPlanPage(c, c.req.param("slug")));
 adminApp.notFound(() => plainPage(404, "Not found", "There is nothing here."));
 // ---------------------------------------------------------------------------
 // App hosts: <host_label>.APP_DOMAIN, one published app each

@@ -88,7 +88,7 @@ export async function call(url: string, opts: CallOpts = {}): Promise<Response> 
 }
 
 /** The management API's admin-only endpoints, served only on the admin host (src/api.ts). */
-const ADMIN_ONLY_API = /^\/_api\/admin\/(users|waitlist\/approve|features\/)/;
+const ADMIN_ONLY_API = /^\/_api\/admin\/(users|waitlist\/approve|features\/|test-plans\/)/;
 
 /** Bare paths go to the host that serves them: the management API and web app on app.DOMAIN (its admin-only endpoints on the admin host), "/admin..." on the admin host, the rest on DOMAIN. */
 export function resolvePath(path: string): string {
