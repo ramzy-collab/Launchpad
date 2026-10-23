@@ -223,7 +223,7 @@ describe("app browser and app settings page", () => {
     expect(cardOf("alpha tool")).toContain(`data-copy-url="${await appAt(a, "one")}/"`);
     // An app without a title shows its path, in italics.
     expect(html).toContain('<div class="ac-name untitled">untitled-thing</div>');
-    expect(cardOf("alpha tool")).toContain(`${a} · Updated just now`);
+    expect(cardOf("alpha tool")).toContain(`${a} · <span class="ac-updated">Updated </span>just now`);
     expect(html).toContain("Show all apps");
     expect(html).not.toContain("\u2014"); // no em dashes
   });

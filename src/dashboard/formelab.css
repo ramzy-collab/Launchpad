@@ -327,8 +327,44 @@ button.cta { border: 0; cursor: pointer; font: inherit; font-weight: 600; }
 .thumb.lg { width: 64px; height: 64px; border-radius: 18px; font-size: 1.875rem; }
 .hue-0 { background: #5B4CF5; } .hue-1 { background: #FF6B4A; } .hue-2 { background: #2BC48A; } .hue-3 { background: #F5A623; }
 .hue-4 { background: #E5487D; } .hue-5 { background: #3B82F6; } .hue-6 { background: #14B8A6; } .hue-7 { background: #8B5CF6; }
-@media (max-width: 520px) {
-  .cards { grid-template-columns: minmax(0, 1fr); }
+.ac-art, .filters-toggle { display: none; }
+.dash main .bar-filters { display: contents; }
+/* Phones: one row of search and a filter button; cards two to a row, each a tile in the app's color. */
+@media (max-width: 640px) {
+  .browser-bar { gap: 8px; margin: 16px 0 20px; }
+  .browser-bar .search { flex: 1 1 0; min-width: 0; }
+  .dash main button.filters-toggle { display: inline-grid; place-items: center; position: relative; width: 44px; height: 44px; min-height: 44px; padding: 0; flex: none; background: var(--fl-surface); color: var(--fl-ink); border: 1.5px solid var(--fl-line); border-radius: var(--fl-radius-sm); }
+  .dash main button.filters-toggle:hover { transform: none; filter: none; border-color: var(--fl-ink-soft); }
+  .dash main .browser.filters-open button.filters-toggle { border-color: var(--fl-accent); color: var(--fl-accent); }
+  .filters-dot { position: absolute; top: 7px; right: 7px; width: 8px; height: 8px; border-radius: 50%; background: var(--fl-accent); }
+  .filters-dot[hidden] { display: none; }
+  .dash main .bar-filters { display: none; width: 100%; gap: 8px; }
+  .dash main .browser.filters-open .bar-filters { display: flex; }
+  .dash main .bar-filters select { flex: 1 1 0; min-width: 0; min-height: 40px; font-size: .875rem; }
+  .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .appcard { aspect-ratio: 1; padding: 10px; overflow: hidden; border: 0; justify-content: flex-end; gap: 2px; color: #fff; }
+  .appcard:hover, .appcard:focus-within { transform: none; }
+  .ac-art { display: grid; place-items: center; position: absolute; inset: 0; z-index: 0; font: 800 3rem var(--fl-display); color: rgba(255,255,255,.92); padding-bottom: 34%; }
+  .ac-art img { width: 46%; height: auto; max-height: 46%; object-fit: contain; background: #fff; border-radius: 18px; padding: 8px; box-shadow: 0 4px 14px rgba(0,0,0,.18); }
+  .ac-art::after { content: ""; position: absolute; inset: 40% 0 0; background: linear-gradient(to bottom, transparent, rgba(0,0,0,.55)); }
+  .ac-top { position: absolute; top: 6px; right: 6px; margin: 0; z-index: 1; }
+  .ac-top .thumb { display: none; }
+  .ac-top .ac-btn { margin: 0; }
+  .dash main .appcard button.ac-btn, .appcard .ac-btn { width: 32px; height: 32px; color: #fff; background: rgba(0,0,0,.22); }
+  .appcard .ac-btn + .ac-btn { margin-left: 4px; }
+  .appcard .star:not(.on) { opacity: 1; }
+  .dash main .appcard button.star.on { color: var(--fl-pop-2); }
+  .ac-name, .ac-sub, .ac-foot { position: relative; z-index: 0; pointer-events: none; }
+  .ac-name { font-size: .95rem; text-shadow: 0 1px 4px rgba(0,0,0,.3); }
+  .ac-name.untitled { color: rgba(255,255,255,.85); }
+  .ac-sub { font-size: .72rem; color: rgba(255,255,255,.85); }
+  .ac-updated { display: none; }
+  .ac-foot { margin-top: 4px; min-height: 26px; }
+  .chip { font-size: .68rem; padding: 2px 7px; background: rgba(0,0,0,.28); color: #fff; }
+  .chip.public, .chip.shared, .chip.members { background: rgba(0,0,0,.28); color: #fff; }
+  .chip svg { width: 11px; height: 11px; }
+  .ac-foot .copy { pointer-events: auto; opacity: 1; }
+  .dash main .ac-foot button.copy { width: 28px; height: 28px; border: 0; background: rgba(0,0,0,.22); color: #fff; }
 }
 
 /* ---------- The app's own page ---------- */

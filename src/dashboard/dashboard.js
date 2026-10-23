@@ -371,6 +371,12 @@
     var restHead = root.querySelector("[data-rest-head]");
     var hint = root.querySelector("[data-star-hint]");
     var noMatch = root.querySelector("[data-no-match]");
+    var dot = root.querySelector("[data-filters-dot]");
+    var filtersToggle = root.querySelector("[data-filters-toggle]");
+    filtersToggle.addEventListener("click", function () {
+      var open = root.classList.toggle("filters-open");
+      filtersToggle.setAttribute("aria-expanded", open ? "true" : "false");
+    });
     var SORTS = {
       updated: function (a, b) { return Number(b.dataset.updated) - Number(a.dataset.updated); },
       created: function (a, b) { return Number(b.dataset.created) - Number(a.dataset.created); },
@@ -404,6 +410,8 @@
       restHead.hidden = false;
       restHead.textContent = starred.length ? "Everything else" : filtering ? "Results" : "All apps";
       noMatch.hidden = shown.length > 0;
+      // On a phone the filters fold behind one button; a dot on it says one is in use.
+      dot.hidden = !sp && sortSel.value === "updated";
       noMatch.querySelector("[data-no-match-text]").textContent = raw ? "Nothing matches “" + raw + "”" : "No apps in this space yet";
     }
 

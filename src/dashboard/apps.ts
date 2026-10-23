@@ -53,6 +53,7 @@ export const ICON = {
       n,
     ),
   search: (n = 18) => svg('<circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/>', n),
+  sliders: (n = 18) => svg('<path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/>', n),
   ext: (n = 14) => svg('<path d="M7 17L17 7M9 7h8v8"/>', n),
   alert: (n = 18) => svg('<path d="M10.3 3.9L2.4 18a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/>', n),
   chevron: (n = 14) => svg('<path d="M6 9l6 6 6-6"/>', n),
@@ -86,13 +87,14 @@ function card(s: BrowserApp, shared: boolean, now: number): string {
     ? `<a class="ac-btn gear" href="/apps/${e(encodeURIComponent(s.id))}" aria-label="Settings for ${e(name)}" title="Settings">${ICON.gear()}</a>`
     : "";
   return `<div class="appcard" data-app data-id="${e(s.id)}" data-name="${e(name.toLowerCase())}" data-space="${e(s.namespace)}" data-updated="${s.updatedAt}" data-created="${s.createdAt}" data-search="${e(search)}" data-access="${shared ? "" : access.kind}" data-shared-n="${sharedWith(s).length}" data-copy-url="${e(shareUrl(s))}">
+  <span class="ac-art ${hueClass(s.id)}" aria-hidden="true">${s.iconUrl ? `<img src="${e(s.iconUrl)}" alt="" loading="lazy" decoding="async">` : e(initial(s))}</span>
   <a class="ac-open" href="${e(s.url)}" target="_blank" rel="noopener"><span class="sr">Open ${e(name)}</span></a>
   <div class="ac-top">${thumb(s)}
     <button type="button" class="ac-btn star" data-star="${e(s.id)}" aria-pressed="false" aria-label="Star ${e(name)}" title="Star">${ICON.star()}</button>
     ${gear}
   </div>
   <div class="ac-name${s.title ? "" : " untitled"}">${e(name)}</div>
-  <div class="ac-sub">${shared ? `${e(s.ownerEmail)} · ` : ""}${e(s.namespace)} · Updated ${e(ago(s.updatedAt, now))}</div>
+  <div class="ac-sub">${shared ? `${e(s.ownerEmail)} · ` : ""}${e(s.namespace)} · <span class="ac-updated">Updated </span>${e(ago(s.updatedAt, now))}</div>
   <div class="ac-foot">${chip}<button type="button" class="ac-btn copy" data-copy-link aria-label="Copy link to ${e(name)}" title="Copy link">${ICON.link()}</button></div>
 </div>`;
 }
@@ -106,8 +108,11 @@ export function appBrowser(apps: BrowserApp[], opts: { shared: boolean }): strin
   return `<div class="browser" data-browser>
   <div class="browser-bar">
     <label class="search">${ICON.search()}<input type="search" data-q placeholder="Search ${shared ? "apps" : "your apps"}" aria-label="Search ${shared ? "apps" : "your apps"}"></label>
-    ${spaces.length > 1 ? `<select data-filter="space" aria-label="Space">${options([["", "All spaces"], ...spaces.map((s): [string, string] => [s, s])])}</select>` : ""}
-    <select data-sort-select aria-label="Sort">${options([["updated", "Recently changed"], ["created", "Newest first"], ["name", "Name A to Z"]])}</select>
+    <button type="button" class="filters-toggle" data-filters-toggle aria-expanded="false" aria-controls="app-filters" aria-label="Filter and sort" title="Filter and sort">${ICON.sliders()}<span class="filters-dot" data-filters-dot hidden></span></button>
+    <div class="bar-filters" id="app-filters">
+      ${spaces.length > 1 ? `<select data-filter="space" aria-label="Space">${options([["", "All spaces"], ...spaces.map((s): [string, string] => [s, s])])}</select>` : ""}
+      <select data-sort-select aria-label="Sort">${options([["updated", "Recently changed"], ["created", "Newest first"], ["name", "Name A to Z"]])}</select>
+    </div>
   </div>
   <div class="group starred" data-starred hidden>
     <h3 class="group-head"><span class="star-mark" aria-hidden="true">★</span> Starred</h3>
