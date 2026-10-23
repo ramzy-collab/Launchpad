@@ -125,7 +125,7 @@ describe("installing a published app", () => {
     const res = await publishHtml(OWNER, ns, "x", `<!doctype html><html><head></head><body>hi</body></html>`);
     const { site } = await res.json<{ site: { id: string } }>();
     const html = await (await call(`/app/apps/${site.id}`, { as: OWNER })).text();
-    expect(html).toContain("Install on your devices");
-    expect(html).toContain('href="/install"');
+    expect(html).toContain('data-dialog="dlg-install">Add to your phone or computer</button>');
+    expect(html).toContain("Add to Home Screen");
   });
 });

@@ -1,13 +1,10 @@
-// The app browser on My apps and Shared with me: tiles grouped by space (the default) or a list
-// with sortable columns, plus search, filters and sort. The server renders every app once in
-// each view; dashboard.js filters, sorts and switches views in the browser.
+// The app browser on My apps and Shared with me: a grid of cards, starred apps first, with search,
+// a space filter and sort. The server renders every card once; dashboard.js filters, sorts and
+// moves starred cards up (stars live in the browser until they're saved per person).
 import type { SiteView } from "../sites";
 import { escapeHtml as e } from "../util";
 
 export type BrowserApp = SiteView & { canManage: boolean };
-
-const VIS = { restricted: "Only people you share with", all: "All Formelab members" } as const;
-const VIS_SHORT = { restricted: "Private", all: "All members" } as const;
 
 export const fmtBytes = (n: number) => (n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`);
 
@@ -40,85 +37,91 @@ export function thumb(s: SiteView, size: "" | "sm" | "lg" = ""): string {
 export const appName = (s: SiteView) => s.title || (s.mountPath ? s.mountPath : s.namespace);
 export const initial = (s: SiteView) => (appName(s).match(/[\p{L}\p{N}]/u)?.[0] ?? "•").toUpperCase();
 
-const GEAR = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h0a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h0a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>`;
-const TILES_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>`;
-const LIST_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01"/></svg>`;
+const svg = (body: string, size = 18) =>
+  `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`;
 
-/** The attributes the browser script filters and sorts on. */
-function dataAttrs(s: BrowserApp, shared: boolean): string {
-  const search = [appName(s), s.url, s.namespace, s.mountPath, shared ? s.ownerEmail : ""].join(" ").toLowerCase();
-  return `data-app data-name="${e(appName(s).toLowerCase())}" data-space="${e(s.namespace)}" data-vis="${s.visibility}" data-updated="${s.updatedAt}" data-size="${s.totalBytes}"${
-    shared ? ` data-owner="${e(s.ownerEmail)}" data-access="${s.canManage ? "edit" : "open"}"` : ""
-  } data-search="${e(search)}"`;
+/** Line icons shared by the app cards and the app's page. */
+export const ICON = {
+  lock: (n = 15) => svg('<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>', n),
+  people: (n = 15) => svg('<circle cx="9" cy="8" r="3.5"/><circle cx="17" cy="9" r="2.5"/><path d="M2 20c0-3.5 3-5.5 7-5.5s7 2 7 5.5M16 14.5c3 0 6 1.5 6 4.5"/>', n),
+  globe: (n = 15) => svg('<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.7 3.8 5.7 3.8 9s-1.3 6.3-3.8 9c-2.5-2.7-3.8-5.7-3.8-9S9.5 5.7 12 3z"/>', n),
+  link: (n = 16) => svg('<path d="M10 14a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1M14 10a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/>', n),
+  star: (n = 20) => svg('<path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1L3.2 9.5l6.1-.9z"/>', n),
+  gear: (n = 19) =>
+    svg(
+      '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
+      n,
+    ),
+  search: (n = 18) => svg('<circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/>', n),
+  ext: (n = 14) => svg('<path d="M7 17L17 7M9 7h8v8"/>', n),
+  alert: (n = 18) => svg('<path d="M10.3 3.9L2.4 18a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/>', n),
+  chevron: (n = 14) => svg('<path d="M6 9l6 6 6-6"/>', n),
+  more: (n = 18) => `<svg width="${n}" height="${n}" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>`,
+};
+
+/** Everyone the app is shared with by name (viewers and editors), not counting its owner. */
+export const sharedWith = (s: SiteView) => [...new Set([...s.allowedEmails, ...s.editors])].filter((x) => x !== s.ownerEmail);
+
+export type Access = { kind: "public" | "members" | "shared" | "private"; label: string; icon: string };
+
+/** Who can open the app, for its card chip and the share pill on its page. */
+export function accessOf(s: SiteView): Access {
+  if (s.publicUrl) return { kind: "public", label: "Public", icon: ICON.globe(13) };
+  if (s.visibility === "all") return { kind: "members", label: "Formelab members", icon: ICON.people(13) };
+  const n = sharedWith(s).length;
+  return n ? { kind: "shared", label: `Shared with ${n}`, icon: ICON.people(13) } : { kind: "private", label: "Only you", icon: ICON.lock(13) };
 }
 
-const gear = (s: BrowserApp) =>
-  s.canManage ? `<a class="gear" href="/apps/${e(encodeURIComponent(s.id))}" aria-label="Settings for ${e(appName(s))}" title="Settings">${GEAR}</a>` : "";
+/** The link that works for how the app is shared: its public link when it has one, else its address. */
+export const shareUrl = (s: SiteView) => s.publicUrl ?? s.url;
 
-function tile(s: BrowserApp, shared: boolean, now: number): string {
-  const path = s.mountPath ? `/${s.mountPath}/` : "/";
-  return `<div class="tile" ${dataAttrs(s, shared)}>
-  <a class="tile-link" href="${e(s.url)}" target="_blank" rel="noopener">
-    ${thumb(s)}
-    <span class="tile-title">${e(appName(s))}</span>
-    <span class="tile-path">${e(path)}</span>
-    <span class="tile-meta">${shared ? `${e(s.ownerEmail)} · ` : ""}${e(VIS_SHORT[s.visibility])}${s.publicUrl ? " + link" : ""} · ${e(ago(s.updatedAt, now))}</span>
-  </a>
-  ${gear(s)}
+function card(s: BrowserApp, shared: boolean, now: number): string {
+  const name = appName(s);
+  const search = [name, s.namespace, s.mountPath, shared ? s.ownerEmail : ""].join(" ").toLowerCase();
+  const access = accessOf(s);
+  const chip = shared
+    ? `<span class="chip">${s.canManage ? "Can edit" : "Can open"}</span>`
+    : `<span class="chip ${access.kind}">${access.icon} ${e(access.label)}</span>`;
+  const gear = s.canManage
+    ? `<a class="ac-btn gear" href="/apps/${e(encodeURIComponent(s.id))}" aria-label="Settings for ${e(name)}" title="Settings">${ICON.gear()}</a>`
+    : "";
+  return `<div class="appcard" data-app data-id="${e(s.id)}" data-name="${e(name.toLowerCase())}" data-space="${e(s.namespace)}" data-updated="${s.updatedAt}" data-created="${s.createdAt}" data-search="${e(search)}" data-access="${shared ? "" : access.kind}" data-shared-n="${sharedWith(s).length}" data-copy-url="${e(shareUrl(s))}">
+  <a class="ac-open" href="${e(s.url)}" target="_blank" rel="noopener"><span class="sr">Open ${e(name)}</span></a>
+  <div class="ac-top">${thumb(s)}
+    <button type="button" class="ac-btn star" data-star="${e(s.id)}" aria-pressed="false" aria-label="Star ${e(name)}" title="Star">${ICON.star()}</button>
+    ${gear}
+  </div>
+  <div class="ac-name${s.title ? "" : " untitled"}">${e(name)}</div>
+  <div class="ac-sub">${shared ? `${e(s.ownerEmail)} · ` : ""}${e(s.namespace)} · Updated ${e(ago(s.updatedAt, now))}</div>
+  <div class="ac-foot">${chip}<button type="button" class="ac-btn copy" data-copy-link aria-label="Copy link to ${e(name)}" title="Copy link">${ICON.link()}</button></div>
 </div>`;
 }
 
-function row(s: BrowserApp, shared: boolean, now: number): string {
-  return `<tr ${dataAttrs(s, shared)}>
-  <td><a class="row-app" href="${e(s.url)}" target="_blank" rel="noopener">${thumb(s, "sm")}<span>${e(appName(s))}<span class="muted row-url">${e(s.url)}</span></span></a></td>
-  <td>${e(s.namespace)}</td>
-  ${shared ? `<td>${e(s.ownerEmail)}</td><td>${s.canManage ? "Can edit" : "Can open"}</td>` : `<td>${e(VIS[s.visibility])}${s.publicUrl ? `<div class="muted">and anyone with the public link</div>` : ""}${s.allowedEmails.length ? `<div class="muted">${e(s.allowedEmails.join(", "))}</div>` : ""}</td>`}
-  <td class="nowrap">${e(ago(s.updatedAt, now))}</td>
-  <td class="nowrap">${e(fmtBytes(s.totalBytes))}</td>
-  <td>${gear(s)}</td>
-</tr>`;
-}
-
-const sortHead = (key: string, label: string, current = false) =>
-  `<th aria-sort="${current ? "descending" : "none"}"><button type="button" class="sort" data-sort="${key}">${label}<span class="arrow" aria-hidden="true"></span></button></th>`;
-
-/** The full browser for a list of apps. `shared` adds the owner and your access (Shared with me). */
+/** The full browser for a list of apps. `shared` shows each app's owner and your access (Shared with me). */
 export function appBrowser(apps: BrowserApp[], opts: { shared: boolean }): string {
   const { shared } = opts;
   const now = Date.now();
   const spaces = [...new Set(apps.map((s) => s.namespace))].sort();
-  const groups = spaces
-    .map((ns) => {
-      const inSpace = apps.filter((s) => s.namespace === ns);
-      return `<div class="group" data-group="${e(ns)}">
-  <h3>${e(ns)}</h3>
-  <div class="tiles">${inSpace.map((s) => tile(s, shared, now)).join("")}</div>
-</div>`;
-    })
-    .join("");
   const options = (list: [string, string][]) => list.map(([v, l]) => `<option value="${e(v)}">${e(l)}</option>`).join("");
-  const filters = [
-    spaces.length > 1 ? `<select data-filter="space" aria-label="Space">${options([["", "All spaces"], ...spaces.map((s): [string, string] => [s, s])])}</select>` : "",
-    shared
-      ? `<select data-filter="access" aria-label="Your access">${options([["", "Any access"], ["edit", "Can edit"], ["open", "Can open"]])}</select>`
-      : `<select data-filter="vis" aria-label="Who can open it">${options([["", "Any visibility"], ["restricted", "Private"], ["all", "All members"]])}</select>`,
-  ].join("");
-  return `<div class="browser" data-browser data-view="tiles">
+  return `<div class="browser" data-browser>
   <div class="browser-bar">
-    <input type="search" data-q placeholder="Search apps" aria-label="Search apps">
-    ${filters}
-    <select data-sort-select aria-label="Sort">${options([["updated:desc", "Recently updated"], ["updated:asc", "Least recently updated"], ["name:asc", "Name A–Z"], ["name:desc", "Name Z–A"], ["size:desc", "Largest"], ["size:asc", "Smallest"]])}</select>
-    <div class="view-toggle" role="group" aria-label="View">
-      <button type="button" data-view="tiles" aria-pressed="true" title="Tiles">${TILES_ICON}<span class="sr">Tiles</span></button>
-      <button type="button" data-view="list" aria-pressed="false" title="List">${LIST_ICON}<span class="sr">List</span></button>
-    </div>
+    <label class="search">${ICON.search()}<input type="search" data-q placeholder="Search ${shared ? "apps" : "your apps"}" aria-label="Search ${shared ? "apps" : "your apps"}"></label>
+    ${spaces.length > 1 ? `<select data-filter="space" aria-label="Space">${options([["", "All spaces"], ...spaces.map((s): [string, string] => [s, s])])}</select>` : ""}
+    <select data-sort-select aria-label="Sort">${options([["updated", "Recently changed"], ["created", "Newest first"], ["name", "Name A to Z"]])}</select>
   </div>
-  <div class="view-tiles">${groups}</div>
-  <div class="view-list" hidden>
-    <div class="scroll"><table><thead><tr>
-      ${sortHead("name", "App")}${sortHead("space", "Space")}${shared ? sortHead("owner", "Owner") + sortHead("access", "Your access") : sortHead("vis", "Who can open it")}${sortHead("updated", "Updated", true)}${sortHead("size", "Size")}<th><span class="sr">Settings</span></th>
-    </tr></thead><tbody>${apps.map((s) => row(s, shared, now)).join("")}</tbody></table></div>
+  <div class="group starred" data-starred hidden>
+    <h3 class="group-head"><span class="star-mark" aria-hidden="true">★</span> Starred</h3>
+    <div class="cards" data-starred-cards></div>
+    <p class="star-hint" data-star-hint hidden>${ICON.star()}<span>Star the apps you use most and they'll wait for you up here.</span></p>
   </div>
-  <p class="muted no-match" data-no-match hidden>No apps match. Try a different search or filter.</p>
+  <div class="group" data-rest>
+    <h3 class="group-head" data-rest-head hidden>Everything else</h3>
+    <div class="cards" data-rest-cards>${apps.map((s) => card(s, shared, now)).join("")}</div>
+  </div>
+  <div class="no-match" data-no-match hidden>
+    <h2 data-no-match-text>Nothing matches</h2>
+    <p class="muted">Try a different word, or look in another space.</p>
+    <button type="button" class="secondary" data-clear>Show all apps</button>
+  </div>
 </div>`;
 }

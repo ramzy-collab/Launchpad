@@ -273,16 +273,18 @@ describe("building apps with the person's own API key", () => {
     const site = await pub.json<{ site: { id: string } }>();
     const id = site.site.id;
 
-    // No key yet: the page says where to add one.
+    // No key yet: the Update tab offers to add a free Gemini key.
     let page = await (await call(`/app/apps/${id}`, { as: me })).text();
-    expect(page).toContain("Change it with AI");
-    expect(page).toContain("Add your Claude, OpenAI, Grok or free Gemini API key");
+    expect(page).toContain("What do you want to change?");
+    expect(page).toContain('data-dialog="dlg-key-gemini"');
+    expect(page).toContain("Add your free Gemini key to update with AI");
 
     mockAi({ claudeText: `<!doctype html><html><head><title>Chores</title><link rel="stylesheet" href="style.css"></head><body>New chores, with dark mode</body></html>` });
     expect((await connect(me, "claude", CLAUDE_KEY)).status).toBe(200);
     page = await (await call(`/app/apps/${id}`, { as: me })).text();
-    expect(page).toContain(`data-build="claude" data-site="${id}"`);
-    expect(page).not.toContain('data-build="openai"');
+    expect(page).toContain('data-update="claude">Update with Claude</button>');
+    expect(page).not.toContain('data-update="openai"');
+    expect(page).not.toContain('id="dlg-key-gemini"');
 
     const last = await run(me, { provider: "claude", site_id: id, change: "Add a dark mode" });
     expect(last.done).toMatchObject({ namespace: ns, mountPath: "chores", title: "Chores" });
@@ -322,7 +324,10 @@ describe("building apps with the person's own API key", () => {
     expect(page).not.toContain("data-build=");
     const pub = await publishZip(me, uniq(), "x", { "index.html": "<!doctype html><html><head><title>x</title></head></html>" });
     const id = (await pub.json<{ site: { id: string } }>()).site.id;
-    expect(await (await call(`/app/apps/${id}`, { as: me })).text()).not.toContain("Change it with AI");
+    const settings = await (await call(`/app/apps/${id}`, { as: me })).text();
+    expect(settings).not.toContain("What do you want to change?");
+    expect(settings).toContain("Upload a new version");
+    expect(settings).toContain("data-upload-file");
   });
 
   it("tells shared data writes from each person's own", () => {

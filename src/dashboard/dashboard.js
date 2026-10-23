@@ -75,60 +75,6 @@
         setTimeout(function () { if (next) location.href = next; else location.reload(); }, 1200);
       });
     },
-    "site-replace": function (form) {
-      var fd = new FormData(form);
-      fd.set("namespace", form.dataset.namespace);
-      fd.set("mount_path", form.dataset.mount);
-      return api("POST", "/sites", fd).then(function (r) {
-        show("Replaced: " + r.url);
-        reloadSoon();
-      });
-    },
-    "site-update": function (form) {
-      var el = form.elements;
-      var patch = {
-        title: el.title.value,
-        visibility: el.visibility.value,
-        allowed_emails: el.allowed_emails.value,
-        data_writes: el.data_writes.value,
-        link_preview: el.link_preview.value,
-        spa: el.spa.checked,
-        hidden: el.hidden.checked
-      };
-      // Only the owner sees (and may change) the editors field.
-      if (el.editors) patch.editors = el.editors.value;
-      if (el.sharers) patch.sharers = el.sharers.value;
-      // Likewise the Google Sheets the app may use (the owner's Google account).
-      if (el.sheets) patch.sheets = el.sheets.value;
-      return api("PATCH", "/sites/" + encodeURIComponent(form.dataset.id), patch).then(function (r) {
-        // Over the daily share email limit: say who wasn't emailed, and leave the message up.
-        if (r && r.note) { show(r.note); return; }
-        show("Settings saved.");
-        reloadSoon();
-      });
-    },
-    "public-link": function (form) {
-      var op = form.dataset.op;
-      if (op === "off" && !confirm("Turn off the public link? People who use it won't be able to open the app any more.")) return;
-      if (op === "new" && !confirm("Make a new public link? The current one stops working, including for people who already opened it.")) return;
-      var value = op === "on" ? true : op === "off" ? false : "new";
-      return api("PATCH", "/sites/" + encodeURIComponent(form.dataset.id), { public_link: value }).then(function () {
-        show(op === "off" ? "Public link turned off." : op === "new" ? "Made a new link. The old one no longer works." : "Public link is on. Copy it below.");
-        reloadSoon();
-      });
-    },
-    "guest-responses": function (form) {
-      var on = form.dataset.on === "true";
-      return api("PATCH", "/sites/" + encodeURIComponent(form.dataset.id), { guest_responses: on }).then(function () {
-        show(on ? "People with the link can now send responses." : "People with the link can no longer send responses.");
-        reloadSoon();
-      });
-    },
-    "guest-cap": function (form) {
-      return api("PATCH", "/sites/" + encodeURIComponent(form.dataset.id), { guest_responses_per_day: form.elements.per_day.value }).then(function () {
-        show("Daily limit saved.");
-      });
-    },
     "ns-create": function (form) {
       return api("POST", "/namespaces", { label: form.elements.label.value }).then(function () {
         show("Space created.");
@@ -364,89 +310,130 @@
     build(btn.dataset.build, text, siteId);
   });
 
-  // App browser (My apps, Shared with me): search, filters, sort, and tiles or list.
-  var VIEW_KEY = "formelab:apps-view";
-  function initBrowser(root) {
-    var state = { key: "updated", dir: "desc", view: "tiles" };
-    try { if (localStorage.getItem(VIEW_KEY) === "list") state.view = "list"; } catch (e) {}
-    var q = root.querySelector("[data-q]");
-    var sortSel = root.querySelector("[data-sort-select]");
-    var filters = root.querySelectorAll("[data-filter]");
+  // A short message at the bottom of the screen: "Saved", "Link copied". Errors stay up longer.
+  var toastEl = document.getElementById("toast");
+  var toastTimer;
+  function toast(message, isError) {
+    if (!toastEl) { show(message, isError); return; }
+    toastEl.textContent = message;
+    toastEl.className = "toast" + (isError ? " error" : "");
+    toastEl.hidden = false;
+    requestAnimationFrame(function () { toastEl.classList.add("on"); });
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () {
+      toastEl.classList.remove("on");
+      setTimeout(function () { toastEl.hidden = true; }, 250);
+    }, isError ? 6000 : message.length > 60 ? 4000 : 2200);
+  }
 
-    function value(el, key) {
-      var v = el.dataset[key] || "";
-      return key === "updated" || key === "size" ? Number(v) : v;
-    }
-    function matches(el) {
-      var text = (q.value || "").trim().toLowerCase();
-      if (text && el.dataset.search.indexOf(text) === -1) return false;
-      for (var i = 0; i < filters.length; i++) {
-        var f = filters[i];
-        if (f.value && el.dataset[f.dataset.filter] !== f.value) return false;
-      }
-      return true;
-    }
-    function compare(a, b) {
-      var x = value(a, state.key), y = value(b, state.key);
-      var c = typeof x === "number" ? x - y : String(x).localeCompare(String(y));
-      if (c === 0 && state.key !== "name") c = value(a, "name").localeCompare(value(b, "name"));
-      return state.dir === "asc" ? c : -c;
-    }
-    function sortChildren(container) {
-      var items = Array.prototype.slice.call(container.querySelectorAll(":scope > [data-app]"));
-      items.sort(compare).forEach(function (el) { container.appendChild(el); });
-    }
+  function copyText(text, message) {
+    var done = function () { toast(message); };
+    var fail = function () { toast("Couldn't copy the link. Copy it from the app's address bar instead.", true); };
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, fail);
+    else fail();
+  }
+
+  // Who can open a link, for the toast after copying it.
+  function copiedMessage(access, sharedCount) {
+    if (access === "public") return "Link copied. Anyone with it can open the app.";
+    if (access === "members") return "Link copied. Anyone signed in to Formelab can open it.";
+    if (sharedCount > 0) return "Link copied. Only people you invited can open it.";
+    return "Link copied. Only you can open it right now.";
+  }
+
+  // Stars are kept in this browser for now (they'll be saved per person later).
+  var STARS_KEY = "formelab:stars";
+  function getStars() {
+    try { return JSON.parse(localStorage.getItem(STARS_KEY) || "[]") || []; } catch (e) { return []; }
+  }
+  function isStarred(id) { return getStars().indexOf(id) !== -1; }
+  function setStarred(id, on) {
+    var list = getStars().filter(function (x) { return x !== id; });
+    if (on) list.push(id);
+    try { localStorage.setItem(STARS_KEY, JSON.stringify(list)); } catch (e) {}
+  }
+  function paintStar(btn, on) {
+    btn.classList.toggle("on", on);
+    btn.setAttribute("aria-pressed", on ? "true" : "false");
+    btn.title = on ? "Unstar" : "Star";
+  }
+
+  // App browser (My apps, Shared with me): starred cards first, then search, space and sort.
+  function initBrowser(root) {
+    var q = root.querySelector("[data-q]");
+    var space = root.querySelector('[data-filter="space"]');
+    var sortSel = root.querySelector("[data-sort-select]");
+    var cards = Array.prototype.slice.call(root.querySelectorAll("[data-app]"));
+    var starredGroup = root.querySelector("[data-starred]");
+    var starredBox = root.querySelector("[data-starred-cards]");
+    var restGroup = root.querySelector("[data-rest]");
+    var restBox = root.querySelector("[data-rest-cards]");
+    var restHead = root.querySelector("[data-rest-head]");
+    var hint = root.querySelector("[data-star-hint]");
+    var noMatch = root.querySelector("[data-no-match]");
+    var SORTS = {
+      updated: function (a, b) { return Number(b.dataset.updated) - Number(a.dataset.updated); },
+      created: function (a, b) { return Number(b.dataset.created) - Number(a.dataset.created); },
+      name: function (a, b) { return a.dataset.name.localeCompare(b.dataset.name); }
+    };
+
     function apply() {
-      var shown = 0;
-      root.querySelectorAll("[data-app]").forEach(function (el) {
-        var ok = matches(el);
-        el.hidden = !ok;
-        if (ok && el.tagName !== "TR") shown++;
+      var raw = q.value.trim();
+      var text = raw.toLowerCase();
+      var sp = space ? space.value : "";
+      var stars = getStars();
+      var shown = cards.filter(function (el) {
+        return (!sp || el.dataset.space === sp) && (!text || el.dataset.search.indexOf(text) !== -1);
       });
-      root.querySelectorAll(".tiles, tbody").forEach(sortChildren);
-      root.querySelectorAll("[data-group]").forEach(function (g) { g.hidden = !g.querySelector(".tile:not([hidden])"); });
-      root.querySelector("[data-no-match]").hidden = shown > 0;
-      root.querySelectorAll("th[aria-sort]").forEach(function (th) {
-        var k = th.querySelector("[data-sort]").dataset.sort;
-        th.setAttribute("aria-sort", k === state.key ? (state.dir === "asc" ? "ascending" : "descending") : "none");
+      shown.sort(SORTS[sortSel.value] || SORTS.updated);
+      var starred = [];
+      var rest = [];
+      cards.forEach(function (el) { el.hidden = true; });
+      shown.forEach(function (el) {
+        var on = stars.indexOf(el.dataset.id) !== -1;
+        paintStar(el.querySelector("[data-star]"), on);
+        el.hidden = false;
+        (on ? starred : rest).push(el);
       });
-      var opt = state.key + ":" + state.dir;
-      sortSel.value = sortSel.querySelector('option[value="' + opt + '"]') ? opt : sortSel.value;
-      root.dataset.view = state.view;
-      root.querySelector(".view-tiles").hidden = state.view !== "tiles";
-      root.querySelector(".view-list").hidden = state.view !== "list";
-      root.querySelectorAll("[data-view]").forEach(function (b) {
-        if (b !== root) b.setAttribute("aria-pressed", b.dataset.view === state.view ? "true" : "false");
-      });
+      starred.forEach(function (el) { starredBox.appendChild(el); });
+      rest.forEach(function (el) { restBox.appendChild(el); });
+      var filtering = !!text || !!sp;
+      starredGroup.hidden = !shown.length || (filtering && !starred.length);
+      hint.hidden = starred.length > 0;
+      restGroup.hidden = !rest.length;
+      restHead.hidden = false;
+      restHead.textContent = starred.length ? "Everything else" : filtering ? "Results" : "All apps";
+      noMatch.hidden = shown.length > 0;
+      noMatch.querySelector("[data-no-match-text]").textContent = raw ? "Nothing matches “" + raw + "”" : "No apps in this space yet";
     }
+
     q.addEventListener("input", apply);
-    filters.forEach(function (f) { f.addEventListener("change", apply); });
+    if (space) space.addEventListener("change", apply);
+    sortSel.addEventListener("change", apply);
     // A space's link (?space=<name>) opens the list filtered to that space.
     var wanted = new URLSearchParams(location.search).get("space");
-    var spaceSel = root.querySelector('[data-filter="space"]');
-    if (wanted && spaceSel && [].some.call(spaceSel.options, function (o) { return o.value === wanted; })) {
-      spaceSel.value = wanted;
-      apply();
-    }
-    sortSel.addEventListener("change", function () {
-      var parts = sortSel.value.split(":");
-      state.key = parts[0]; state.dir = parts[1];
-      apply();
-    });
+    if (wanted && space && [].some.call(space.options, function (o) { return o.value === wanted; })) space.value = wanted;
     root.addEventListener("click", function (ev) {
-      var head = ev.target.closest("[data-sort]");
-      if (head) {
-        var k = head.dataset.sort;
-        if (state.key === k) state.dir = state.dir === "asc" ? "desc" : "asc";
-        else { state.key = k; state.dir = k === "updated" || k === "size" ? "desc" : "asc"; }
+      if (ev.target.closest("[data-clear]")) {
+        q.value = "";
+        if (space) space.value = "";
         apply();
+        q.focus();
         return;
       }
-      var v = ev.target.closest("button[data-view]");
-      if (v) {
-        state.view = v.dataset.view;
-        try { localStorage.setItem(VIEW_KEY, state.view); } catch (e) {}
+      var card = ev.target.closest("[data-app]");
+      if (!card) return;
+      var star = ev.target.closest("[data-star]");
+      if (star) {
+        var on = !isStarred(card.dataset.id);
+        setStarred(card.dataset.id, on);
         apply();
+        star.focus();
+        toast(on ? card.querySelector(".ac-name").textContent + " starred" : "Removed from starred");
+        return;
+      }
+      if (ev.target.closest("[data-copy-link]")) {
+        copyText(card.dataset.copyUrl, card.dataset.access ? copiedMessage(card.dataset.access, Number(card.dataset.sharedN)) : "Link copied");
       }
     });
     apply();
@@ -474,18 +461,7 @@
       });
       return;
     }
-    if (action === "site-delete") {
-      var mount = btn.dataset.mount;
-      var label = mount === "" ? "/" : mount;
-      var typed = prompt("This permanently deletes " + btn.dataset.namespace + "/" + mount + " with its files, data and secrets.\nType the mount path (" + label + ") to confirm:");
-      if (typed === null) return;
-      if (typed.trim() !== label) { show("The mount path did not match; nothing was deleted.", true); return; }
-      var after = btn.dataset.next;
-      p = api("DELETE", "/sites/" + encodeURIComponent(btn.dataset.id)).then(function () {
-        show("App deleted.");
-        setTimeout(function () { if (after) location.href = after; else location.reload(); }, 900);
-      });
-    } else if (action === "ns-delete") {
+    if (action === "ns-delete") {
       var typedNs = prompt("This permanently deletes the space " + btn.dataset.label + " and EVERY app in it.\nType the space name to confirm:");
       if (typedNs === null) return;
       if (typedNs.trim() !== btn.dataset.label) { show("The name did not match; nothing was deleted.", true); return; }
@@ -534,4 +510,545 @@
       p.catch(function (e) { show(e.message, true); }).then(function () { btn.disabled = false; });
     }
   });
+
+  // Close buttons inside dialogs.
+  document.addEventListener("click", function (ev) {
+    var close = ev.target.closest("[data-close]");
+    if (close && close.closest("dialog")) close.closest("dialog").close();
+  });
+
+  // ---------- The role picker (People on an app's page) ----------
+  // A listbox under its button: arrow keys, Home and End move, Esc and a click outside close it.
+  var ROLES = {
+    viewer: ["Viewer", "Can open and use the app"],
+    editor: ["Editor", "Can edit the app and its data"],
+    admin: ["Admin", "Can edit and manage sharing"]
+  };
+  var CHEVRON = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>';
+  var roleMenu = null;
+  var viewersCanWrite = function () { return false; };
+
+  function closeRoles(refocus) {
+    if (!roleMenu) return;
+    var btn = roleMenu.btn;
+    btn.setAttribute("aria-expanded", "false");
+    roleMenu.el.remove();
+    roleMenu = null;
+    if (refocus && btn.isConnected) btn.focus();
+  }
+
+  function openRoles(btn, onPick, withRemove) {
+    if (roleMenu && roleMenu.btn === btn) { closeRoles(true); return; }
+    closeRoles(false);
+    var allowed = (btn.dataset.roles || "viewer").split(",");
+    var current = btn.dataset.role;
+    var menu = document.createElement("div");
+    menu.className = "rp-menu";
+    menu.setAttribute("role", "listbox");
+    menu.setAttribute("aria-label", btn.getAttribute("aria-label") || "Role");
+    function option(value, label, desc, cls) {
+      var b = document.createElement("button");
+      b.type = "button";
+      b.setAttribute("role", "option");
+      b.dataset.v = value;
+      if (cls) b.className = cls;
+      b.setAttribute("aria-selected", value === current ? "true" : "false");
+      b.innerHTML = '<span class="rp-check" aria-hidden="true"></span><span class="rp-text"><b></b><small></small></span>';
+      b.querySelector(".rp-check").textContent = value === current ? "✓" : "";
+      b.querySelector("b").textContent = label;
+      b.querySelector("small").textContent = desc;
+      if (!desc) b.querySelector("small").remove();
+      menu.appendChild(b);
+      return b;
+    }
+    Object.keys(ROLES).forEach(function (v) {
+      var off = allowed.indexOf(v) === -1;
+      var desc = v === "viewer" && viewersCanWrite() ? "Can use the app and change its data" : ROLES[v][1];
+      var b = option(v, ROLES[v][0], off ? "Only the owner can give this role" : desc);
+      if (off) b.disabled = true;
+    });
+    if (withRemove) {
+      menu.appendChild(document.createElement("hr"));
+      option("remove", "Remove access", "", "red");
+    }
+    document.body.appendChild(menu);
+    btn.setAttribute("aria-expanded", "true");
+    roleMenu = { el: menu, btn: btn };
+    placeRoles();
+    var items = Array.prototype.slice.call(menu.querySelectorAll("button:not([disabled])"));
+    menu.addEventListener("click", function (ev) {
+      var b = ev.target.closest("button[data-v]");
+      if (!b || b.disabled) return;
+      closeRoles(true);
+      if (b.dataset.v !== current) onPick(b.dataset.v);
+    });
+    menu.addEventListener("keydown", function (ev) {
+      var i = items.indexOf(document.activeElement);
+      var to = ev.key === "ArrowDown" ? (i + 1) % items.length
+        : ev.key === "ArrowUp" ? (i - 1 + items.length) % items.length
+        : ev.key === "Home" ? 0 : ev.key === "End" ? items.length - 1 : -1;
+      if (to !== -1) { ev.preventDefault(); items[to].focus(); }
+      if (ev.key === "Tab") closeRoles(false);
+    });
+    (menu.querySelector('[aria-selected="true"]:not([disabled])') || items[0]).focus();
+  }
+
+  document.addEventListener("mousedown", function (ev) {
+    if (roleMenu && !roleMenu.el.contains(ev.target) && !roleMenu.btn.contains(ev.target)) closeRoles(false);
+  });
+  // Under its button, or above it when there's no room below. It follows the button as the page
+  // scrolls, and closes once the button is scrolled out of sight.
+  function placeRoles() {
+    if (!roleMenu) return;
+    var menu = roleMenu.el;
+    var r = roleMenu.btn.getBoundingClientRect();
+    if (r.bottom < 0 || r.top > window.innerHeight) { closeRoles(false); return; }
+    var below = r.bottom + 6 + menu.offsetHeight < window.innerHeight;
+    menu.style.top = (below ? r.bottom + 6 : Math.max(8, r.top - 6 - menu.offsetHeight)) + "px";
+    menu.style.left = Math.max(8, Math.min(r.right - menu.offsetWidth, window.innerWidth - menu.offsetWidth - 8)) + "px";
+  }
+  document.addEventListener("scroll", placeRoles, true);
+  window.addEventListener("resize", placeRoles);
+
+  // ---------- An app's page ----------
+  var page = document.querySelector("[data-app-page]");
+  if (page) initAppPage(page);
+
+  function initAppPage(page) {
+    var S = JSON.parse(page.dataset.state);
+    var $ = function (sel) { return document.querySelector(sel); };
+    var $$ = function (sel) { return Array.prototype.slice.call(document.querySelectorAll(sel)); };
+    var ICONS = {
+      lock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
+      people: '<circle cx="9" cy="8" r="3.5"/><circle cx="17" cy="9" r="2.5"/><path d="M2 20c0-3.5 3-5.5 7-5.5s7 2 7 5.5M16 14.5c3 0 6 1.5 6 4.5"/>',
+      globe: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.7 3.8 5.7 3.8 9s-1.3 6.3-3.8 9c-2.5-2.7-3.8-5.7-3.8-9S9.5 5.7 12 3z"/>'
+    };
+    var icon = function (name) {
+      return '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + ICONS[name] + "</svg>";
+    };
+    viewersCanWrite = function () { return S.dataWrites === "everyone"; };
+
+    var name = function () { return S.title || S.fallbackName; };
+    var unique = function (list) { return list.filter(function (x, i) { return list.indexOf(x) === i; }); };
+    var without = function (list, email) { return list.filter(function (x) { return x !== email; }); };
+    var sharedWith = function () { return without(unique(S.allowedEmails.concat(S.editors)), S.ownerEmail); };
+    var roleOf = function (email) {
+      return S.editors.indexOf(email) !== -1 ? (S.sharers.indexOf(email) !== -1 ? "admin" : "editor") : "viewer";
+    };
+    function access() {
+      if (S.publicUrl) return { kind: "public", label: "Public", icon: "globe" };
+      if (S.visibility === "all") return { kind: "members", label: "Formelab members", icon: "people" };
+      var n = sharedWith().length;
+      return n ? { kind: "shared", label: "Shared with " + n, icon: "people" } : { kind: "private", label: "Only you", icon: "lock" };
+    }
+
+    function patch(body) {
+      return api("PATCH", "/sites/" + encodeURIComponent(S.id), body).then(function (v) {
+        ["title", "publicUrl", "allowedEmails", "editors", "sharers", "visibility", "dataWrites", "guestResponses", "linkPreview"].forEach(function (k) { S[k] = v[k]; });
+        $("[data-updated]").textContent = "Updated just now";
+        render();
+        return v;
+      });
+    }
+    // A failed save says why, and puts the page back the way it was.
+    function failed(e) { toast(e.message, true); render(); }
+
+    function render() {
+      $$("[data-name-text]").forEach(function (el) { el.textContent = name(); });
+      document.title = name() + " · Formelab";
+      var title = $("[data-title]");
+      if (document.activeElement !== title) title.value = S.title || "";
+      var a = access();
+      var pill = $("[data-pill]");
+      pill.className = "sharepill " + a.kind;
+      var accessBtn = pill.querySelector(".sp-access");
+      accessBtn.innerHTML = icon(a.icon) + "<span></span>";
+      accessBtn.querySelector("span").textContent = a.label;
+      accessBtn.setAttribute("aria-label", a.label + ". Change who can open it");
+
+      var isPublic = !!S.publicUrl;
+      $$("[data-access-choice]").forEach(function (b) { b.setAttribute("aria-pressed", (b.dataset.accessChoice === "public") === isPublic ? "true" : "false"); });
+      $("[data-invite-hint]").hidden = isPublic;
+      $("[data-members-note]").hidden = isPublic || S.visibility !== "all";
+      $("[data-public-warn]").hidden = !isPublic;
+      $("[data-linkbox]").hidden = !isPublic;
+      $("[data-public-url]").textContent = S.publicUrl || "";
+      var guestRow = $("[data-guest-row]");
+      if (guestRow) guestRow.hidden = !isPublic;
+      $$("[data-setting]").forEach(function (box) {
+        box.checked = box.dataset.setting === "dataWrites" ? S.dataWrites === "everyone" : !!S.guestResponses;
+      });
+      $$("[data-preview]").forEach(function (card) { card.hidden = card.dataset.preview !== S.linkPreview; });
+      var lead = "This is what people see when the link is shared in iMessage, Slack or WhatsApp.";
+      $("[data-preview-note]").textContent = S.linkPreview === "private"
+        ? lead + " Because the app is invited only, it shows a private card and the app's name stays hidden."
+        : lead + (isPublic ? " Because the link is public, it shows the app's name and picture." : " It shows the app's name and picture.");
+      renderPeople();
+    }
+
+    function renderPeople() {
+      var list = $("[data-people]");
+      list.textContent = "";
+      function row(email, sub, control, isOwnerRow) {
+        var li = document.createElement("li");
+        li.className = "person";
+        li.innerHTML = '<span class="avatar' + (isOwnerRow ? "" : " soft") + '" aria-hidden="true"></span><span class="pi"><span class="pe"></span><span class="ps"></span></span>';
+        li.querySelector(".avatar").textContent = email.slice(0, 1).toUpperCase();
+        li.querySelector(".pe").textContent = email + (email === S.me ? " (you)" : "");
+        li.querySelector(".ps").textContent = sub;
+        li.appendChild(control);
+        list.appendChild(li);
+      }
+      function label(text) {
+        var span = document.createElement("span");
+        span.className = "role-label";
+        span.textContent = text;
+        return span;
+      }
+      row(S.ownerEmail, "Owner", label("Owner"), true);
+      sharedWith().forEach(function (email) {
+        var role = roleOf(email);
+        // The owner changes every role; Admins only Viewers (only the owner may choose editors).
+        var roles = email === S.me ? "" : S.isOwner ? "viewer,editor,admin" : S.canShare && role === "viewer" ? "viewer" : "";
+        if (!roles) { row(email, "Invited", label(ROLES[role][0])); return; }
+        var b = document.createElement("button");
+        b.type = "button";
+        b.className = "rp-btn";
+        b.dataset.person = email;
+        b.dataset.role = role;
+        b.dataset.roles = roles;
+        b.setAttribute("aria-haspopup", "listbox");
+        b.setAttribute("aria-expanded", "false");
+        b.setAttribute("aria-label", "Role for " + email);
+        b.innerHTML = "<span></span>" + CHEVRON;
+        b.querySelector("span").textContent = ROLES[role][0];
+        row(email, "Invited", b);
+      });
+    }
+
+    // The lists that give `email` a role ("remove" takes them off all of them). Only the owner
+    // may change editors, so Admins send the viewer list alone.
+    function listsFor(email, role) {
+      var allowed = without(S.allowedEmails, email);
+      var editors = without(S.editors, email);
+      var sharers = without(S.sharers, email);
+      if (role === "viewer") allowed.push(email);
+      if (role === "editor" || role === "admin") editors.push(email);
+      if (role === "admin") sharers.push(email);
+      var body = { allowed_emails: allowed };
+      if (S.isOwner) { body.editors = editors; body.sharers = sharers; }
+      return body;
+    }
+    var aRole = function (role) { return role === "viewer" ? "a Viewer" : role === "editor" ? "an Editor" : "an Admin"; };
+
+    function setRole(email, role) {
+      patch(listsFor(email, role)).then(function () {
+        toast(role === "remove" ? email + " no longer has access" : email + " is now " + aRole(role));
+        var again = document.querySelector('[data-person="' + CSS.escape(email) + '"]');
+        if (again) again.focus();
+      }, failed);
+    }
+
+    // Header: the name saves when you leave the field or press Enter; Esc puts it back.
+    var title = $("[data-title]");
+    title.addEventListener("keydown", function (ev) {
+      if (ev.key === "Enter") { ev.preventDefault(); title.blur(); }
+      if (ev.key === "Escape") { title.value = S.title || ""; title.blur(); }
+    });
+    title.addEventListener("change", function () {
+      var value = title.value.trim();
+      if (value === (S.title || "")) return;
+      patch({ title: value }).then(function () { toast("Name saved"); }, failed);
+    });
+
+    var star = $(".star-btn");
+    paintStar(star, isStarred(S.id));
+    star.addEventListener("click", function () {
+      var on = !isStarred(S.id);
+      setStarred(S.id, on);
+      paintStar(star, on);
+      toast(on ? "Starred. It shows at the top of your apps." : "Removed from starred");
+    });
+
+    // Tabs: Sharing, Update, Activity. Arrow keys move between them; the address keeps the open one.
+    var tabs = $$("[role=tab]");
+    function selectTab(key, focus) {
+      tabs.forEach(function (t) {
+        var on = t.dataset.tab === key;
+        t.setAttribute("aria-selected", on ? "true" : "false");
+        t.tabIndex = on ? 0 : -1;
+        document.getElementById(t.getAttribute("aria-controls")).hidden = !on;
+        if (on && focus) t.focus();
+      });
+      try { history.replaceState(null, "", key === "sharing" ? location.pathname : "#" + key); } catch (e) {}
+    }
+    tabs.forEach(function (t, i) {
+      t.addEventListener("click", function () { selectTab(t.dataset.tab); });
+      t.addEventListener("keydown", function (ev) {
+        var to = ev.key === "ArrowRight" ? (i + 1) % tabs.length : ev.key === "ArrowLeft" ? (i - 1 + tabs.length) % tabs.length : -1;
+        if (to !== -1) { ev.preventDefault(); selectTab(tabs[to].dataset.tab, true); }
+      });
+    });
+    var start = location.hash.slice(1);
+    if (tabs.some(function (t) { return t.dataset.tab === start; })) selectTab(start);
+
+    // The "..." menu.
+    var menuBtn = $("[data-menu-btn]");
+    var menu = $("#app-menu");
+    function closeMenu(refocus) {
+      if (menu.hidden) return;
+      menu.hidden = true;
+      menuBtn.setAttribute("aria-expanded", "false");
+      if (refocus) menuBtn.focus();
+    }
+    menuBtn.addEventListener("click", function () {
+      if (!menu.hidden) { closeMenu(); return; }
+      menu.hidden = false;
+      menuBtn.setAttribute("aria-expanded", "true");
+      menu.querySelector("button").focus();
+    });
+    menu.addEventListener("keydown", function (ev) {
+      var items = Array.prototype.slice.call(menu.querySelectorAll("button"));
+      var i = items.indexOf(document.activeElement);
+      if (ev.key === "ArrowDown") { ev.preventDefault(); items[(i + 1) % items.length].focus(); }
+      if (ev.key === "ArrowUp") { ev.preventDefault(); items[(i - 1 + items.length) % items.length].focus(); }
+      if (ev.key === "Tab") closeMenu(false);
+    });
+    menu.addEventListener("click", function () { closeMenu(false); });
+    document.addEventListener("click", function (ev) {
+      if (!menu.hidden && !menu.contains(ev.target) && !menuBtn.contains(ev.target)) closeMenu(false);
+    });
+    document.addEventListener("keydown", function (ev) {
+      if (ev.key !== "Escape") return;
+      if (roleMenu) closeRoles(true);
+      else closeMenu(true);
+    });
+
+    // Delete: type the app's name to confirm.
+    var delInput = $("[data-delete-input]");
+    if (delInput) {
+      var delGo = $("[data-delete-go]");
+      $("#dlg-delete").addEventListener("close", function () { delInput.value = ""; delGo.disabled = true; });
+      delInput.addEventListener("input", function () { delGo.disabled = delInput.value.trim() !== name(); });
+      delGo.addEventListener("click", function () {
+        delGo.disabled = true;
+        api("DELETE", "/sites/" + encodeURIComponent(S.id)).then(function () {
+          $("#dlg-delete").close();
+          toast(name() + " deleted");
+          setTimeout(function () { location.href = S.next; }, 900);
+        }, function (e) { delGo.disabled = false; toast(e.message, true); });
+      });
+    }
+
+    $("[data-reset-go]").addEventListener("click", function () {
+      $("#dlg-reset").close();
+      patch({ public_link: "new" }).then(function () { toast("New link ready. The old one no longer works."); }, failed);
+    });
+
+    page.addEventListener("click", function (ev) {
+      var t = ev.target;
+      if (t.closest("[data-goto-tab]")) {
+        selectTab(t.closest("[data-goto-tab]").dataset.gotoTab, true);
+        document.getElementById("panel-sharing").scrollIntoView({ behavior: "smooth", block: "start" });
+        return;
+      }
+      if (t.closest("[data-copy-link]")) {
+        copyText(S.publicUrl || S.url, copiedMessage(access().kind, sharedWith().length));
+        return;
+      }
+      if (t.closest("[data-copy-public]")) { copyText(S.publicUrl, "Link copied"); return; }
+      var choice = t.closest("[data-access-choice]");
+      if (choice) {
+        var toPublic = choice.dataset.accessChoice === "public";
+        if (toPublic === !!S.publicUrl) return;
+        // Previews always follow who can open the app now; Invited only also ends "all members".
+        var body = toPublic ? { public_link: true, link_preview: "auto" } : { public_link: false, visibility: "restricted", link_preview: "auto" };
+        patch(body).then(function () {
+          toast(toPublic ? "Anyone with the link can open it now" : "Only people you invite can open it now");
+        }, failed);
+        return;
+      }
+      if (t.closest("[data-limit]")) {
+        patch({ visibility: "restricted", link_preview: "auto" }).then(function () { toast("Only people you invite can open it now"); }, failed);
+        return;
+      }
+      var person = t.closest("[data-person]");
+      if (person) {
+        openRoles(person, function (role) { setRole(person.dataset.person, role); }, true);
+        return;
+      }
+      var inviteRole = t.closest("[data-invite-role]");
+      if (inviteRole) {
+        openRoles(inviteRole, function (role) {
+          inviteRole.dataset.role = role;
+          inviteRole.querySelector("span").textContent = ROLES[role][0];
+        }, false);
+      }
+    });
+    // Open a role picker from the keyboard with the arrow keys too.
+    page.addEventListener("keydown", function (ev) {
+      var btn = ev.target.closest && ev.target.closest(".rp-btn");
+      if (btn && (ev.key === "ArrowDown" || ev.key === "ArrowUp")) { ev.preventDefault(); btn.click(); }
+    });
+
+    page.addEventListener("change", function (ev) {
+      var box = ev.target.closest("[data-setting]");
+      if (!box) return;
+      var on = box.checked;
+      var body = box.dataset.setting === "dataWrites" ? { data_writes: on ? "everyone" : "editors" } : { guest_responses: on };
+      patch(body).then(function () {
+        toast(box.dataset.setting === "dataWrites"
+          ? on ? "Viewers can change the app's data now" : "Only you, Editors and Admins can change its data now"
+          : on ? "Anyone with the link can send answers now" : "People with the link can no longer send answers");
+      }, failed);
+    });
+
+    var invite = $("[data-invite]");
+    if (invite) {
+      invite.addEventListener("submit", function (ev) {
+        ev.preventDefault();
+        var input = invite.elements.emails;
+        var raw = input.value.split(/[\s,;]+/).map(function (x) { return x.trim().toLowerCase(); }).filter(Boolean);
+        if (!raw.length) { toast("Add an email first", true); input.focus(); return; }
+        var bad = raw.filter(function (x) { return !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(x); });
+        if (bad.length) { toast("Check this email address: " + bad[0], true); input.focus(); return; }
+        var current = sharedWith().concat([S.ownerEmail]);
+        var fresh = unique(raw).filter(function (x) { return current.indexOf(x) === -1; });
+        if (!fresh.length) { toast(raw.length === 1 ? raw[0] + " already has access" : "They all have access already", true); return; }
+        var role = invite.querySelector("[data-invite-role]").dataset.role;
+        var body = {};
+        if (role === "viewer") body.allowed_emails = unique(S.allowedEmails.concat(fresh));
+        else {
+          body.editors = unique(S.editors.concat(fresh));
+          body.sharers = role === "admin" ? unique(S.sharers.concat(fresh)) : S.sharers;
+        }
+        busy(invite, true);
+        patch(body).then(function (r) {
+          input.value = "";
+          // Over the daily share email limit: say who wasn't emailed.
+          toast(r && r.note ? r.note : fresh.length === 1 ? "Invited " + fresh[0] + " as " + aRole(role) : "Invited " + fresh.length + " people as " + ROLES[role][0] + "s");
+        }, failed).then(function () { busy(invite, false); });
+      });
+    }
+
+    // Update: describe a change and your AI rewrites the app; progress in plain words.
+    var prompt = $("[data-update-prompt]");
+    page.addEventListener("click", function (ev) {
+      var idea = ev.target.closest("[data-append-idea]");
+      if (idea && prompt) {
+        var text = prompt.value.trim().replace(/[.\s]+$/, "");
+        prompt.value = text ? text + ". " + idea.dataset.appendIdea : idea.dataset.appendIdea;
+        prompt.focus();
+        return;
+      }
+      var go = ev.target.closest("[data-update]");
+      if (go) runUpdate(go);
+      var showUpload = ev.target.closest("[data-show-upload]");
+      if (showUpload) {
+        var zone = $("[data-dropzone]");
+        zone.hidden = !zone.hidden;
+        showUpload.setAttribute("aria-expanded", zone.hidden ? "false" : "true");
+      }
+    });
+
+    var STAGES = ["Reading your app…", "Sketching the changes…", "Wiring it up…", "Almost there…"];
+    function runUpdate(btn) {
+      var change = prompt.value.trim();
+      if (!change) { toast("Tell it what to change first", true); prompt.focus(); return; }
+      var box = $("[data-progress]");
+      var text = $("[data-progress-text]");
+      var started = Date.now();
+      var chars = 0;
+      var stage = -1;
+      function step() {
+        // Words for how far along it is, from how much it has written and how long it's taken.
+        var s = Math.max(chars > 12000 ? 3 : chars > 4000 ? 2 : chars > 0 ? 1 : 0, Math.min(3, Math.floor((Date.now() - started) / 20000)));
+        if (s > stage) { stage = s; text.textContent = STAGES[s]; }
+      }
+      btn.disabled = true;
+      box.className = "progress";
+      box.hidden = false;
+      step();
+      var timer = setInterval(step, 1000);
+      var finished = false;
+      function finish(ok, message) {
+        if (finished) return;
+        finished = true;
+        clearInterval(timer);
+        btn.disabled = false;
+        box.className = "progress " + (ok ? "done" : "error");
+        if (ok) {
+          text.innerHTML = "It's live. <a target=\"_blank\" rel=\"noopener\">Take a look</a>";
+          text.querySelector("a").href = S.url;
+          prompt.value = "";
+          $("[data-updated]").textContent = "Updated just now";
+        } else {
+          text.textContent = message;
+          toast(message, true);
+        }
+      }
+      function handle(line) {
+        if (!line.trim()) return;
+        var msg;
+        try { msg = JSON.parse(line); } catch (e) { return; }
+        if (msg.error) finish(false, msg.error.message + (msg.error.hint ? " " + msg.error.hint : ""));
+        else if (msg.done) finish(true);
+        else if (msg.progress) { chars = msg.progress; step(); }
+      }
+      fetch("/_api/admin/build", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "x-formelab-request": "1", "content-type": "application/json" },
+        body: JSON.stringify({ provider: btn.dataset.update, site_id: S.id, change: change })
+      }).then(function (res) {
+        if (!res.ok || !res.body) {
+          return res.json().then(function (d) { throw new Error(d.error.message + (d.error.hint ? " " + d.error.hint : "")); }, function () { throw new Error("Request failed (" + res.status + ")"); });
+        }
+        var reader = res.body.getReader();
+        var decoder = new TextDecoder();
+        var buf = "";
+        function pump() {
+          return reader.read().then(function (r) {
+            if (r.done) { handle(buf); finish(false, "The update stopped before it finished. Check the app in a minute, or try again."); return; }
+            buf += decoder.decode(r.value, { stream: true });
+            var lines = buf.split("\n");
+            buf = lines.pop();
+            lines.forEach(handle);
+            return pump();
+          });
+        }
+        return pump();
+      }).catch(function (e) { finish(false, e.message || "The update failed. Try again."); });
+    }
+
+    // Upload a new version: drop a file on the box, or choose one.
+    var zone = $("[data-dropzone]");
+    var fileInput = $("[data-upload-file]");
+    function upload(file) {
+      if (!file) return;
+      if (!/\.(html?|zip)$/i.test(file.name)) { toast("Choose an .html or .zip file", true); return; }
+      var fd = new FormData();
+      fd.set("file", file);
+      fd.set("namespace", S.namespace);
+      fd.set("mount_path", S.mountPath);
+      zone.classList.add("busy");
+      api("POST", "/sites", fd).then(function () {
+        toast("New version published");
+        $("[data-updated]").textContent = "Updated just now";
+      }, function (e) { toast(e.message, true); }).then(function () {
+        zone.classList.remove("busy");
+        fileInput.value = "";
+      });
+    }
+    fileInput.addEventListener("change", function () { upload(fileInput.files[0]); });
+    zone.addEventListener("dragover", function (ev) { ev.preventDefault(); zone.classList.add("over"); });
+    zone.addEventListener("dragleave", function () { zone.classList.remove("over"); });
+    zone.addEventListener("drop", function (ev) {
+      ev.preventDefault();
+      zone.classList.remove("over");
+      upload(ev.dataTransfer.files[0]);
+    });
+
+    render();
+  }
 })();
