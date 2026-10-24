@@ -869,9 +869,6 @@ table.data .tag { margin: 1px 0; }
 .dash main button.linkish[data-sheet-add-open] { margin-top: 10px; align-self: flex-start; color: var(--fl-accent); font-weight: 600; }
 .sheet-add, .key-replace { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
 .dash main .sheet-add input:not([type=checkbox]), .dash main .key-replace input:not([type=checkbox]) { flex: 1; min-width: 12rem; }
-.conn-start { display: flex; gap: 10px; align-items: flex-start; margin-top: 14px; font-size: .9rem; }
-.conn-start > svg { width: 22px; height: 22px; flex: none; border-radius: 6px; margin-top: 2px; }
-.dash main .conn-start button.linkish[data-sheet-add-open] { margin-top: 0; }
 .conn-empty { border: 1.5px dashed var(--fl-line); border-radius: var(--fl-radius-md); padding: 18px; color: var(--fl-ink-soft); font-size: .9rem; }
 .conn-empty strong { color: var(--fl-ink); }
 .used-list { list-style: none; margin: 0; padding: 0; }

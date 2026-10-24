@@ -51,8 +51,9 @@ describe("the Connected apps tab", () => {
       expect(html).not.toContain('data-conn="sheets"');
       expect(html).toContain('<span class="tab-badge" data-conn-count>0</span>');
       expect(html).toContain('<div class="conn-empty" data-conn-empty>');
-      // The owner can still let it use a spreadsheet, from a quiet link below.
-      expect(html).toContain("+ Let this app use a Google spreadsheet");
+      // No Google Sheets button of any kind on an app that doesn't use it.
+      expect(html).not.toContain("data-sheet-add-open");
+      expect(html).not.toContain("spreadsheet</button>");
     } finally {
       await env.DB.prepare("DELETE FROM service_keys WHERE owner_email = ? AND service = 'google_sheets'").bind(OWNER).run();
     }

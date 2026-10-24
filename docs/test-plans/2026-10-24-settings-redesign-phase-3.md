@@ -77,8 +77,8 @@ Ramzy (or whoever hands this off) prepares these before Cowork starts.
 | `SH-05` | Remove a spreadsheet. | Toast "Spreadsheet removed. This app can't reach it any more." Gone after reload; the app can no longer read it. |
 | `SH-06` | Remove the last spreadsheet. | The page reloads with the toast "Spreadsheet removed. This app doesn't use Google Sheets any more." The Google Sheets row is gone and the count on the tab goes down by one. |
 | `SH-07` | As Editor, open Tracker's tab. | The list shows with links, but no Remove buttons and no "+ Add a spreadsheet" (only the owner chooses, since it's their Google account). |
-| `SH-08` | Open Blank's tab as Owner (with Sheets connected). | No Google Sheets row and a count of 0: Blank doesn't use Sheets. "Nothing connected yet." shows, with a quiet "+ Let this app use a Google spreadsheet" link below it. As Editor, that link isn't there. |
-| `SH-10` | On Blank, use "+ Let this app use a Google spreadsheet" to add one. | The page reloads on the tab with the toast "Spreadsheet added…". Now a Google Sheets row lists it, and the count is 1. |
+| `SH-08` | Open Blank's tab as Owner (with Sheets connected). | No Google Sheets row, no Google Sheets button, and a count of 0: Blank doesn't use Sheets. Only "Nothing connected yet." shows. |
+| `SH-10` | Ask Claude to make Blank save to a Google spreadsheet, then reopen its tab. | A Google Sheets row now lists that spreadsheet, and the count is 1. |
 | `SH-11` | Open several apps that don't use Google Sheets. | None of them shows a Google Sheets row, whether or not your Google Sheets is connected. |
 | `SH-09` | Disconnect Google Sheets, then open Tracker's tab. Reconnect afterwards. | "Not connected" and a note that the app can't reach these spreadsheets until it's connected. |
 

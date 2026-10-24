@@ -980,8 +980,8 @@
         conns.querySelector("[data-sheet-empty]").hidden = S.sheets.length > 0;
         refresh();
       }
-      var addForm = $("[data-sheet-add]");
-      var addOpen = $("[data-sheet-add-open]");
+      var addForm = conns.querySelector("[data-sheet-add]");
+      var addOpen = conns.querySelector("[data-sheet-add-open]");
       if (addForm) {
         addOpen.addEventListener("click", function () {
           addForm.hidden = !addForm.hidden;
@@ -994,12 +994,6 @@
           if (!/docs\.google\.com\/spreadsheets\/d\/[\w-]+|^[\w-]{20,}$/.test(link)) { toast("That doesn't look like a Google Sheets link. Copy it from the spreadsheet's address bar.", true); return; }
           busy(addForm, true);
           patch({ sheets: S.sheets.concat([link]) }).then(function () {
-            // The app's first spreadsheet: it's connected to Google Sheets now, so show its row.
-            if (!conns.querySelector("[data-sheet-list]")) {
-              flashNext("Spreadsheet added. This app can read and add rows to it.");
-              location.reload();
-              return;
-            }
             addForm.reset();
             addForm.hidden = true;
             addOpen.setAttribute("aria-expanded", "false");

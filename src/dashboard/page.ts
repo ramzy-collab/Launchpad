@@ -222,8 +222,8 @@ function connectionsPanel(site: SiteView, conns: AppConnections, opts: { isSiteO
   </div>
 </div>`);
   }
-  // The way to add a spreadsheet: in the Google Sheets row once the app has one, else a quiet
-  // link below the list (owner only, with Sheets connected): it isn't a connection until then.
+  // Adding a spreadsheet, in the Google Sheets row (owner only). An app gets its first one from the
+  // AI that builds it (update_site's sheets), so apps that don't use Sheets never show it here.
   const sheetAdd = (label: string) => `<button type="button" class="linkish" data-sheet-add-open aria-expanded="false" aria-controls="sheet-add">${label}</button>
     <form class="sheet-add" id="sheet-add" data-sheet-add hidden>
       <input name="sheet" autocomplete="off" spellcheck="false" placeholder="https://docs.google.com/spreadsheets/d/..." aria-label="Google Sheets link">
@@ -264,11 +264,7 @@ function connectionsPanel(site: SiteView, conns: AppConnections, opts: { isSiteO
   return `<h2>Connected to this app</h2>
   <p class="muted" data-conn-intro${rows.length ? "" : " hidden"}>Services this app can use. To connect a new one, go to <a href="/connected">Connected apps</a>.</p>
   <div class="conns" data-conns>${rows.join("\n")}</div>
-  <div class="conn-empty" data-conn-empty${rows.length ? " hidden" : ""}><strong>Nothing connected yet.</strong><br>Connect AI, spreadsheets or other services on the <a href="/connected">Connected apps</a> page, then let this app use them.</div>${
-    !conns.sheets.ids.length && opts.isSiteOwner && conns.sheets.connected
-      ? `\n  <div class="conn-start">${SHEETS_LOGO()}<div>${sheetAdd("+ Let this app use a Google spreadsheet")}</div></div>`
-      : ""
-  }`;
+  <div class="conn-empty" data-conn-empty${rows.length ? " hidden" : ""}><strong>Nothing connected yet.</strong><br>Connect AI, spreadsheets or other services on the <a href="/connected">Connected apps</a> page, then let this app use them.</div>`;
 }
 
 /** The roles on an app's People list, from its share lists. */
