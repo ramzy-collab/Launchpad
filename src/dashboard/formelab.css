@@ -276,14 +276,46 @@ button.cta { border: 0; cursor: pointer; font: inherit; font-weight: 600; }
   .dash .content { padding-top: 20px; }
 }
 
-/* ---------- App browser (My apps, Shared with me): cards, starred first ---------- */
+/* ---------- App browser (My apps): cards, starred first, then yours and shared ---------- */
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .dash main button.bare, .dash main .bare { background: none; border: 0; color: inherit; padding: 0; min-height: 0; border-radius: 0; font-weight: inherit; }
 .browser-bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 24px 0; }
 .browser-bar .search { flex: 1 1 14rem; min-width: 12rem; position: relative; display: block; }
 .browser-bar .search svg { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: var(--fl-ink-soft); pointer-events: none; }
 .dash main .browser-bar .search input:not([type=checkbox]):not([type=file]) { width: 100%; padding-left: 42px; min-height: 44px; background: var(--fl-surface); }
-.dash main .browser-bar select { width: auto; min-height: 44px; background: var(--fl-surface); }
+/* One round button next to search holds every filter and the sort: a menu here, a bottom sheet on phones. */
+.filter-wrap { position: relative; flex: none; }
+.dash main button.filters-toggle { display: inline-grid; place-items: center; position: relative; width: 44px; height: 44px; min-height: 44px; padding: 0; background: var(--fl-surface); color: var(--fl-ink-soft); border: 1px solid var(--fl-line); border-radius: 50%; }
+.dash main button.filters-toggle:hover { transform: none; filter: none; border-color: var(--fl-ink-soft); color: var(--fl-ink); }
+.dash main button.filters-toggle.on, .dash main button.filters-toggle[aria-expanded="true"] { background: var(--fl-accent-soft); color: var(--fl-accent); border-color: var(--fl-accent); }
+.filters-dot { position: absolute; top: 8px; right: 8px; width: 8px; height: 8px; border-radius: 50%; background: var(--fl-accent); box-shadow: 0 0 0 2px var(--fl-surface); }
+.filters-dot[hidden] { display: none; }
+.filter-panel { position: absolute; top: calc(100% + 8px); right: 0; z-index: 15; width: 16.5rem; max-height: 70vh; overflow-y: auto; box-sizing: border-box; padding: 10px; background: var(--fl-surface); border: 1px solid var(--fl-line); border-radius: var(--fl-radius-md); box-shadow: var(--fl-shadow); display: flex; flex-direction: column; gap: 4px; }
+.filter-panel[hidden] { display: none; }
+.fp-head { display: none; }
+.filter-panel fieldset { border: 0; margin: 0; padding: 0; display: flex; flex-direction: column; min-width: 0; }
+.filter-panel legend { padding: 6px 8px 2px; font: 600 .75rem var(--fl-body); letter-spacing: .07em; text-transform: uppercase; color: var(--fl-ink-soft); }
+.fp-opt { display: flex; align-items: center; gap: 10px; min-height: 40px; padding: 0 10px; border-radius: var(--fl-radius-sm); cursor: pointer; font-size: .9rem; overflow-wrap: anywhere; }
+.fp-opt:hover { background: var(--fl-surface-2); }
+.fp-opt:has(input:checked) { background: var(--fl-surface-2); font-weight: 600; }
+.dash main .filter-panel .fp-opt input[type=radio] { accent-color: var(--fl-accent); width: 16px; height: 16px; min-height: 0; margin: 0; padding: 0; border: 0; background: none; flex: none; }
+.dash main button.fp-link { background: none; border: 0; padding: 0 8px; min-height: 40px; color: var(--fl-accent); font-weight: 600; }
+.dash main button.fp-link:hover { transform: none; filter: none; color: var(--fl-ink); }
+.dash main button.fp-reset { border-top: 1px solid var(--fl-line); border-radius: 0; margin-top: 6px; }
+.dash main button.fp-reset[hidden] { display: none; }
+/* Made by you, Shared with you: plain groups, not cards. */
+.dash section.group { background: none; border: 0; box-shadow: none; padding: 0; margin: 0; }
+.dash .group:not([hidden]) ~ .group { margin-top: 32px; }
+.group[hidden] { display: none; }
+.section-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 12px; margin: 0 0 10px; }
+.dash .section-head h2 { margin: 0; font-size: 1.25rem; }
+.dash .section-head .count { margin-left: 4px; }
+.dash section .section-head p { margin: 0; font-size: .8125rem; }
+.mine-empty { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; border: 1.5px dashed var(--fl-line); border-radius: var(--fl-radius-lg); padding: 18px 20px; }
+.dash section .mine-empty p { margin: 0; flex: 1 1 16rem; }
+/* Someone else's app: the owner's initial on the icon, and a role chip in place of the access chip. */
+.owner-badge { position: absolute; top: 50px; left: 50px; z-index: 1; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; background: var(--fl-pop-2); color: var(--tag-ink); font: 700 .6875rem var(--fl-display); box-shadow: 0 0 0 2px var(--fl-surface); pointer-events: none; }
+.chip.role { background: var(--fl-surface); color: var(--fl-ink); border: 1px solid var(--fl-line); padding: 2px 8px; }
 .group + .group { margin-top: 28px; }
 .dash h3.group-head { font: 600 .78rem var(--fl-body); letter-spacing: .07em; text-transform: uppercase; color: var(--fl-ink-soft); margin: 0 0 10px; display: flex; align-items: center; gap: 6px; }
 .star-mark { color: var(--fl-pop-2); font-size: .95rem; }
@@ -327,20 +359,18 @@ button.cta { border: 0; cursor: pointer; font: inherit; font-weight: 600; }
 .thumb.lg { width: 64px; height: 64px; border-radius: 18px; font-size: 1.875rem; }
 .hue-0 { background: #5B4CF5; } .hue-1 { background: #FF6B4A; } .hue-2 { background: #2BC48A; } .hue-3 { background: #F5A623; }
 .hue-4 { background: #E5487D; } .hue-5 { background: #3B82F6; } .hue-6 { background: #14B8A6; } .hue-7 { background: #8B5CF6; }
-.ac-art, .filters-toggle { display: none; }
-.dash main .bar-filters { display: contents; }
-/* Phones: one row of search and a filter button; cards two to a row, each a tile in the app's color. */
+.ac-art { display: none; }
+/* Phones: search and the filter button in one row, the filters in a bottom sheet; cards two to a row, each a tile in the app's color. */
 @media (max-width: 640px) {
   .browser-bar { gap: 8px; margin: 16px 0 20px; }
   .browser-bar .search { flex: 1 1 0; min-width: 0; }
-  .dash main button.filters-toggle { display: inline-grid; place-items: center; position: relative; width: 44px; height: 44px; min-height: 44px; padding: 0; flex: none; background: var(--fl-surface); color: var(--fl-ink); border: 1.5px solid var(--fl-line); border-radius: var(--fl-radius-sm); }
-  .dash main button.filters-toggle:hover { transform: none; filter: none; border-color: var(--fl-ink-soft); }
-  .dash main .browser.filters-open button.filters-toggle { border-color: var(--fl-accent); color: var(--fl-accent); }
-  .filters-dot { position: absolute; top: 7px; right: 7px; width: 8px; height: 8px; border-radius: 50%; background: var(--fl-accent); }
-  .filters-dot[hidden] { display: none; }
-  .dash main .bar-filters { display: none; width: 100%; gap: 8px; }
-  .dash main .browser.filters-open .bar-filters { display: flex; }
-  .dash main .bar-filters select { flex: 1 1 0; min-width: 0; min-height: 40px; font-size: .875rem; }
+  .filter-panel { position: fixed; top: auto; left: 0; right: 0; bottom: 0; z-index: 40; width: auto; max-height: 85vh; padding: 10px 16px calc(20px + env(safe-area-inset-bottom)); border: 0; border-radius: var(--fl-radius-lg) var(--fl-radius-lg) 0 0; box-shadow: 0 0 0 100vmax rgba(28,27,25,.4); }
+  .fp-head { display: flex; align-items: center; justify-content: space-between; }
+  .dash .fp-head h2 { margin: 0; font-size: 1.125rem; }
+  .fp-opt { min-height: 48px; font-size: 1rem; }
+  body.filters-sheet-open { overflow: hidden; }
+  .owner-badge { top: 8px; left: 8px; width: 26px; height: 26px; box-shadow: 0 0 0 2px #fff; }
+  .chip.role { border: 0; }
   .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
   .appcard { aspect-ratio: 1; padding: 10px; overflow: hidden; border: 0; justify-content: flex-end; gap: 2px; color: #fff; }
   .appcard:hover, .appcard:focus-within { transform: none; }
@@ -361,7 +391,7 @@ button.cta { border: 0; cursor: pointer; font: inherit; font-weight: 600; }
   .ac-updated { display: none; }
   .ac-foot { margin-top: 4px; min-height: 26px; }
   .chip { font-size: .68rem; padding: 2px 7px; background: rgba(0,0,0,.28); color: #fff; }
-  .chip.public, .chip.shared, .chip.members { background: rgba(0,0,0,.28); color: #fff; }
+  .chip.public, .chip.shared, .chip.members, .chip.role { background: rgba(0,0,0,.28); color: #fff; }
   .chip svg { width: 11px; height: 11px; }
   .ac-foot .copy { pointer-events: auto; opacity: 1; }
   .dash main .ac-foot button.copy { width: 28px; height: 28px; border: 0; background: rgba(0,0,0,.22); color: #fff; }

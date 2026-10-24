@@ -57,7 +57,7 @@ export function formelabManifest(): Response {
       shortcuts: [
         { name: "New app", url: "/new" },
         { name: "My apps", url: "/" },
-        { name: "Shared with me", url: "/shared" },
+        { name: "Shared with me", url: "/?owner=others" },
       ],
     },
     "public, max-age=3600",

@@ -636,5 +636,5 @@ only the changed files and `delete` lists paths to remove, one per line).
 - [ ] Works on a phone (responsive layout, `<meta name="viewport">`), and as an installed app (every screen has a way back).
 - [ ] **Has an icon (required):** a small SVG that fits the app, linked in `<head>` as `<link rel="icon" href="data:image/svg+xml,...">` (URL-encoded SVG), or as `<link rel="icon" href="icon.svg">` with `icon.svg` in the zip. Formelab shows it on the app's tile, and the `publish` tool refuses apps without one (`icon_required`).
 - [ ] **Has a share illustration and description (recommended):** a 1200×630 SVG that shows what the app is, named by `<meta property="og:image">`, and a one-sentence `<meta name="description">`, for link previews in iMessage, Slack and the rest (see "Link previews"). No one's data in them: they're public.
-- [ ] Apps are private by default (only the owner and editors). Add `allowed_emails` for the people who should open it; they see it under "Shared with me".
+- [ ] Apps are private by default (only the owner and editors). Add `allowed_emails` for the people who should open it; they see it under "My apps".
 - [ ] Published with the right `namespace` and `mount_path`; the URL was shared with the user.

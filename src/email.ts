@@ -168,7 +168,7 @@ export function appSharedEmail(origin: string, to: string, opts: { by: string; t
     html: layout(
       "An app was shared with you",
       [
-        `<strong>${e(opts.by)}</strong> shared the app <strong>${e(opts.title)}</strong> with you on Formelab. You can ${access} it, and you'll find it under <strong>Shared with me</strong>.`,
+        `<strong>${e(opts.by)}</strong> shared the app <strong>${e(opts.title)}</strong> with you on Formelab. You can ${access} it, and you'll find it under <strong>My apps</strong>.`,
         `Log in as <strong>${e(to)}</strong> to open it.`,
       ],
       { label: "Open the app", url: opts.url },
@@ -176,7 +176,7 @@ export function appSharedEmail(origin: string, to: string, opts: { by: string; t
     text: plain([
       `${opts.by} shared "${opts.title}" with you on Formelab. You can ${access} it.`,
       `Open it: ${opts.url}`,
-      `Everything shared with you: ${origin}/shared (log in as ${to}).`,
+      `Everything shared with you: ${origin}/?owner=others (log in as ${to}).`,
     ]),
   };
 }
@@ -227,14 +227,14 @@ export function namespaceSharedEmail(origin: string, to: string, opts: { by: str
     html: layout(
       `You can now edit ${e(opts.namespace)}`,
       [
-        `<strong>${e(opts.by)}</strong> added you as an editor of the <strong>${e(opts.namespace)}</strong> space. You can open, update and publish the apps in it; they appear under <strong>Shared with me</strong>.`,
+        `<strong>${e(opts.by)}</strong> added you as an editor of the <strong>${e(opts.namespace)}</strong> space. You can open, update and publish the apps in it; they appear under <strong>My apps</strong>.`,
       ],
-      { label: "See shared apps", url: `${origin}/shared` },
+      { label: "See shared apps", url: `${origin}/?owner=others` },
     ),
     text: plain([
       `${opts.by} added you as an editor of the "${opts.namespace}" space on Formelab.`,
       `Its apps: ${opts.url}`,
-      `Everything shared with you: ${origin}/shared`,
+      `Everything shared with you: ${origin}/?owner=others`,
     ]),
   };
 }

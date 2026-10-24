@@ -383,60 +383,100 @@
     btn.title = on ? "Unstar" : "Star";
   }
 
-  // App browser (My apps, Shared with me): starred cards first, then search, space and sort.
+  // App browser (My apps): starred cards first, then "Made by you" and "Shared with you". Search sits
+  // next to one button whose menu holds every filter (owner, space) and the sort. The choices live in the
+  // address (?owner=others&space=x&sort=name), so links like the old Shared with me page open filtered.
   function initBrowser(root) {
     var q = root.querySelector("[data-q]");
-    var space = root.querySelector('[data-filter="space"]');
-    var sortSel = root.querySelector("[data-sort-select]");
     var cards = Array.prototype.slice.call(root.querySelectorAll("[data-app]"));
     var starredGroup = root.querySelector("[data-starred]");
     var starredBox = root.querySelector("[data-starred-cards]");
-    var restGroup = root.querySelector("[data-rest]");
-    var restBox = root.querySelector("[data-rest-cards]");
-    var restHead = root.querySelector("[data-rest-head]");
     var hint = root.querySelector("[data-star-hint]");
     var noMatch = root.querySelector("[data-no-match]");
+    var toggle = root.querySelector("[data-filters-toggle]");
+    var panel = root.querySelector("[data-filter-panel]");
     var dot = root.querySelector("[data-filters-dot]");
-    var filtersToggle = root.querySelector("[data-filters-toggle]");
-    filtersToggle.addEventListener("click", function () {
-      var open = root.classList.toggle("filters-open");
-      filtersToggle.setAttribute("aria-expanded", open ? "true" : "false");
+    var reset = root.querySelector("[data-filters-reset]");
+    var mineEmpty = root.querySelector("[data-mine-empty]");
+    var groups = {};
+    root.querySelectorAll("[data-group]").forEach(function (g) {
+      groups[g.dataset.group] = { el: g, box: g.querySelector("[data-cards]"), count: g.querySelector("[data-count]") };
     });
+    var DEFAULTS = { owner: "", space: "", sort: "updated" };
     var SORTS = {
       updated: function (a, b) { return Number(b.dataset.updated) - Number(a.dataset.updated); },
       created: function (a, b) { return Number(b.dataset.created) - Number(a.dataset.created); },
       name: function (a, b) { return a.dataset.name.localeCompare(b.dataset.name); }
     };
 
+    function radios(key) { return Array.prototype.slice.call(panel.querySelectorAll('input[name="' + key + '"]')); }
+    function get(key) {
+      var on = radios(key).filter(function (r) { return r.checked; })[0];
+      return on ? on.value : DEFAULTS[key];
+    }
+    function set(key, value) {
+      var list = radios(key);
+      if (!list.some(function (r) { return r.value === value; })) return false;
+      list.forEach(function (r) { r.checked = r.value === value; });
+      return true;
+    }
+
     function apply() {
       var raw = q.value.trim();
       var text = raw.toLowerCase();
-      var sp = space ? space.value : "";
+      var owner = get("owner");
+      var sp = get("space");
       var shown = cards.filter(function (el) {
-        return (!sp || el.dataset.space === sp) && (!text || el.dataset.search.indexOf(text) !== -1);
+        return (!owner || el.dataset.owner === (owner === "me" ? "mine" : "shared")) &&
+          (!sp || el.dataset.space === sp) && (!text || el.dataset.search.indexOf(text) !== -1);
       });
-      shown.sort(SORTS[sortSel.value] || SORTS.updated);
+      shown.sort(SORTS[get("sort")] || SORTS.updated);
       var starred = [];
-      var rest = [];
+      var rest = { mine: [], shared: [] };
       cards.forEach(function (el) { el.hidden = true; });
       shown.forEach(function (el) {
         var on = !!stars[el.dataset.id];
         paintStar(el.querySelector("[data-star]"), on);
         el.hidden = false;
-        (on ? starred : rest).push(el);
+        (on ? starred : rest[el.dataset.owner]).push(el);
       });
       starred.forEach(function (el) { starredBox.appendChild(el); });
-      rest.forEach(function (el) { restBox.appendChild(el); });
-      var filtering = !!text || !!sp;
+      var filtering = !!text || !!owner || !!sp;
+      // Someone with no apps of their own yet still sees "Made by you", with a way to make one.
+      var invite = !!mineEmpty && !text && !sp && owner !== "others";
+      Object.keys(groups).forEach(function (key) {
+        var g = groups[key];
+        rest[key].forEach(function (el) { g.box.appendChild(el); });
+        g.count.textContent = shown.filter(function (el) { return el.dataset.owner === key; }).length;
+        g.el.hidden = !rest[key].length && !(key === "mine" && invite);
+      });
       starredGroup.hidden = !shown.length || (filtering && !starred.length);
       hint.hidden = starred.length > 0;
-      restGroup.hidden = !rest.length;
-      restHead.hidden = false;
-      restHead.textContent = starred.length ? "Everything else" : filtering ? "Results" : "All apps";
-      noMatch.hidden = shown.length > 0;
-      // On a phone the filters fold behind one button; a dot on it says one is in use.
-      dot.hidden = !sp && sortSel.value === "updated";
-      noMatch.querySelector("[data-no-match-text]").textContent = raw ? "Nothing matches “" + raw + "”" : "No apps in this space yet";
+      noMatch.hidden = shown.length > 0 || invite;
+      var changed = !!owner || !!sp || get("sort") !== DEFAULTS.sort;
+      dot.hidden = !changed;
+      toggle.classList.toggle("on", changed);
+      reset.hidden = !changed;
+      var nothingShared = owner === "others" && !cards.some(function (el) { return el.dataset.owner === "shared"; });
+      noMatch.querySelector("[data-no-match-text]").textContent = raw ? "Nothing matches “" + raw + "”" : nothingShared ? "Nothing shared with you yet" : "Nothing matches these filters";
+      noMatch.querySelector("[data-no-match-hint]").textContent = nothingShared && !raw ? "When someone adds your email to one of their apps, it shows up here." : "Try a different word, or change the filters.";
+    }
+
+    // Keep the choices in the address, so a reload or a shared link opens the same view.
+    function remember() {
+      var url = new URL(location.href);
+      ["owner", "space", "sort"].forEach(function (key) {
+        var v = get(key);
+        if (v && v !== DEFAULTS[key]) url.searchParams.set(key, v); else url.searchParams.delete(key);
+      });
+      try { history.replaceState(null, "", url.pathname + url.search + url.hash); } catch (e) { /* ignore */ }
+    }
+
+    function openPanel(open) {
+      panel.hidden = !open;
+      toggle.setAttribute("aria-expanded", open ? "true" : "false");
+      document.body.classList.toggle("filters-sheet-open", open);
+      if (open) (panel.querySelector("input:checked") || panel.querySelector("input")).focus();
     }
 
     var stars = {};
@@ -446,17 +486,30 @@
       stars[id] = true;
       saveStar(id, true).catch(function () { delete stars[id]; apply(); });
     });
+    var params = new URLSearchParams(location.search);
+    ["owner", "space", "sort"].forEach(function (key) { if (params.get(key)) set(key, params.get(key)); });
     q.addEventListener("input", apply);
-    if (space) space.addEventListener("change", apply);
-    sortSel.addEventListener("change", apply);
-    // A space's link (?space=<name>) opens the list filtered to that space.
-    var wanted = new URLSearchParams(location.search).get("space");
-    if (wanted && space && [].some.call(space.options, function (o) { return o.value === wanted; })) space.value = wanted;
+    panel.addEventListener("change", function () { apply(); remember(); });
+    toggle.addEventListener("click", function () { openPanel(panel.hidden); });
+    root.querySelector("[data-filters-done]").addEventListener("click", function () { openPanel(false); toggle.focus(); });
+    reset.addEventListener("click", function () {
+      Object.keys(DEFAULTS).forEach(function (key) { set(key, DEFAULTS[key]); });
+      apply();
+      remember();
+      toggle.focus();
+    });
+    panel.addEventListener("keydown", function (ev) {
+      if (ev.key === "Escape") { openPanel(false); toggle.focus(); }
+    });
+    document.addEventListener("click", function (ev) {
+      if (!panel.hidden && !ev.target.closest(".filter-wrap")) openPanel(false);
+    });
     root.addEventListener("click", function (ev) {
       if (ev.target.closest("[data-clear]")) {
         q.value = "";
-        if (space) space.value = "";
+        Object.keys(DEFAULTS).forEach(function (key) { set(key, DEFAULTS[key]); });
         apply();
+        remember();
         q.focus();
         return;
       }
@@ -921,7 +974,7 @@
         go.disabled = true;
         api("POST", "/sites/" + encodeURIComponent(S.id) + "/transfer", { to: email, confirm: true }).then(function () {
           d.close();
-          flashNext(email + " now owns " + name() + ". It's under Shared with me.");
+          flashNext(email + " now owns " + name() + ". It's still under My apps, as shared with you.");
           location.reload();
         }, function (e) { go.disabled = !ok.checked; toast(e.message, true); });
       };

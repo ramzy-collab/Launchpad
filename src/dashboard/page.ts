@@ -38,12 +38,11 @@ export function logoutControl(c: Context<AppEnv>): string {
     : `<a class="link" href="/cdn-cgi/access/logout">Log out</a>`;
 }
 
-export type Page = "apps" | "new" | "shared" | "spaces" | "connect" | "connected" | "keys" | "account" | "install";
+export type Page = "apps" | "new" | "spaces" | "connect" | "connected" | "keys" | "account" | "install";
 
 const PAGES: Record<Page, { title: string; intro: string }> = {
-  apps: { title: "My apps", intro: "Everything you've made, live on Formelab." },
+  apps: { title: "My apps", intro: "Apps you made, and apps other people shared with you." },
   new: { title: "New app", intro: "Ask your AI to make it, or upload one you already have." },
-  shared: { title: "Shared with me", intro: "Apps other people have shared with you." },
   spaces: { title: "Spaces", intro: "A space is the first part of your apps' address, like yourname.formelab.app. Invite editors to publish into it with you." },
   connect: { title: "Connect your AI", intro: "Make and publish apps by asking Claude, ChatGPT or Gemini." },
   connected: { title: "Connected apps", intro: "Services your apps can use through Formelab, without putting keys in them." },
@@ -67,7 +66,6 @@ export function shell(c: Context<AppEnv>, user: User, page: Page, body: string, 
     <nav class="side-nav" aria-label="Main">
       <p class="side-label">Apps</p>
       ${link("apps", "/")}
-      ${link("shared", "/shared")}
       ${link("spaces", "/spaces")}
       <p class="side-label">Connect</p>
       ${link("connect", "/connect")}
@@ -75,7 +73,7 @@ export function shell(c: Context<AppEnv>, user: User, page: Page, body: string, 
     </nav>
     ${getApp}`
     : `<nav class="side-nav" aria-label="Main">
-      ${link("shared", "/shared")}
+      ${link("apps", "/")}
       ${link("connect", "/connect")}
     </nav>
     ${getApp}`;
@@ -128,21 +126,6 @@ const waitlistedNotice = `<section class="notice">
   <p>Until then, anything someone shares with you appears below, and you can already <a href="/connect">connect your AI</a>.</p>
 </section>`;
 
-/** "Shared with me": apps other people own that they shared with this person by name. */
-export async function sharedPage(c: Context<AppEnv>): Promise<Response> {
-  const ctx = ctxOf(c);
-  const [sites, stars] = await Promise.all([listSharedSites(ctx), starredIds(ctx)]);
-  const body = `${ctx.user.active ? "" : waitlistedNotice}
-${
-  sites.length
-    ? appBrowser(sites.map((s) => ({ ...s, starred: stars.has(s.id) })), { shared: true })
-    : `<section>
-  <p class="muted">Nothing yet. When someone adds your email to one of their apps, it shows up here.</p>
-</section>`
-}`;
-  return shell(c, ctx.user, "shared", body);
-}
-
 /** Loads an app the person can manage, or answers 404 like any unknown page. */
 async function manageable(c: Context<AppEnv>, id: string) {
   try {
@@ -185,7 +168,7 @@ export async function appActivityPage(c: Context<AppEnv>, id: string): Promise<R
       : `<p class="muted">Nothing yet.</p>`
   }
 </section>`;
-  return shell(c, user, site.ownerEmail === user.email ? "apps" : "shared", body, `Activity: ${appName(site)}`);
+  return shell(c, user, "apps", body, `Activity: ${appName(site)}`);
 }
 
 /** Google Sheets' logo, from the services sprite's data. */
@@ -408,7 +391,7 @@ export async function appSettingsPage(c: Context<AppEnv>, id: string): Promise<R
     canShare: site.canShare,
     isOwner,
     responsesOn,
-    next: mine ? "/" : "/shared",
+    next: mine ? "/" : "/?owner=others",
   };
   const tab = (key: string, label: string, selected = false) =>
     `<button type="button" role="tab" id="tab-${key}" aria-controls="panel-${key}" aria-selected="${selected}" tabindex="${selected ? 0 : -1}" data-tab="${key}">${label}</button>`;
@@ -440,7 +423,7 @@ export async function appSettingsPage(c: Context<AppEnv>, id: string): Promise<R
     .map((a) => `<li><span class="act-what">${e(activitySentence(a, user.email))}</span><span class="act-when">${e(ago(a.at))}</span></li>`)
     .join("");
   const body = `<div class="app-page" data-app-page data-state="${e(JSON.stringify(state))}">
-<nav class="crumb" aria-label="Breadcrumb"><a href="${mine ? "/" : "/shared"}">${mine ? "My apps" : "Shared with me"}</a> <span aria-hidden="true">/</span> <span data-name-text>${e(name)}</span></nav>
+<nav class="crumb" aria-label="Breadcrumb"><a href="${mine ? "/" : "/?owner=others"}">My apps</a> <span aria-hidden="true">/</span> <span data-name-text>${e(name)}</span></nav>
 <section class="hero">
   ${thumb(site, "lg")}
   <div class="titlewrap">
@@ -513,7 +496,7 @@ export async function appSettingsPage(c: Context<AppEnv>, id: string): Promise<R
   </div>
   <div class="block">
     <h2>People</h2>
-    <p class="muted">Invite by email and choose what each person can do. They'll find it under Shared with me.</p>
+    <p class="muted">Invite by email and choose what each person can do. They'll find it under My apps.</p>
     ${
       site.canShare
         ? `<form class="invite" data-invite>
@@ -607,22 +590,30 @@ ${
 </dialog>`
     : ""
 }`;
-  return shell(c, user, mine ? "apps" : "shared", body, name, { pageHead: false });
+  return shell(c, user, "apps", body, name, { pageHead: false });
 }
 
-/** My apps: the apps you own, as cards, starred ones first. */
+/**
+ * My apps: the apps you own and the apps other people shared with you, as cards, starred ones first.
+ * People on the waitlist can't make apps yet, so they see only what's shared with them.
+ */
 export async function dashboardPage(c: Context<AppEnv>): Promise<Response> {
   const ctx = ctxOf(c);
-  if (!ctx.user.active) return sharedPage(c);
-  const [sites, stars] = await Promise.all([listOwnSites(ctx), starredIds(ctx)]);
-  const body = sites.length
-    ? appBrowser(sites.map((s) => ({ ...s, canManage: true, starred: stars.has(s.id) })), { shared: false })
-    : `<section class="empty">
+  const canMake = ctx.user.active;
+  const [own, shared, stars] = await Promise.all([canMake ? listOwnSites(ctx) : Promise.resolve([]), listSharedSites(ctx), starredIds(ctx)]);
+  const apps = [...own.map((s) => ({ ...s, mine: true })), ...shared.map((s) => ({ ...s, mine: false }))];
+  const browser = apps.length
+    ? appBrowser(apps.map((s) => ({ ...s, starred: stars.has(s.id) })), { me: ctx.user.email, canMake })
+    : canMake
+      ? `<section class="empty">
   <h2>What do you want to make?</h2>
   <p>A budget tracker, a sign-up sheet for your team, a tiny game. Describe it to your AI and it lands here, live.</p>
   <p><a class="cta" href="/new">+ New app</a></p>
+</section>`
+      : `<section>
+  <p class="muted">Nothing yet. When someone adds your email to one of their apps, it shows up here.</p>
 </section>`;
-  return shell(c, ctx.user, "apps", body);
+  return shell(c, ctx.user, "apps", `${canMake ? "" : waitlistedNotice}\n${browser}`);
 }
 
 /** How to install a web app, per device. install.js opens the one for the device in use. */
@@ -760,7 +751,7 @@ function keyDialog(b: Builder, app: AiApp, keys: Partial<Record<Builder, { hint:
 /** New app: describe it and hand it to your AI (the easy path), or upload files you already have. */
 export async function newAppPage(c: Context<AppEnv>): Promise<Response> {
   const ctx = ctxOf(c);
-  if (!ctx.user.active) return sharedPage(c);
+  if (!ctx.user.active) return dashboardPage(c);
   // Building here with an API key is behind the app_builder flag (admin panel → Features).
   const builderOn = !!c.get("features")?.has("app_builder");
   const [namespaces, connected, keys] = await Promise.all([
@@ -856,7 +847,7 @@ ${keyDialogs}
 /** Spaces (namespaces): the first part of an app's address, and who can publish into it. */
 export async function spacesPage(c: Context<AppEnv>): Promise<Response> {
   const ctx = ctxOf(c);
-  if (!ctx.user.active) return sharedPage(c);
+  if (!ctx.user.active) return dashboardPage(c);
   const namespaces = await listNamespaces(ctx);
   const rows = namespaces
     .map(

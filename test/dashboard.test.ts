@@ -58,7 +58,7 @@ describe("dashboard", () => {
 
   it("has a left menu with New app, the app and connect pages, and an account menu", async () => {
     for (const [path, title] of [
-      ["/app", "My apps"], ["/app/new", "New app"], ["/app/shared", "Shared with me"], ["/app/spaces", "Spaces"],
+      ["/app", "My apps"], ["/app/new", "New app"], ["/app/spaces", "Spaces"],
       ["/app/connect", "Connect your AI"], ["/app/connected", "Connected apps"], ["/app/keys", "Access keys"],
     ]) {
       const res = await call(path!, { as: OWNER });
@@ -66,7 +66,7 @@ describe("dashboard", () => {
       const html = await res.text();
       expect(html, path).toContain(`<h1>${title}</h1>`);
       expect(html, path).toContain('<a class="new-app" href="/new"');
-      for (const href of ['href="/"', 'href="/shared"', 'href="/spaces"', 'href="/connect"', 'href="/keys"']) expect(html, path).toContain(href);
+      for (const href of ['href="/"', 'href="/spaces"', 'href="/connect"', 'href="/keys"']) expect(html, path).toContain(href);
       // Connected apps is behind its feature flag, off by default: no link to it in the menu.
       expect(html, path).not.toContain('<a href="/connected"');
       expect(html, path).toContain("data-theme-toggle");
@@ -178,10 +178,10 @@ describe("app activity logs", () => {
     expect(html).not.toContain("shh");
     expect(html.match(/<tr><td class="nowrap">/g)).toHaveLength(5);
 
-    // Editors see it (and get a link under Shared with me); viewers and strangers get a 404.
+    // Editors see it (and get a link from the app's card on My apps); viewers and strangers get a 404.
     expect((await call(url, { as: editor })).status).toBe(200);
-    expect(await (await call("/app/shared", { as: editor })).text()).toContain(`<a class="ac-btn gear" href="/apps/${id}"`);
-    expect(await (await call("/app/shared", { as: viewer })).text()).not.toContain(`href="/apps/${id}"`); // viewers get no settings
+    expect(await (await call("/app", { as: editor })).text()).toContain(`<a class="ac-btn gear" href="/apps/${id}"`);
+    expect(await (await call("/app", { as: viewer })).text()).not.toContain(`href="/apps/${id}"`); // viewers get no settings
     expect((await call(url, { as: viewer })).status).toBe(404);
     expect((await call(url, { as: `x-${uniq()}@example.com` })).status).toBe(404);
     expect((await call("/app/apps/nope/activity", { as: OWNER })).status).toBe(404);
@@ -214,7 +214,9 @@ describe("app browser and app settings page", () => {
     expect(html).toContain("data-starred hidden");
     expect(html).toContain("Star the apps you use most");
     expect(html).toContain("data-q");
-    expect(html).toContain('data-filter="space"');
+    expect(html).toContain('data-filters-toggle');
+    expect(html).toContain('<legend>Owner</legend>');
+    expect(html).toContain('name="space" value="' + a + '"');
     for (const sort of ["Recently changed", "Newest first", "Name A to Z"]) expect(html).toContain(sort);
     expect(html).toContain('data-name="alpha tool"');
     const cardOf = (name: string) => html.slice(html.lastIndexOf('<div class="appcard"', html.indexOf(`data-name="${name}"`)), html.indexOf("</div>\n</div>", html.indexOf(`data-name="${name}"`)));
