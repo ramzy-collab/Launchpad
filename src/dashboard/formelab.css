@@ -407,7 +407,7 @@ button.cta { border: 0; cursor: pointer; font: inherit; font-weight: 600; }
 .dash main .tabbar button[aria-selected="true"] { color: var(--fl-ink); border-bottom-color: var(--fl-accent); }
 .dash section.panel { margin-top: 0; padding: 0; }
 .dash section.panel[hidden] { display: none; }
-.dash section#panel-update, .dash section#panel-activity { padding: clamp(20px, 3vw, 28px); }
+.dash section#panel-update, .dash section#panel-activity, .dash section#panel-connected { padding: clamp(20px, 3vw, 28px); }
 .block { padding: clamp(20px, 3vw, 28px); }
 .block + .block { border-top: 1px solid var(--fl-line); }
 .block-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
@@ -842,6 +842,42 @@ table.data .tag { margin: 1px 0; }
 .ps.pending { color: var(--fl-warn-ink); }
 .check-row { display: flex; gap: 10px; align-items: flex-start; font-size: .9rem; color: var(--fl-ink-soft); margin: 4px 0 4px; cursor: pointer; }
 .dash main .check-row input { margin-top: 3px; }
+
+/* ---------- App page: Connected apps tab, and the Connected apps page's Used by ---------- */
+.tab-badge { display: inline-block; min-width: 20px; margin-left: 6px; padding: 0 7px; border-radius: 999px; font-size: .75rem; line-height: 1.6; background: var(--fl-surface-2); border: 1px solid var(--fl-line); color: var(--fl-ink-soft); text-align: center; }
+.conns { display: grid; }
+.conn { display: flex; gap: 14px; align-items: flex-start; padding: 16px 0; }
+.conn + .conn { border-top: 1px solid var(--fl-line); }
+.conn-ic { width: 42px; height: 42px; flex: none; border-radius: 12px; display: grid; place-items: center; overflow: hidden; background: var(--fl-surface-2); border: 1px solid var(--fl-line); padding: 7px; color: var(--fl-ink); }
+.conn-ic svg { width: 100%; height: 100%; }
+.conn-ic:has(rect) { padding: 0; border: 0; }
+.conn-ic.key { color: var(--fl-ink-soft); }
+.conn-txt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.conn-txt strong { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; color: var(--fl-ink); }
+.conn-txt > span { font-size: .875rem; color: var(--fl-ink-soft); }
+.conn-txt .conn-note { margin-top: 4px; font-size: .8125rem; }
+.conn-txt a, .used-list a, .conn-empty a { word-break: normal; }
+.conn-actions { display: flex; gap: 6px; flex-wrap: wrap; flex: none; }
+.chip.ok { background: var(--fl-ok-bg); color: var(--fl-ok-ink); }
+.chip.off { background: var(--fl-warn-bg); color: var(--fl-warn-ink); }
+.sheet-list { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 6px; }
+.sheet-item { display: flex; align-items: center; gap: 10px; background: var(--fl-surface-2); border-radius: var(--fl-radius-sm); padding: 6px 8px 6px 10px; font-size: .875rem; }
+.sheet-item svg { width: 22px; height: 22px; flex: none; border-radius: 6px; }
+.sheet-item a { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; word-break: normal; }
+.dash section p.sheet-empty { margin: 8px 0 0; }
+.sheet-empty[hidden], .sheet-add[hidden], .key-replace[hidden], .conn-empty[hidden] { display: none; }
+.dash main button.linkish[data-sheet-add-open] { margin-top: 10px; align-self: flex-start; color: var(--fl-accent); font-weight: 600; }
+.sheet-add, .key-replace { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+.dash main .sheet-add input:not([type=checkbox]), .dash main .key-replace input:not([type=checkbox]) { flex: 1; min-width: 12rem; }
+.conn-empty { border: 1.5px dashed var(--fl-line); border-radius: var(--fl-radius-md); padding: 18px; color: var(--fl-ink-soft); font-size: .9rem; }
+.conn-empty strong { color: var(--fl-ink); }
+.used-list { list-style: none; margin: 0; padding: 0; }
+.used-list li { display: flex; gap: 14px; align-items: center; padding: 12px 0; }
+.used-list li + li { border-top: 1px solid var(--fl-line); }
+.used-list li > div { display: flex; flex-direction: column; min-width: 0; }
+.used-list li strong { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.used-list li span:not(.chip) { font-size: .875rem; color: var(--fl-ink-soft); }
+@media (max-width: 640px) { .conn { flex-wrap: wrap; } .conn-actions { width: 100%; padding-left: 56px; } }
 
 /* ---------- Admin panel: feature test plans ---------- */
 :root { --tp-pass: #1F9E6E; --tp-fail: #E5484D; --tp-blocked: #D99A00; --tp-todo: #D9D5CC; }

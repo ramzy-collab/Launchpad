@@ -676,7 +676,7 @@
 
     function patch(body) {
       return api("PATCH", "/sites/" + encodeURIComponent(S.id), body).then(function (v) {
-        ["title", "publicUrl", "allowedEmails", "editors", "sharers", "visibility", "dataWrites", "guestResponses", "linkPreview"].forEach(function (k) { S[k] = v[k]; });
+        ["title", "publicUrl", "allowedEmails", "editors", "sharers", "visibility", "dataWrites", "guestResponses", "linkPreview", "sheets"].forEach(function (k) { S[k] = v[k]; });
         $("[data-updated]").textContent = "Updated just now";
         render();
         return v;
@@ -947,6 +947,113 @@
       $("#dlg-reset").close();
       patch({ public_link: "new" }).then(function () { toast("New link ready. The old one no longer works."); }, failed);
     });
+
+    // The Connected apps tab: the app's spreadsheets and saved keys (connected_apps flag).
+    var conns = $("[data-conns]");
+    if (conns) initConnections();
+    function initConnections() {
+      var SHEET_LOGO = (conns.querySelector('[data-conn="sheets"] .conn-ic') || { innerHTML: "" }).innerHTML;
+      function refresh() {
+        var n = conns.querySelectorAll("[data-key]").length + (conns.querySelector('[data-conn="gemini"]') ? 1 : 0) + (S.sheets.length ? 1 : 0);
+        var badge = $("[data-conn-count]");
+        if (badge) badge.textContent = n;
+        var any = conns.children.length > 0;
+        $("[data-conn-empty]").hidden = any;
+        $("[data-conn-intro]").hidden = !any;
+      }
+      function renderSheets() {
+        var list = conns.querySelector("[data-sheet-list]");
+        if (!list) return;
+        list.textContent = "";
+        S.sheets.forEach(function (id) {
+          var li = document.createElement("li");
+          li.className = "sheet-item";
+          li.dataset.sheet = id;
+          li.innerHTML = SHEET_LOGO + '<a target="_blank" rel="noopener"></a>' + (S.me === S.ownerEmail ? '<button type="button" class="secondary small">Remove</button>' : "");
+          var a = li.querySelector("a");
+          a.href = "https://docs.google.com/spreadsheets/d/" + encodeURIComponent(id);
+          a.textContent = "Spreadsheet " + id.slice(-6);
+          var rm = li.querySelector("button");
+          if (rm) rm.dataset.sheetRemove = id;
+          list.appendChild(li);
+        });
+        conns.querySelector("[data-sheet-empty]").hidden = S.sheets.length > 0;
+        refresh();
+      }
+      var addForm = conns.querySelector("[data-sheet-add]");
+      var addOpen = conns.querySelector("[data-sheet-add-open]");
+      if (addForm) {
+        addOpen.addEventListener("click", function () {
+          addForm.hidden = !addForm.hidden;
+          addOpen.setAttribute("aria-expanded", addForm.hidden ? "false" : "true");
+          if (!addForm.hidden) addForm.elements.sheet.focus();
+        });
+        addForm.addEventListener("submit", function (ev) {
+          ev.preventDefault();
+          var link = addForm.elements.sheet.value.trim();
+          if (!/docs\.google\.com\/spreadsheets\/d\/[\w-]+|^[\w-]{20,}$/.test(link)) { toast("That doesn't look like a Google Sheets link. Copy it from the spreadsheet's address bar.", true); return; }
+          busy(addForm, true);
+          patch({ sheets: S.sheets.concat([link]) }).then(function () {
+            addForm.reset();
+            addForm.hidden = true;
+            addOpen.setAttribute("aria-expanded", "false");
+            renderSheets();
+            toast("Spreadsheet added. This app can read and add rows to it.");
+          }, failed).then(function () { busy(addForm, false); });
+        });
+      }
+      var removing = null;
+      var keyDialog = $("#dlg-key-remove");
+      conns.addEventListener("click", function (ev) {
+        var rmSheet = ev.target.closest("[data-sheet-remove]");
+        if (rmSheet) {
+          var id = rmSheet.dataset.sheetRemove;
+          patch({ sheets: S.sheets.filter(function (x) { return x !== id; }) }).then(function () {
+            renderSheets();
+            toast("Spreadsheet removed. This app can't reach it any more.");
+          }, failed);
+          return;
+        }
+        var row = ev.target.closest("[data-key]");
+        if (!row) return;
+        var form = row.querySelector("[data-key-form]");
+        if (ev.target.closest("[data-key-replace]")) { form.hidden = false; form.elements.value.focus(); return; }
+        if (ev.target.closest("[data-key-cancel]")) { form.reset(); form.hidden = true; row.querySelector("[data-key-replace]").focus(); return; }
+        if (ev.target.closest("[data-key-remove]")) {
+          removing = row;
+          keyDialog.querySelector("[data-key-remove-name]").textContent = row.dataset.key;
+          keyDialog.showModal();
+        }
+      });
+      conns.addEventListener("submit", function (ev) {
+        var form = ev.target.closest("[data-key-form]");
+        if (!form) return;
+        ev.preventDefault();
+        var name = form.closest("[data-key]").dataset.key;
+        var value = form.elements.value.value;
+        if (!value.trim()) { toast("Paste the new key first.", true); form.elements.value.focus(); return; }
+        busy(form, true);
+        api("PUT", "/sites/" + encodeURIComponent(S.id) + "/keys/" + encodeURIComponent(name), { value: value }).then(function () {
+          form.reset();
+          form.hidden = true;
+          toast("Key replaced. " + name + " uses the new one from now on.");
+        }, function (e) { toast(e.message, true); }).then(function () { busy(form, false); });
+      });
+      if (keyDialog) {
+        keyDialog.querySelector("[data-key-remove-go]").addEventListener("click", function () {
+          if (!removing) return;
+          var row = removing;
+          var name = row.dataset.key;
+          api("DELETE", "/sites/" + encodeURIComponent(S.id) + "/keys/" + encodeURIComponent(name)).then(function () {
+            keyDialog.close();
+            row.remove();
+            removing = null;
+            refresh();
+            toast(name + " removed");
+          }, function (e) { toast(e.message, true); });
+        });
+      }
+    }
 
     var copyBtn = $("[data-copy-app]");
     if (copyBtn) {
