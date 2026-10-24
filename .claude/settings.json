@@ -1,7 +1,16 @@
 {
+  "extraKnownMarketplaces": {
+    "addy-agent-skills": {
+      "source": {
+        "source": "github",
+        "repo": "addyosmani/agent-skills"
+      }
+    }
+  },
   "enabledPlugins": {
     "security-guidance@anthropic-plugin-directory": true,
     "security-guidance@claude-plugins-official": true,
-    "frontend-design@claude-plugins-official": true
+    "frontend-design@claude-plugins-official": true,
+    "agent-skills@addy-agent-skills": true
   }
 }
