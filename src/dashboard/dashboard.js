@@ -980,8 +980,8 @@
         conns.querySelector("[data-sheet-empty]").hidden = S.sheets.length > 0;
         refresh();
       }
-      var addForm = conns.querySelector("[data-sheet-add]");
-      var addOpen = conns.querySelector("[data-sheet-add-open]");
+      var addForm = $("[data-sheet-add]");
+      var addOpen = $("[data-sheet-add-open]");
       if (addForm) {
         addOpen.addEventListener("click", function () {
           addForm.hidden = !addForm.hidden;
@@ -994,6 +994,12 @@
           if (!/docs\.google\.com\/spreadsheets\/d\/[\w-]+|^[\w-]{20,}$/.test(link)) { toast("That doesn't look like a Google Sheets link. Copy it from the spreadsheet's address bar.", true); return; }
           busy(addForm, true);
           patch({ sheets: S.sheets.concat([link]) }).then(function () {
+            // The app's first spreadsheet: it's connected to Google Sheets now, so show its row.
+            if (!conns.querySelector("[data-sheet-list]")) {
+              flashNext("Spreadsheet added. This app can read and add rows to it.");
+              location.reload();
+              return;
+            }
             addForm.reset();
             addForm.hidden = true;
             addOpen.setAttribute("aria-expanded", "false");
@@ -1009,6 +1015,12 @@
         if (rmSheet) {
           var id = rmSheet.dataset.sheetRemove;
           patch({ sheets: S.sheets.filter(function (x) { return x !== id; }) }).then(function () {
+            // Its last spreadsheet: the app isn't connected to Google Sheets any more.
+            if (!S.sheets.length) {
+              flashNext("Spreadsheet removed. This app doesn't use Google Sheets any more.");
+              location.reload();
+              return;
+            }
             renderSheets();
             toast("Spreadsheet removed. This app can't reach it any more.");
           }, failed);

@@ -222,7 +222,14 @@ function connectionsPanel(site: SiteView, conns: AppConnections, opts: { isSiteO
   </div>
 </div>`);
   }
-  if (conns.sheets.ids.length || (opts.isSiteOwner && conns.sheets.connected)) {
+  // The way to add a spreadsheet: in the Google Sheets row once the app has one, else a quiet
+  // link below the list (owner only, with Sheets connected): it isn't a connection until then.
+  const sheetAdd = (label: string) => `<button type="button" class="linkish" data-sheet-add-open aria-expanded="false" aria-controls="sheet-add">${label}</button>
+    <form class="sheet-add" id="sheet-add" data-sheet-add hidden>
+      <input name="sheet" autocomplete="off" spellcheck="false" placeholder="https://docs.google.com/spreadsheets/d/..." aria-label="Google Sheets link">
+      <button>Add it</button>
+    </form>`;
+  if (conns.sheets.ids.length) {
     rows.push(`<div class="conn" data-conn="sheets">
   <span class="conn-ic">${SHEETS_LOGO()}</span>
   <div class="conn-txt">
@@ -231,15 +238,7 @@ function connectionsPanel(site: SiteView, conns: AppConnections, opts: { isSiteO
     ${conns.sheets.connected ? "" : `<span class="conn-note">Google Sheets isn't connected, so this app can't reach these spreadsheets. ${opts.isSiteOwner ? `Connect it on <a href="/connected">Connected apps</a>.` : `Ask ${e(site.ownerEmail)} to connect it.`}</span>`}
     <ul class="sheet-list" data-sheet-list>${conns.sheets.ids.map((id) => sheetItem(id, opts.isSiteOwner)).join("")}</ul>
     <p class="muted sheet-empty" data-sheet-empty${conns.sheets.ids.length ? " hidden" : ""}>No spreadsheets yet.</p>
-    ${
-      opts.isSiteOwner
-        ? `<button type="button" class="linkish" data-sheet-add-open aria-expanded="false" aria-controls="sheet-add">+ Add a spreadsheet</button>
-    <form class="sheet-add" id="sheet-add" data-sheet-add hidden>
-      <input name="sheet" autocomplete="off" spellcheck="false" placeholder="https://docs.google.com/spreadsheets/d/..." aria-label="Google Sheets link">
-      <button>Add it</button>
-    </form>`
-        : ""
-    }
+    ${opts.isSiteOwner ? sheetAdd("+ Add a spreadsheet") : ""}
   </div>
 </div>`);
   }
@@ -265,7 +264,11 @@ function connectionsPanel(site: SiteView, conns: AppConnections, opts: { isSiteO
   return `<h2>Connected to this app</h2>
   <p class="muted" data-conn-intro${rows.length ? "" : " hidden"}>Services this app can use. To connect a new one, go to <a href="/connected">Connected apps</a>.</p>
   <div class="conns" data-conns>${rows.join("\n")}</div>
-  <div class="conn-empty" data-conn-empty${rows.length ? " hidden" : ""}><strong>Nothing connected yet.</strong><br>Connect AI, spreadsheets or other services on the <a href="/connected">Connected apps</a> page, then let this app use them.</div>`;
+  <div class="conn-empty" data-conn-empty${rows.length ? " hidden" : ""}><strong>Nothing connected yet.</strong><br>Connect AI, spreadsheets or other services on the <a href="/connected">Connected apps</a> page, then let this app use them.</div>${
+    !conns.sheets.ids.length && opts.isSiteOwner && conns.sheets.connected
+      ? `\n  <div class="conn-start">${SHEETS_LOGO()}<div>${sheetAdd("+ Let this app use a Google spreadsheet")}</div></div>`
+      : ""
+  }`;
 }
 
 /** The roles on an app's People list, from its share lists. */
