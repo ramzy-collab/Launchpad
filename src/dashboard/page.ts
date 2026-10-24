@@ -1,23 +1,22 @@
 import type { Context } from "hono";
 import { describeActivity, HIGH_VOLUME_ACTIONS, siteActivity, type AuditRow } from "../audit";
-import { listTokens } from "../auth";
+import { canPublishTo, listTokens } from "../auth";
 import type { AppEnv, User } from "../env";
 import { getManageableSite, getNamespace, getSiteById, listNamespaces, listOwnSites, listSharedSites, type SiteView } from "../sites";
-import { canPublishTo } from "../auth";
-import { escapeHtml as e } from "../util";
+import { ago, escapeHtml as e } from "../util";
 import { ApiError } from "../errors";
-import { plainPage } from "../serve";
+import { notFoundPage } from "../serve";
 import { adminOrigin, aiOrigin, appOrigin } from "../hosts";
-import { canSetPassword, workosEnabled } from "../login";
+import { canSetPassword, MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH, workosEnabled } from "../login";
 import { ctxOf } from "../api";
 import { head, htmlResponse } from "./layout";
 import { SERVICE_ICONS } from "./services";
-import { accessOf, ago, appBrowser, appName, hueClass, ICON, sharedWith, thumb } from "./apps";
+import { accessOf, appBrowser, appName, hueClass, ICON, sharedWith, thumb } from "./apps";
 import { connectedAiApps, type AiApp } from "./aiapps";
 import { AI_LOGOS } from "./logos";
 import { BUILDER_LABEL, BUILDERS, builderKeys, type Builder } from "../builder";
 import { PWA_HEAD } from "../pwa";
-import { responsesCsv } from "../responses";
+import { csvDownload, responsesCsv } from "../responses";
 import { flagOnForOwner } from "../flags";
 import { appPreviewText } from "../share";
 import { peopleWithAccounts, pendingInvites, starredIds } from "../sharing";
@@ -139,22 +138,14 @@ async function manageable(c: Context<AppEnv>, id: string) {
 /** Every response the app received, as a spreadsheet, for the people who can manage it. */
 export async function appResponsesCsv(c: Context<AppEnv>, id: string): Promise<Response> {
   const site = await manageable(c, id);
-  if (!site || !(await flagOnForOwner(c.env, "responses", site.ownerEmail))) return plainPage(404, "Not found", "There is nothing here.");
-  const name = (appName(site).replace(/[^A-Za-z0-9 _-]+/g, "").trim() || "app") + " responses.csv";
-  return new Response("\uFEFF" + (await responsesCsv(c.env, site.id)), {
-    headers: {
-      "content-type": "text/csv; charset=utf-8",
-      "content-disposition": `attachment; filename="${name}"`,
-      "cache-control": "no-store",
-      "x-content-type-options": "nosniff",
-    },
-  });
+  if (!site || !(await flagOnForOwner(c.env, "responses", site.ownerEmail))) return notFoundPage();
+  return csvDownload(appName(site), "responses", await responsesCsv(c.env, site.id));
 }
 
 /** An app's activity log: everything done to or in the app, for the people who can manage it. */
 export async function appActivityPage(c: Context<AppEnv>, id: string): Promise<Response> {
   const site = await manageable(c, id);
-  if (!site) return plainPage(404, "Not found", "There is nothing here.");
+  if (!site) return notFoundPage();
   const user = c.get("user");
   const rows = (await siteActivity(c.env, site.id))
     .map((a) => `<tr><td class="nowrap">${e(fmtTime(a.at))}</td><td>${e(a.actor)}</td><td>${e(describeActivity(a))}</td></tr>`)
@@ -287,15 +278,15 @@ function roleOf(s: SiteView, email: string): Role {
   return "viewer";
 }
 
-/** The People list: the owner first, then everyone the app is shared with by name. */
 /** The line under a person on the People list: their invite and account state. */
-export function personNote(role: Role, opts: { pending?: Role; hasAccount: boolean }): string {
+function personNote(opts: { pending?: Role; hasAccount: boolean }): string {
   if (opts.pending) return `Sign-up invite sent. Becomes ${aRole(opts.pending)} once they join Formelab.`;
   if (!opts.hasAccount) return "Invited, no Formelab account yet";
   return "Invited";
 }
 const aRole = (r: Role) => (r === "viewer" ? "a Viewer" : r === "editor" ? "an Editor" : "an Admin");
 
+/** The People list: the owner first, then everyone the app is shared with by name. */
 function peopleRows(s: SiteView, me: string, isOwner: boolean, canShare: boolean, accounts: Set<string>, pending: Map<string, Role>): string {
   const owner = `<li class="person"><span class="avatar" aria-hidden="true">${e(s.ownerEmail.slice(0, 1).toUpperCase())}</span><span class="pi"><span class="pe">${e(s.ownerEmail)}${s.ownerEmail === me ? " (you)" : ""}</span><span class="ps">Owner</span></span><span class="role-label">Owner</span></li>`;
   const rows = sharedWith(s).map((email) => {
@@ -305,7 +296,7 @@ function peopleRows(s: SiteView, me: string, isOwner: boolean, canShare: boolean
     const control = roles
       ? `<button type="button" class="rp-btn" data-person="${e(email)}" data-role="${role}" data-roles="${roles}" aria-haspopup="listbox" aria-expanded="false" aria-label="Role for ${e(email)}"><span>${ROLE_NAME[role]}</span>${ICON.chevron()}</button>`
       : `<span class="role-label">${ROLE_NAME[role]}</span>`;
-    const note = personNote(role, { pending: pending.get(email), hasAccount: accounts.has(email) });
+    const note = personNote({ pending: pending.get(email), hasAccount: accounts.has(email) });
     return `<li class="person"><span class="avatar soft" aria-hidden="true">${e(email.slice(0, 1).toUpperCase())}</span><span class="pi"><span class="pe">${e(email)}${email === me ? " (you)" : ""}</span><span class="ps${pending.has(email) ? " pending" : ""}">${e(note)}</span></span>${control}</li>`;
   });
   return owner + rows.join("");
@@ -334,7 +325,7 @@ const UPDATE_ORDER: Builder[] = ["gemini", "claude", "openai", "grok"];
 /** An app's own page: its name and share pill, then Sharing, Update and Activity tabs. */
 export async function appSettingsPage(c: Context<AppEnv>, id: string): Promise<Response> {
   const site = await manageable(c, id);
-  if (!site) return plainPage(404, "Not found", "There is nothing here.");
+  if (!site) return notFoundPage();
   const user = c.get("user");
   const mine = site.ownerEmail === user.email;
   const isOwner = site.canEditEditors;
@@ -775,14 +766,14 @@ export async function newAppPage(c: Context<AppEnv>): Promise<Response> {
     { b: "gemini", app: "gemini", label: "Make it with Gemini" },
     { b: "grok", app: "grok", label: "Make it with Grok" },
   ];
-  const appName: Record<string, string> = { claude: "Claude", chatgpt: "ChatGPT", grok: "Grok" };
+  const aiName: Record<string, string> = { claude: "Claude", chatgpt: "ChatGPT", grok: "Grok" };
   // Gemini only builds here, so it shows only with the flag.
   const makers = MAKERS.filter(({ b }) => builderOn || !buildsHereOnly(b)).map(({ b, app, label }) => {
     const key = keys[b];
     // Opening the Claude or ChatGPT app with the idea typed in, for people who connected it.
     const canOpen = !buildsHereOnly(b) && connected.has(app);
     if (!builderOn) {
-      return `<div class="make"><button type="button" class="make-btn" data-make="${app}"><span class="ai-mini">${AI_LOGOS[app]}</span>${label}</button>${state(app, `Connect ${appName[app]} first`)}</div>`;
+      return `<div class="make"><button type="button" class="make-btn" data-make="${app}"><span class="ai-mini">${AI_LOGOS[app]}</span>${label}</button>${state(app, `Connect ${aiName[app]} first`)}</div>`;
     }
     const btn = key
       ? `<button type="button" class="make-btn" data-build="${b}"><span class="ai-mini">${AI_LOGOS[app]}</span>${label}</button>`
@@ -934,11 +925,11 @@ export async function accountPage(c: Context<AppEnv>): Promise<Response> {
   <h2>New password</h2>
   <form class="stack" data-action="password-set">
     <input type="email" name="username" autocomplete="username" value="${e(user.email)}" readonly hidden>
-    <label>Password <input type="password" name="password" autocomplete="new-password" minlength="10" maxlength="256" required></label>
-    <label>Confirm password <input type="password" name="confirm" autocomplete="new-password" minlength="10" maxlength="256" required></label>
+    <label>Password <input type="password" name="password" autocomplete="new-password" minlength="${MIN_PASSWORD_LENGTH}" maxlength="${MAX_PASSWORD_LENGTH}" required></label>
+    <label>Confirm password <input type="password" name="confirm" autocomplete="new-password" minlength="${MIN_PASSWORD_LENGTH}" maxlength="${MAX_PASSWORD_LENGTH}" required></label>
     <button>Save password</button>
   </form>
-  <p class="muted">Use at least 10 characters that are hard to guess: a few unrelated words works well. Next time, choose <strong>Continue with email</strong> and enter ${e(user.email)}; you can use this password or a one-time code. If you forget it, use <strong>Forgot password</strong> on the login screen.</p>
+  <p class="muted">Use at least ${MIN_PASSWORD_LENGTH} characters that are hard to guess: a few unrelated words works well. Next time, choose <strong>Continue with email</strong> and enter ${e(user.email)}; you can use this password or a one-time code. If you forget it, use <strong>Forgot password</strong> on the login screen.</p>
 </section>`
     : `<section>
   <h2>Confirm it's you</h2>

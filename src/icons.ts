@@ -6,7 +6,7 @@
 // host to people who can open the app; apps without one get a letter tile.
 import { canViewSite } from "./auth";
 import type { Ctx, SiteRow } from "./sites";
-import { getNamespace, getSiteById } from "./sites";
+import { getNamespace, getSiteById, listObjects, siteName, versionPrefix } from "./sites";
 import { contentTypeFor, extOf } from "./mime";
 import { b64decode } from "./util";
 
@@ -66,20 +66,18 @@ export function findIcon(paths: Iterable<string>, indexHtml: string, mount: stri
 
 /** The current version's file paths and the start of its index.html, for finding its icon and preview image. */
 export async function appFiles(env: Ctx["env"], site: SiteRow, headBytes = 64 * 1024): Promise<{ paths: string[]; indexHtml: string }> {
-  const prefix = `sites/${site.id}/${site.current_version}/`;
+  const prefix = versionPrefix(site);
   const paths: string[] = [];
-  let cursor: string | undefined;
-  do {
-    const list = await env.BUCKET.list({ prefix, cursor, limit: 1000 });
-    for (const o of list.objects) paths.push(o.key.slice(prefix.length));
-    cursor = list.truncated ? list.cursor : undefined;
-  } while (cursor && paths.length < 5000);
+  for await (const page of listObjects(env.BUCKET, prefix)) {
+    paths.push(...page.map((o) => o.key.slice(prefix.length)));
+    if (paths.length >= 5000) break;
+  }
   const index = await env.BUCKET.get(prefix + "index.html", { range: { offset: 0, length: headBytes } });
   return { paths, indexHtml: index ? await index.text() : "" };
 }
 
 /** The icon for a site, looking for it (and remembering the answer) if it hasn't been yet. */
-export async function iconPathFor(env: Ctx["env"], site: SiteRow & { icon_path?: string | null }): Promise<string> {
+export async function iconPathFor(env: Ctx["env"], site: SiteRow): Promise<string> {
   if (typeof site.icon_path === "string") return site.icon_path;
   const { paths, indexHtml } = await appFiles(env, site);
   const icon = findIcon(paths, indexHtml, site.mount_path);
@@ -88,19 +86,23 @@ export async function iconPathFor(env: Ctx["env"], site: SiteRow & { icon_path?:
 }
 
 const HUES = ["#5B4CF5", "#FF6B4A", "#2BC48A", "#F5A623", "#E5487D", "#3B82F6", "#14B8A6", "#8B5CF6"];
-const xml = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+/** Escapes text for SVG markup. */
+export const xml = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
-/** The letter tile, as an SVG, for apps without an icon. Same colors as the tiles' hue-N classes. */
-/** The app's color: the same one its letter tile and the web app's hue-N class use. */
-export function hueOf(site: Pick<SiteRow, "id">): string {
+/** Which of the eight app colors an app gets: HUES here, the hue-N classes in the web app. */
+export function hueIndex(id: string): number {
   let h = 0;
-  for (const ch of site.id) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
-  return HUES[h % 8]!;
+  for (const ch of id) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return h % HUES.length;
 }
 
-/** The letter on an app's tile. */
-export const letterOf = (site: SiteRow) => ((site.title || site.mount_path || site.namespace).match(/[\p{L}\p{N}]/u)?.[0] ?? "•").toUpperCase();
+/** The app's color: the same one its letter tile and the web app's hue-N class use. */
+export const hueOf = (site: Pick<SiteRow, "id">) => HUES[hueIndex(site.id)]!;
 
+/** The letter on an app's tile. */
+export const letterOf = (site: SiteRow) => (siteName(site).match(/[\p{L}\p{N}]/u)?.[0] ?? "•").toUpperCase();
+
+/** The letter tile, as an SVG, for apps without an icon. */
 export function letterIcon(site: SiteRow): string {
   const letter = letterOf(site);
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="18" fill="${hueOf(site)}"/><text x="32" y="43" text-anchor="middle" font-family="system-ui,sans-serif" font-size="30" font-weight="800" fill="#fff">${xml(letter)}</text></svg>`;
@@ -108,7 +110,7 @@ export function letterIcon(site: SiteRow): string {
 
 // An icon is untrusted content from the app. Served from the web app's own host, an SVG opened
 // directly could run script there, so it gets a sandboxing CSP that allows nothing to run.
-const ICON_HEADERS = {
+export const ICON_HEADERS = {
   "x-content-type-options": "nosniff",
   "content-security-policy": "default-src 'none'; img-src data:; style-src 'unsafe-inline'; sandbox",
   "cache-control": "private, max-age=86400",
@@ -116,7 +118,7 @@ const ICON_HEADERS = {
 
 /** GET /apps/:id/icon on the web app host: the app's icon, for people who can open the app. */
 export async function appIcon(ctx: Ctx, id: string): Promise<Response> {
-  const site = (await getSiteById(ctx.env, id)) as (SiteRow & { icon_path?: string | null }) | null;
+  const site = await getSiteById(ctx.env, id);
   const ns = site ? await getNamespace(ctx.env, site.namespace) : null;
   if (!site || !ns || !canViewSite(ctx.user, site, ns)) {
     return new Response("Not found", { status: 404, headers: { "content-type": "text/plain; charset=utf-8" } });
@@ -125,24 +127,27 @@ export async function appIcon(ctx: Ctx, id: string): Promise<Response> {
 }
 
 /** The app's icon as a response (its own, or the letter tile). The caller checks who may see it. */
-export async function iconResponse(env: Ctx["env"], site: SiteRow & { icon_path?: string | null }): Promise<Response> {
+export async function iconResponse(env: Ctx["env"], site: SiteRow): Promise<Response> {
   const icon = await iconPathFor(env, site);
   if (icon.startsWith("data:")) {
-    const m = /^data:([^;,]+)(;base64)?,(.*)$/s.exec(icon);
-    if (m) {
-      let body: Uint8Array;
-      try {
-        body = m[2] ? b64decode(m[3]!) : new TextEncoder().encode(decodeURIComponent(m[3]!));
-      } catch {
-        body = new Uint8Array();
-      }
-      if (body.length) return new Response(body, { headers: { ...ICON_HEADERS, "content-type": m[1]! } });
-    }
+    const data = decodeDataUri(icon);
+    if (data?.bytes.length) return new Response(data.bytes, { headers: { ...ICON_HEADERS, "content-type": data.type } });
   } else if (icon) {
-    const obj = await env.BUCKET.get(`sites/${site.id}/${site.current_version}/${icon}`);
+    const obj = await env.BUCKET.get(versionPrefix(site) + icon);
     if (obj && obj.size <= MAX_ICON_BYTES) return new Response(obj.body, { headers: { ...ICON_HEADERS, "content-type": contentTypeFor(icon) } });
   }
   return new Response(letterIcon(site), { headers: { ...ICON_HEADERS, "content-type": "image/svg+xml" } });
+}
+
+/** A data: URI's media type (lowercase) and bytes, or null when it isn't one or doesn't decode. */
+export function decodeDataUri(uri: string): { type: string; bytes: Uint8Array } | null {
+  const m = /^data:([^;,]+)(;base64)?,(.*)$/s.exec(uri);
+  if (!m) return null;
+  try {
+    return { type: m[1]!.toLowerCase(), bytes: m[2] ? b64decode(m[3]!) : new TextEncoder().encode(decodeURIComponent(m[3]!)) };
+  } catch {
+    return null;
+  }
 }
 
 /** Width and height of a PNG, from its header; null for anything else. */

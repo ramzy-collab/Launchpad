@@ -1,6 +1,6 @@
 import { Hono, type Context, type MiddlewareHandler } from "hono";
 import { ctxOf, managementApi } from "./api";
-import { identifyBearer, identifyBrowser } from "./auth";
+import { canManageSite, canViewSite, identifyBearer, identifyBrowser } from "./auth";
 import { adminPage, testPlanPage } from "./dashboard/admin";
 import { ANSWERS_PATH, answersRoute, showAnswersLink } from "./answers";
 import { connectPage } from "./dashboard/connect";
@@ -15,13 +15,12 @@ import { forgotGet, forgotPost, resetGet, resetPost, signInCode, signInGet, sign
 import type { AppEnv, Env } from "./env";
 import { forbidden, jsonError, onError, unauthorized } from "./errors";
 import { ASSET_VERSION, CONSENT_JS, DASHBOARD_JS, FORMELAB_CSS, GUIDE_MD, HOME_CSS, INSTALL_JS, VIZ_JS, SDK_JS, SIGNIN_JS, SITE_JS, THEME_JS } from "./generated/assets";
-import { apexOrigin, AUTHORIZE_PATH, authorizeGet, authorizePost, oauthProvider } from "./oauth";
+import { AUTHORIZE_PATH, authorizeGet, authorizePost, oauthProvider } from "./oauth";
 import { runtimeApi } from "./runtime";
 import { appCallback, appHandoff, handoffStart, loginCallback, loginStart, logout, safeReturn, workosEnabled } from "./login";
-import { legacyAppRedirect, noAccessPage, plainPage, serveAppFile } from "./serve";
-import { cookieHeader, readCookie, SESSION_COOKIE } from "./session";
+import { legacyAppRedirect, noAccessPage, notFoundPage, plainPage, serveAppFile } from "./serve";
+import { cookieHeader, hasSignIn, readCookie } from "./session";
 import { adminOrigin, aiOrigin, appOrigin, appsLabelOf, hostKind, legacyNamespaceOf } from "./hosts";
-import { canManageSite, canViewSite } from "./auth";
 import { getNamespace, getSiteByHostLabel, isPublicLinkToken, PUBLIC_LINK_PATH, type SiteRow } from "./sites";
 import { joinWaitlist } from "./waitlist";
 import { GUEST, isPageView, recordAppVisit } from "./usage";
@@ -36,8 +35,8 @@ const text = (body: string, type: string, cache = "no-cache") =>
 /** The build guide, without the sections on features this person doesn't have yet. */
 const guide = async (c: Context<AppEnv>) => text(withFlags(GUIDE_MD, await enabledFlags(c.env, c.get("user") ?? null)), "text/markdown; charset=utf-8");
 const unauthorizedPage = () => plainPage(401, "Sign-in required", "Log in to Formelab, then reload this page.");
+const healthz = () => text("ok", "text/plain; charset=utf-8", "no-store");
 
-/** Whether the request carries any sign-in at all (a session cookie or an Access JWT). */
 /**
  * Pages link assets with ?v=<hash of this build's assets>. A request for another build's version
  * (during a deploy, a new page can reach an old copy of the Worker) is answered but not cached, so
@@ -58,7 +57,19 @@ const assetRoutes: [string, (c: Context<AppEnv>) => Response][] = [
   ["/_assets/services.svg", asset(SERVICES_SPRITE, "image/svg+xml")],
 ];
 
-const hasSignIn = (req: Request) => !!(readCookie(req, SESSION_COOKIE) || req.headers.get("cf-access-jwt-assertion"));
+/** Formelab's own sign-in pages, on DOMAIN (the web app's sign-in) and admin.DOMAIN (the admin panel's). */
+function signInRoutes(app: Hono<AppEnv>) {
+  // Formelab's own sign-in page (see signin.ts); Google and stray WorkOS sign-ins use /auth/*.
+  app.get("/login", signInGet);
+  app.post("/login", signInPost);
+  app.post("/login/code", signInCode);
+  app.get("/login/forgot", forgotGet);
+  app.post("/login/forgot", forgotPost);
+  app.get("/reset-password", resetGet);
+  app.post("/reset-password", resetPost);
+  app.get("/auth/login", loginStart);
+  app.get("/auth/callback", loginCallback);
+}
 
 // ---------------------------------------------------------------------------
 // Apex: DOMAIN
@@ -67,7 +78,7 @@ const hasSignIn = (req: Request) => !!(readCookie(req, SESSION_COOKIE) || req.he
 const apex = new Hono<AppEnv>();
 apex.onError(onError);
 
-apex.get("/healthz", () => text("ok", "text/plain; charset=utf-8", "no-store"));
+apex.get("/healthz", healthz);
 
 // Bearer-token paths (Access bypasses these; the Worker authenticates them itself).
 apex.use("/_api/deploy/*", async (c, next) => {
@@ -87,16 +98,7 @@ apex.get("/", async (c) => {
   if (hasSignIn(c.req.raw) && (await identifyBrowser(c.req.raw, c.env))) return c.redirect(`${appOrigin(c.env, c.req.url)}/`, 302);
   return homePage(formelabShareTags(c.env, c.req.url, "Formelab: SaaS is dead"));
 });
-// Formelab's own sign-in page (see signin.ts); Google and stray WorkOS sign-ins use /auth/*.
-apex.get("/login", signInGet);
-apex.post("/login", signInPost);
-apex.post("/login/code", signInCode);
-apex.get("/login/forgot", forgotGet);
-apex.post("/login/forgot", forgotPost);
-apex.get("/reset-password", resetGet);
-apex.post("/reset-password", resetPost);
-apex.get("/auth/login", loginStart);
-apex.get("/auth/callback", loginCallback);
+signInRoutes(apex);
 apex.post("/_api/waitlist", async (c) => {
   await joinWaitlist(c.req.raw, c.env, (p) => c.executionCtx.waitUntil(p));
   return c.json({ ok: true });
@@ -137,7 +139,7 @@ apex.get(AUTHORIZE_PATH, authorizeGet);
 apex.post(AUTHORIZE_PATH, authorizePost);
 
 apex.get("/_platform/guide.md", guide);
-apex.notFound(() => plainPage(404, "Not found", "There is nothing here."));
+apex.notFound(notFoundPage);
 
 // ---------------------------------------------------------------------------
 // Signed-in hosts: the web app (app.DOMAIN) and the admin panel (admin.DOMAIN)
@@ -186,7 +188,7 @@ const sameOriginWrites: MiddlewareHandler<AppEnv> = async (c, next) => {
 function signedInHost(requireSignIn: MiddlewareHandler<AppEnv>, routes: (app: Hono<AppEnv>) => void) {
   const app = new Hono<AppEnv>();
   app.onError(onError);
-  app.get("/healthz", () => text("ok", "text/plain; charset=utf-8", "no-store"));
+  app.get("/healthz", healthz);
   for (const [path, handler] of assetRoutes) app.get(path, handler);
   routes(app);
   app.use("*", requireSignIn);
@@ -208,42 +210,32 @@ const webApp = signedInHost(requireSignIn, (app) => {
   for (const [path, handler] of pwaRoutes) app.get(path, handler);
   app.get("/_assets/share.png", formelabShareImage);
 });
-webApp.get("/", async (c) => dashboardPage(c));
+webApp.get("/", dashboardPage);
 // Shared with me is part of My apps now: old links (emails, bookmarks, home screen shortcuts) open it filtered.
 webApp.get("/shared", (c) => c.redirect("/?owner=others", 301));
-webApp.get("/new", (c) => newAppPage(c));
-webApp.get("/spaces", (c) => spacesPage(c));
-webApp.get("/connect", (c) => connectPage(c));
-webApp.get("/connected", (c) => connectedPage(c));
-webApp.get("/connected/:name", (c) => connectorPage(c));
+webApp.get("/new", newAppPage);
+webApp.get("/spaces", spacesPage);
+webApp.get("/connect", connectPage);
+webApp.get("/connected", connectedPage);
+webApp.get("/connected/:name", connectorPage);
 // Google Sheets sign-in (connected apps; behind the connected_apps flag).
 webApp.use("/services/*", async (c, next) => {
-  if (!c.get("features").has("connected_apps")) return plainPage(404, "Not found", "There is nothing here.");
+  if (!c.get("features").has("connected_apps")) return notFoundPage();
   await next();
 });
 webApp.get("/services/google-sheets/connect", sheetsConnect);
 webApp.get("/services/google-sheets/callback", sheetsCallback);
-webApp.get("/keys", (c) => keysPage(c));
-webApp.get("/account", (c) => accountPage(c));
-webApp.get("/install", (c) => installPage(c));
+webApp.get("/keys", keysPage);
+webApp.get("/account", accountPage);
+webApp.get("/install", installPage);
 webApp.get("/apps/:id", (c) => appSettingsPage(c, c.req.param("id")));
 webApp.get("/apps/:id/icon", (c) => appIcon(ctxOf(c), c.req.param("id")));
 webApp.get("/apps/:id/activity", (c) => appActivityPage(c, c.req.param("id")));
 webApp.get("/apps/:id/responses.csv", (c) => appResponsesCsv(c, c.req.param("id")));
-webApp.notFound(() => plainPage(404, "Not found", "There is nothing here."));
+webApp.notFound(notFoundPage);
 
 // The admin panel (admins only; adminPage answers 404 to everyone else).
-const adminApp = signedInHost(requireAdminSignIn, (app) => {
-  app.get("/login", signInGet);
-  app.post("/login", signInPost);
-  app.post("/login/code", signInCode);
-  app.get("/login/forgot", forgotGet);
-  app.post("/login/forgot", forgotPost);
-  app.get("/reset-password", resetGet);
-  app.post("/reset-password", resetPost);
-  app.get("/auth/login", loginStart);
-  app.get("/auth/callback", loginCallback);
-});
+const adminApp = signedInHost(requireAdminSignIn, signInRoutes);
 adminApp.get("/", (c) => adminPage(c, "overview"));
 adminApp.get("/metrics", (c) => adminPage(c, "metrics"));
 adminApp.get("/users", (c) => adminPage(c, "users"));
@@ -254,7 +246,8 @@ adminApp.get("/changelog", (c) => adminPage(c, "changelog"));
 adminApp.get("/vendors", (c) => adminPage(c, "vendors"));
 adminApp.get("/test-plans", (c) => adminPage(c, "testplans"));
 adminApp.get("/test-plans/:slug", (c) => testPlanPage(c, c.req.param("slug")));
-adminApp.notFound(() => plainPage(404, "Not found", "There is nothing here."));
+adminApp.notFound(notFoundPage);
+
 // ---------------------------------------------------------------------------
 // App hosts: <host_label>.APP_DOMAIN, one published app each
 // ---------------------------------------------------------------------------
@@ -269,7 +262,7 @@ siteApp.use("*", async (c, next) => {
   await next();
 });
 
-siteApp.get("/healthz", () => text("ok", "text/plain; charset=utf-8", "no-store"));
+siteApp.get("/healthz", healthz);
 
 // Each app host gets its own session from the apex (see login.ts).
 siteApp.get("/_auth/callback", appCallback);
@@ -342,7 +335,7 @@ siteApp.use("*", async (c, next) => {
 siteApp.get("/_platform/sdk.js", () => text(SDK_JS, "text/javascript; charset=utf-8", "public, max-age=300"));
 siteApp.get("/_platform/guide.md", guide);
 siteApp.get("/_platform/manifest.webmanifest", appManifest);
-siteApp.all("/_platform/*", () => plainPage(404, "Not found", "There is nothing here."));
+siteApp.all("/_platform/*", notFoundPage);
 siteApp.route("/_api", runtimeApi());
 siteApp.all("/_api", () => jsonError(forbidden("Not an API endpoint.")));
 // Apps that collect answers get a page listing them, for their owner and editors (answers.ts).
@@ -356,7 +349,7 @@ siteApp.all("*", (c) =>
 
 /** <label>.APP_DOMAIN: the app with that host label, or else an old namespace address to redirect. */
 async function appsHost(req: Request, env: Env, ctx: ExecutionContext, label: string): Promise<Response> {
-  if (new URL(req.url).pathname === "/healthz") return text("ok", "text/plain; charset=utf-8", "no-store");
+  if (new URL(req.url).pathname === "/healthz") return healthz();
   const site = await getSiteByHostLabel(env, label);
   if (site) {
     siteOf.set(req, site);
@@ -375,7 +368,7 @@ export default {
     const url = new URL(req.url);
     switch (hostKind(url.hostname, env)) {
       case "ai":
-        return oauthProvider(apexOrigin(env, req.url), apex as never).fetch(req, env, ctx);
+        return oauthProvider(aiOrigin(env, req.url), apex as never).fetch(req, env, ctx);
       case "app":
         return webApp.fetch(req, env, ctx);
       case "admin":

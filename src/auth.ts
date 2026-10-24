@@ -1,7 +1,7 @@
 import { createRemoteJWKSet, jwtVerify, type JWTVerifyGetKey } from "jose";
 import type { Env, User } from "./env";
-import { now } from "./env";
-import { badRequest, err, notFound, unauthorized } from "./errors";
+import { isDev, now } from "./env";
+import { badRequest, err, notFound } from "./errors";
 import { sessionFromRequest } from "./session";
 import type { NamespaceRow, SiteRow } from "./sites";
 import { base32, normEmail, parseJsonArray, randomBytes, randomId, sha256Hex } from "./util";
@@ -43,20 +43,12 @@ export async function verifyAccessJwt(token: string, env: Env): Promise<{ email:
 }
 
 /**
- * Resolves the human behind a browser request. In dev mode (ENVIRONMENT === "dev" and
- * DEV_USER set) the JWT check is skipped; in every other environment a valid Access JWT
- * is required. The plain Cf-Access-Authenticated-User-Email header is never trusted.
- */
-export async function identifyHuman(req: Request, env: Env): Promise<User | null> {
-  return (await identifyBrowser(req, env))?.user ?? null;
-}
-
-/**
- * Like identifyHuman, and also returns the Formelab session id when the request is signed in
- * through Formelab's own login (a session cookie) rather than Cloudflare Access.
+ * Resolves the person behind a browser request: a Formelab session cookie (which also gives the
+ * session id) or a valid Cloudflare Access JWT. In dev mode (ENVIRONMENT === "dev" and DEV_USER
+ * set) both checks are skipped. The plain Cf-Access-Authenticated-User-Email header is never trusted.
  */
 export async function identifyBrowser(req: Request, env: Env): Promise<{ user: User; sessionId?: string } | null> {
-  if (env.ENVIRONMENT === "dev" && env.DEV_USER) return { user: await upsertUser(env, normEmail(env.DEV_USER), null) };
+  if (isDev(env) && env.DEV_USER) return { user: await upsertUser(env, normEmail(env.DEV_USER), null) };
   const session = await sessionFromRequest(req, env);
   if (session) return session;
   const token = req.headers.get("cf-access-jwt-assertion");
@@ -117,9 +109,9 @@ export async function applyPendingInvites(env: Env, email: string): Promise<void
     .bind(email)
     .all<{ site_id: string; role: "editor" | "admin"; namespace: string; mount_path: string; allowed_emails: string; editors: string; sharers: string | null }>();
   for (const r of results) {
-    const without = (list: string) => parseJsonArray(list).map(normEmail).filter((x) => x !== email);
+    const without = (list: string | null) => parseJsonArray(list).map(normEmail).filter((x) => x !== email);
     const editors = [...without(r.editors), email];
-    const sharers = r.role === "admin" ? [...without(r.sharers ?? "[]"), email] : without(r.sharers ?? "[]");
+    const sharers = r.role === "admin" ? [...without(r.sharers), email] : without(r.sharers);
     await env.DB.batch([
       env.DB.prepare("UPDATE sites SET allowed_emails = ?, editors = ?, sharers = ? WHERE id = ?").bind(
         JSON.stringify(without(r.allowed_emails)),
@@ -233,26 +225,22 @@ export async function revokeToken(env: Env, user: User, id: string) {
   if (!res.meta.changes) throw notFound("Token");
 }
 
-export const requireUser = (u: User | null): User => {
-  if (!u) throw unauthorized();
-  return u;
-};
-
 // ---------------------------------------------------------------------------
 // Permissions
 // ---------------------------------------------------------------------------
 
-const has = (list: string, email: string) => parseJsonArray(list).map(normEmail).includes(email);
+/** Whether `email` (normalized) is on a stored JSON list of addresses. */
+export const isListed = (list: string | null | undefined, email: string) => parseJsonArray(list).map(normEmail).includes(email);
 
 export const isNamespaceOwner = (u: User, ns: NamespaceRow) => ns.owner_email === u.email;
-export const isNamespaceEditor = (u: User, ns: NamespaceRow) => isNamespaceOwner(u, ns) || has(ns.editors, u.email);
+export const isNamespaceEditor = (u: User, ns: NamespaceRow) => isNamespaceOwner(u, ns) || isListed(ns.editors, u.email);
 
 /** Publishing a new site into a namespace. */
 export const canPublishTo = (u: User, ns: NamespaceRow) => isNamespaceEditor(u, ns);
 
 /** Replace, update, delete a site, and manage its secrets. */
 export const canManageSite = (u: User, site: SiteRow, ns: NamespaceRow) =>
-  site.owner_email === u.email || has(site.editors, u.email) || isNamespaceEditor(u, ns);
+  site.owner_email === u.email || isListed(site.editors, u.email) || isNamespaceEditor(u, ns);
 
 /**
  * Viewing a site's files and using its KV, secret proxy and connected services. "all" means every
@@ -260,7 +248,7 @@ export const canManageSite = (u: User, site: SiteRow, ns: NamespaceRow) =>
  * shared with them by name.
  */
 export const canViewSite = (u: User, site: SiteRow, ns: NamespaceRow) =>
-  (site.visibility !== "restricted" && u.active) || canManageSite(u, site, ns) || has(site.allowed_emails, u.email);
+  (site.visibility !== "restricted" && u.active) || canManageSite(u, site, ns) || isListed(site.allowed_emails, u.email);
 
 /**
  * The app's owner, or the owner of its namespace: the people who may delete it and choose its
@@ -275,7 +263,7 @@ export const isAppOwner = (u: User, site: SiteRow, ns: NamespaceRow) =>
  * editors can update the app but not widen who sees it.
  */
 export const canShareSite = (u: User, site: SiteRow, ns: NamespaceRow) =>
-  isAppOwner(u, site, ns) || (has(site.sharers ?? "[]", u.email) && has(site.editors, u.email));
+  isAppOwner(u, site, ns) || (isListed(site.sharers, u.email) && isListed(site.editors, u.email));
 
 export const ownerOnly = () =>
   err(403, "owner_only", "Only the namespace owner can do that.", "Ask the namespace owner to make this change.");

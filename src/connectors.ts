@@ -28,8 +28,8 @@ import {
   type ProxyResult,
   type SecretValue,
 } from "./secrets";
-import type { Ctx, SiteRow } from "./sites";
-import { parseJsonArray, randomId } from "./util";
+import { siteName, type Ctx, type SiteRow } from "./sites";
+import { parseJsonArray, randomId, slug } from "./util";
 
 export type ConnectorAuth = "bearer" | "header" | "query" | "placeholder";
 export const CONNECTOR_AUTHS: ConnectorAuth[] = ["bearer", "header", "query", "placeholder"];
@@ -121,13 +121,7 @@ export async function getConnector(env: Env, email: string, name: string): Promi
 // ---------------------------------------------------------------------------
 
 /** "Quo SMS" → "quo-sms": what apps ask for when no name is given. */
-export const slugOf = (label: string) =>
-  label
-    .toLowerCase()
-    .normalize("NFKD")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 64);
+export const slugOf = (label: string) => slug(label, 64);
 
 function parseLabel(raw: unknown): string {
   const label = typeof raw === "string" ? raw.trim().replace(/\s+/g, " ") : "";
@@ -288,7 +282,7 @@ export async function detachConnector(ctx: Ctx, siteId: string, name: string) {
   if (site.owner_email !== ctx.user.email) {
     throw forbidden(`Only the app's owner can remove ${name} from it.`);
   }
-  const list = parseJsonArray(site.connectors ?? "[]");
+  const list = parseJsonArray(site.connectors);
   if (!list.includes(name)) throw notFound(`${name} on this app`);
   await ctx.env.DB.prepare("UPDATE sites SET connectors = ?, updated_at = ? WHERE id = ?").bind(JSON.stringify(list.filter((n) => n !== name)), now(), site.id).run();
   await audit(ctx.env, ctx.user.email, "update_site", `${site.namespace}/${site.mount_path}`, { siteId: site.id, connectorsAdded: [], connectorsRemoved: [name], fields: ["connectors"] });
@@ -326,7 +320,7 @@ export async function connectorNameList(env: Env, ownerEmail: string, raw: unkno
 // ---------------------------------------------------------------------------
 
 /** Whether the app was built to use the connector (or "gemini"). */
-export const siteUses = (site: Pick<SiteRow, "connectors">, name: string) => parseJsonArray(site.connectors ?? "[]").includes(name);
+export const siteUses = (site: Pick<SiteRow, "connectors">, name: string) => parseJsonArray(site.connectors).includes(name);
 
 const notDeclared = (label: string, name: string) =>
   err(
@@ -397,28 +391,22 @@ export interface AppUse {
   lastUsedAt: number | null;
 }
 
-const nameOf = (s: Pick<SiteRow, "title" | "mount_path" | "namespace">) => s.title || s.mount_path || s.namespace;
 export const USE_WINDOW_MS = 30 * 86_400_000;
 
 /** The person's own apps built to use `name` ("gemini" or a custom connector), with their use. */
 export async function appsUsing(env: Env, email: string, name: string): Promise<AppUse[]> {
+  // Gemini calls are logged as "gemini"; custom connectors' as "proxy" naming the connector.
   const { results } = await env.DB.prepare(
-    "SELECT id, title, mount_path, namespace FROM sites WHERE owner_email = ? AND EXISTS (SELECT 1 FROM json_each(sites.connectors) WHERE value = ?) ORDER BY title, mount_path",
+    `SELECT s.id, s.title, s.mount_path, s.namespace, COUNT(a.id) AS n, MAX(a.at) AS at
+       FROM sites s
+       LEFT JOIN audit a ON a.site_id = s.id AND a.at > ?3
+        AND (CASE WHEN ?2 = 'gemini' THEN a.action = 'gemini' ELSE a.action = 'proxy' AND json_extract(a.detail, '$.connector') = ?2 END)
+      WHERE s.owner_email = ?1 AND EXISTS (SELECT 1 FROM json_each(s.connectors) WHERE value = ?2)
+      GROUP BY s.id ORDER BY s.title, s.mount_path`,
   )
-    .bind(email, name)
-    .all<SiteRow>();
-  const since = now() - USE_WINDOW_MS;
-  return Promise.all(
-    results.map(async (s) => {
-      const use =
-        name === "gemini"
-          ? await env.DB.prepare("SELECT COUNT(*) AS n, MAX(at) AS at FROM audit WHERE site_id = ? AND action = 'gemini' AND at > ?").bind(s.id, since).first<{ n: number; at: number | null }>()
-          : await env.DB.prepare("SELECT COUNT(*) AS n, MAX(at) AS at FROM audit WHERE site_id = ? AND action = 'proxy' AND json_extract(detail, '$.connector') = ? AND at > ?")
-              .bind(s.id, name, since)
-              .first<{ n: number; at: number | null }>();
-      return { id: s.id, name: nameOf(s), calls: use?.n ?? 0, lastUsedAt: use?.at ?? null };
-    }),
-  );
+    .bind(email, name, now() - USE_WINDOW_MS)
+    .all<Pick<SiteRow, "id" | "title" | "mount_path" | "namespace"> & { n: number; at: number | null }>();
+  return results.map((s) => ({ id: s.id, name: siteName(s), calls: s.n, lastUsedAt: s.at }));
 }
 
 /** How many of the person's apps use each connector, for the Connected apps tiles. */
@@ -479,8 +467,8 @@ async function savedKeysOf(env: Env, email: string): Promise<{ candidates: Candi
   const candidates: Candidate[] = [];
   const kept: KeyMovePlan["kept"] = [];
   for (const r of results) {
-    const app = nameOf(r);
-    const hosts = r.hosts ? parseJsonArray(r.hosts) : [];
+    const app = siteName(r);
+    const hosts = parseJsonArray(r.hosts);
     if (!hosts.length) {
       kept.push({ name: r.name, app, why: "It was saved before keys listed where they may be sent, so the app can't use it anyway." });
       continue;
@@ -540,16 +528,18 @@ async function plan(env: Env, email: string) {
   return { moves, kept };
 }
 
+/** A plan as the person sees it: without the keys themselves. */
+const shown = ({ moves, kept }: Awaited<ReturnType<typeof plan>>): KeyMovePlan => ({ moves: moves.map(({ members: _m, secret: _s, ...m }) => m), kept });
+
 export async function planKeyMove(ctx: Ctx): Promise<KeyMovePlan> {
-  const { moves, kept } = await plan(ctx.env, ctx.user.email);
-  return { moves: moves.map(({ members: _m, secret: _s, ...m }) => m), kept };
+  return shown(await plan(ctx.env, ctx.user.email));
 }
 
 /** Moves the saved keys planKeyMove lists into connectors. The apps keep working as they are. */
 export async function moveSavedKeys(ctx: Ctx): Promise<KeyMovePlan> {
   const { env, user } = ctx;
-  const { moves, kept } = await plan(env, user.email);
-  for (const m of moves) {
+  const planned = await plan(env, user.email);
+  for (const m of planned.moves) {
     if (!m.joins) {
       await insertConnector(
         env,
@@ -569,5 +559,5 @@ export async function moveSavedKeys(ctx: Ctx): Promise<KeyMovePlan> {
       ]),
     );
   }
-  return { moves: moves.map(({ members: _m, secret: _s, ...m }) => m), kept };
+  return shown(planned);
 }

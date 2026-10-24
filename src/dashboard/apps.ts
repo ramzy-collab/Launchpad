@@ -1,31 +1,15 @@
 // The app browser on My apps: your apps and the ones shared with you, as cards, starred apps first,
 // with search and one filter menu (owner, space, sort). The server renders every card once;
 // dashboard.js filters, sorts and moves starred cards up (stars live in the browser until they're saved per person).
+import { hueIndex } from "../icons";
 import type { SiteView } from "../sites";
-import { escapeHtml as e } from "../util";
+import { ago, escapeHtml as e } from "../util";
 
 /** An app on My apps: `mine` when you own it, else someone shared it with you. */
 export type BrowserApp = SiteView & { canManage: boolean; mine: boolean; starred?: boolean };
 
-export const fmtBytes = (n: number) => (n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`);
-
-/** "just now", "5 minutes ago", "3 days ago", or a date for anything older than a month. */
-export function ago(ms: number, now = Date.now()): string {
-  const s = Math.max(0, Math.round((now - ms) / 1000));
-  const unit = (n: number, u: string) => `${n} ${u}${n === 1 ? "" : "s"} ago`;
-  if (s < 60) return "just now";
-  if (s < 3600) return unit(Math.floor(s / 60), "minute");
-  if (s < 86400) return unit(Math.floor(s / 3600), "hour");
-  if (s < 30 * 86400) return unit(Math.floor(s / 86400), "day");
-  return new Date(ms).toISOString().slice(0, 10);
-}
-
-/** A stable color for an app's thumbnail, from its name (one of eight classes; the CSP allows no inline styles). */
-export function hueClass(key: string): string {
-  let h = 0;
-  for (const ch of key) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
-  return `hue-${h % 8}`;
-}
+/** A stable color for an app's thumbnail, from its id (one of eight classes; the CSP allows no inline styles). */
+export const hueClass = (id: string) => `hue-${hueIndex(id)}`;
 
 /** The app's icon (its favicon or logo), or its first letter on a colored square. */
 export function thumb(s: SiteView, size: "" | "sm" | "lg" = ""): string {

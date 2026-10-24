@@ -19,13 +19,11 @@ import type { Context } from "hono";
 import type { AppEnv, Env } from "./env";
 import { ASSET_VERSION, DISPLAY_FONT_TTF, TEXT_FONT_TTF } from "./generated/assets";
 import { aiOrigin, appOrigin, siteOrigin } from "./hosts";
-import { appFiles, attr, hueOf, iconPathFor, iconResponse, letterOf, pngSize, resolveHref } from "./icons";
+import { appFiles, attr, decodeDataUri, hueOf, iconPathFor, iconResponse, letterOf, pngSize, resolveHref, xml } from "./icons";
 import { contentTypeFor, extOf } from "./mime";
 import { appTitle, iconUrl } from "./pwa";
-import type { SiteRow } from "./sites";
+import { versionPrefix, type SiteRow } from "./sites";
 import { b64decode, b64encode, escapeHtml as e } from "./util";
-
-type ShareSite = SiteRow & { icon_path?: string | null; share_path?: string | null };
 
 /** The size services show large previews at (1.91:1). */
 export const SHARE_W = 1200;
@@ -119,7 +117,7 @@ export function findShareImage(paths: Iterable<string>, indexHtml: string, mount
 }
 
 /** The site's share image (see sites.share_path), looking for it (and remembering it) if it hasn't been yet. */
-export async function sharePathFor(env: Env, site: ShareSite): Promise<string> {
+export async function sharePathFor(env: Env, site: SiteRow): Promise<string> {
   if (typeof site.share_path === "string") return site.share_path;
   const { paths, indexHtml } = await appFiles(env, site, HEAD_BYTES);
   const share = findShareImage(paths, indexHtml, site.mount_path);
@@ -130,7 +128,7 @@ export async function sharePathFor(env: Env, site: ShareSite): Promise<string> {
 
 /** The title and description a preview shows: the app's settings, else what its index.html says. */
 export async function appPreviewText(env: Env, site: SiteRow): Promise<{ title: string; description: string }> {
-  const obj = await env.BUCKET.get(`sites/${site.id}/${site.current_version}/index.html`, { range: { offset: 0, length: 64 * 1024 } });
+  const obj = await env.BUCKET.get(versionPrefix(site) + "index.html", { range: { offset: 0, length: 64 * 1024 } });
   const html = obj ? await obj.text() : "";
   const metas = metaTags(html);
   const meta = (...keys: string[]) => keys.map((k) => metas.find(([key, v]) => key === k && v.trim())?.[1]).find(Boolean) ?? "";
@@ -171,8 +169,6 @@ export async function svgToPng(svg: string): Promise<Uint8Array> {
     r.free();
   }
 }
-
-const xml = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
 /** A rough width for a line of text, in px: enough to wrap titles without measuring glyphs. */
 function textWidth(s: string, size: number): number {
@@ -323,7 +319,7 @@ async function cached(c: Context<AppEnv>, key: string, make: () => Promise<Respo
 const pngResponse = (png: Uint8Array) => new Response(png, { headers: { ...IMAGE_HEADERS, "content-type": "image/png" } });
 
 /** An app's icon as a data: URI resvg can draw (PNG, JPEG, GIF or SVG), or null for its letter. */
-async function iconDataUri(env: Env, site: ShareSite): Promise<string | null> {
+async function iconDataUri(env: Env, site: SiteRow): Promise<string | null> {
   if (!(await iconPathFor(env, site))) return null;
   const res = await iconResponse(env, site);
   const type = (res.headers.get("content-type") ?? "").split(";")[0]!.trim();
@@ -333,22 +329,17 @@ async function iconDataUri(env: Env, site: ShareSite): Promise<string | null> {
 }
 
 /** The app's own share image as a PNG (or as it is, for a PNG, JPEG, GIF or WebP); null if it has none that works. */
-async function ownShareImage(env: Env, site: ShareSite): Promise<Response | null> {
+async function ownShareImage(env: Env, site: SiteRow): Promise<Response | null> {
   const share = await sharePathFor(env, site);
   if (!share || share.startsWith("https://")) return null;
   let bytes: Uint8Array;
   let type: string;
   if (share.startsWith("data:")) {
-    const m = /^data:([^;,]+)(;base64)?,(.*)$/s.exec(share);
-    if (!m) return null;
-    type = m[1]!.toLowerCase();
-    try {
-      bytes = m[2] ? b64decode(m[3]!) : new TextEncoder().encode(decodeURIComponent(m[3]!));
-    } catch {
-      return null;
-    }
+    const data = decodeDataUri(share);
+    if (!data) return null;
+    ({ type, bytes } = data);
   } else {
-    const obj = await env.BUCKET.get(`sites/${site.id}/${site.current_version}/${share}`);
+    const obj = await env.BUCKET.get(versionPrefix(site) + share);
     if (!obj || obj.size > MAX_IMAGE_BYTES) return null;
     bytes = new Uint8Array(await obj.arrayBuffer());
     type = contentTypeFor(share).split(";")[0]!;
@@ -367,7 +358,7 @@ async function ownShareImage(env: Env, site: ShareSite): Promise<Response | null
 
 /** GET /_platform/share.png on an app's host: its preview image, public (see the top of this file). */
 export async function appShareImage(c: Context<AppEnv>): Promise<Response> {
-  const site = c.get("site") as ShareSite;
+  const site = c.get("site");
   if (linkPreviewOf(site) === "private") {
     return cached(c, `${aiOrigin(c.env, c.req.url)}/_platform/private-share.png?v=${ASSET_VERSION}`, async () => pngResponse(await svgToPng(privateCardSvg())));
   }
@@ -463,7 +454,7 @@ ${description ? `<p>${e(description)}</p>\n` : ""}<p><a href="${e(open)}">Open i
 
 /** What a link preview fetcher gets for an app instead of the sign-in redirect. */
 export async function appPreviewPage(c: Context<AppEnv>): Promise<Response> {
-  const site = c.get("site") as ShareSite;
+  const site = c.get("site");
   const origin = siteOrigin(c.env, site.host_label, c.req.url);
   const open = `${aiOrigin(c.env, c.req.url)}/auth/app?return=${encodeURIComponent(c.req.url)}`;
   if (linkPreviewOf(site) === "private") {
@@ -503,7 +494,7 @@ async function ownShareSize(env: Env, site: SiteRow, share: string): Promise<{ w
     }
   }
   if (extOf(share) !== "png") return undefined;
-  const obj = await env.BUCKET.get(`sites/${site.id}/${site.current_version}/${share}`, { range: { offset: 0, length: 33 } });
+  const obj = await env.BUCKET.get(versionPrefix(site) + share, { range: { offset: 0, length: 33 } });
   return obj ? (pngSize(new Uint8Array(await obj.arrayBuffer())) ?? undefined) : undefined;
 }
 

@@ -1,20 +1,30 @@
 // The easy way, built in: a person saves their own Claude (Anthropic), OpenAI, Gemini or Grok (xAI)
-// API key once, and
-// "Make it" on the New app page builds the app with that key right here, then publishes it. No
+// API key once, and "Make it" on the New app page builds the app with that key right here, then publishes it. No
 // connector to set up in Claude or ChatGPT, and the person's own API account pays for the tokens.
 // Keys are encrypted at rest like Gemini's (service_keys, AAD "user:<email>:<service>") and never
 // sent to a browser.
 import Anthropic from "@anthropic-ai/sdk";
 import { audit } from "./audit";
 import type { Env, User } from "./env";
-import { now } from "./env";
-import { ApiError, badRequest, err } from "./errors";
+import { ApiError, badRequest, err, upstreamMessage } from "./errors";
 import { enabledFlags, withFlags } from "./flags";
 import { GUIDE_MD } from "./generated/assets";
-import { connectGemini, disconnectGemini, GEMINI_MODEL } from "./gemini";
-import { decryptSecret, encryptSecret, rateLimit } from "./secrets";
-import { createNamespace, currentFiles, getNamespace, getSiteByMount, listNamespaces, publishSite, requireManageableSite, RESERVED_LABELS, type Ctx } from "./sites";
-import { filesFromHtml, type FileMap } from "./upload";
+import { connectGemini, disconnectGemini, GEMINI_API, GEMINI_MODEL } from "./gemini";
+import { markServiceKeyUsed, rateLimit, readServiceKey, saveServiceKey } from "./secrets";
+import {
+  createNamespace,
+  currentFiles,
+  getNamespace,
+  getSiteByMount,
+  listNamespaces,
+  publishSite,
+  requireManageableSite,
+  RESERVED_LABELS,
+  waitlisted,
+  type Ctx,
+} from "./sites";
+import { filesFromHtml } from "./upload";
+import { slug } from "./util";
 
 export type Builder = "claude" | "openai" | "gemini" | "grok";
 // Gemini's builder key is the same stored key as the Google Gemini connected app (service
@@ -40,7 +50,6 @@ export function parseBuilder(raw: unknown): Builder {
   throw badRequest("Pick Claude, ChatGPT, Gemini or Grok.", 'Send provider "claude", "openai", "gemini" or "grok".');
 }
 
-const scope = (email: string) => `user:${email}`;
 type Row = { iv: string; ciphertext: string; hint: string };
 const loadRow = (env: Env, email: string, b: Builder) =>
   env.DB.prepare("SELECT iv, ciphertext, hint FROM service_keys WHERE owner_email = ? AND service = ?").bind(email, BUILDERS[b].service).first<Row>();
@@ -61,15 +70,6 @@ const ORG: Record<Builder, string> = { claude: "Anthropic", openai: "OpenAI", ge
 
 const keyRejected = (b: Builder, why: string) =>
   badRequest(`${ORG[b]} didn't accept this key: ${why}`, `Check the key at ${BUILDERS[b].keyUrl}, or create a new one, then paste it again.`);
-
-async function openaiError(res: Response) {
-  try {
-    const body = await res.json<{ error?: { message?: string } }>();
-    return body.error?.message?.slice(0, 300) ?? `HTTP ${res.status}`;
-  } catch {
-    return `HTTP ${res.status}`;
-  }
-}
 
 const anthropic = (apiKey: string) => new Anthropic({ apiKey, maxRetries: 1, fetch: (...a: Parameters<typeof fetch>) => fetch(...a) });
 
@@ -101,20 +101,10 @@ export async function connectBuilder(env: Env, user: User, b: Builder, rawKey: u
       throw err(502, "builder_unreachable", `Couldn't reach ${ORG[b]} to check the key.`, "Try again in a minute.");
     }
     // xAI answers a bad key with 400 ("Incorrect API key provided").
-    if (res.status === 401 || res.status === 403 || (b === "grok" && res.status === 400)) throw keyRejected(b, await openaiError(res));
-    if (!res.ok) throw err(502, "builder_error", `${ORG[b]} couldn't check the key right now: ${await openaiError(res)}`, "Try again in a minute.");
+    if (res.status === 401 || res.status === 403 || (b === "grok" && res.status === 400)) throw keyRejected(b, await upstreamMessage(res));
+    if (!res.ok) throw err(502, "builder_error", `${ORG[b]} couldn't check the key right now: ${await upstreamMessage(res)}`, "Try again in a minute.");
   }
-  const service = BUILDERS[b].service;
-  const { iv, ciphertext } = await encryptSecret(env, scope(user.email), service, key);
-  const t = now();
-  await env.DB.prepare(
-    `INSERT INTO service_keys (owner_email, service, iv, ciphertext, hint, created_at, updated_at)
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)
-     ON CONFLICT(owner_email, service) DO UPDATE SET iv = excluded.iv, ciphertext = excluded.ciphertext,
-       hint = excluded.hint, updated_at = excluded.updated_at`,
-  )
-    .bind(user.email, service, iv, ciphertext, key.slice(-4), t)
-    .run();
+  await saveServiceKey(env, user.email, BUILDERS[b].service, key, key.slice(-4));
   await audit(env, user.email, "service_connect", null, { service: BUILDERS[b].name });
   return { connected: true, hint: key.slice(-4) };
 }
@@ -171,8 +161,7 @@ export function titleOf(html: string): string {
   return t.slice(0, 120) || "My app";
 }
 
-export const slugify = (s: string) =>
-  s.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40).replace(/-+$/, "") || "app";
+export const slugify = (s: string) => slug(s, 40) || "app";
 
 /** The person's space to publish into: one they own, else one they edit, else a new one named after them. */
 async function homeNamespace(ctx: Ctx): Promise<string> {
@@ -204,6 +193,32 @@ async function freeMount(env: Env, ns: string, title: string): Promise<string> {
 
 type Progress = (chars: number) => void;
 type Generated = { html: string; model: string; tokens: number };
+
+/** The `data:` payloads of a server-sent event stream, in order. */
+async function* sseData(body: ReadableStream<Uint8Array>): AsyncGenerator<string> {
+  const reader = body.pipeThrough(new TextDecoderStream()).getReader();
+  let buf = "";
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) return;
+    buf += value;
+    let nl: number;
+    while ((nl = buf.indexOf("\n")) >= 0) {
+      const line = buf.slice(0, nl).trim();
+      buf = buf.slice(nl + 1);
+      if (line.startsWith("data:")) yield line.slice(5).trim();
+    }
+  }
+}
+
+/** One SSE payload as JSON, or null for anything that isn't (keep-alives, "[DONE]"). */
+function parseEvent<T>(data: string): T | null {
+  try {
+    return JSON.parse(data) as T;
+  } catch {
+    return null;
+  }
+}
 
 async function generateWithClaude(key: string, system: string, prompt: string, progress: Progress): Promise<Generated> {
   let chars = 0;
@@ -246,7 +261,7 @@ async function generateWithClaude(key: string, system: string, prompt: string, p
 async function pickOpenAiModel(key: string): Promise<string> {
   const res = await fetch(`${OPENAI_API}/models`, { headers: { authorization: `Bearer ${key}` } });
   if (res.status === 401 || res.status === 403) throw err(502, "builder_key_rejected", "OpenAI rejected your API key.", "Paste a new key on the New app page (ChatGPT → Change key).");
-  if (!res.ok) throw err(502, "builder_error", `OpenAI had a problem: ${await openaiError(res)}`, "Try again in a moment.");
+  if (!res.ok) throw err(502, "builder_error", `OpenAI had a problem: ${await upstreamMessage(res)}`, "Try again in a moment.");
   const { data = [] } = await res.json<{ data?: { id: string }[] }>();
   const ranked = data
     .map((m) => ({ id: m.id, v: m.id.match(/^gpt-(\d+(?:\.\d+)?)$/)?.[1] }))
@@ -256,8 +271,8 @@ async function pickOpenAiModel(key: string): Promise<string> {
   return ranked[0]!.id;
 }
 
-async function generateWithOpenAi(key: string, system: string, prompt: string, progress: Progress, modelOverride?: string): Promise<Generated> {
-  const model = modelOverride || (await pickOpenAiModel(key));
+async function generateWithOpenAi(key: string, system: string, prompt: string, progress: Progress): Promise<Generated> {
+  const model = await pickOpenAiModel(key);
   let res: Response;
   try {
     res = await fetch(`${OPENAI_API}/responses`, {
@@ -269,7 +284,7 @@ async function generateWithOpenAi(key: string, system: string, prompt: string, p
     throw err(504, "builder_unreachable", "Couldn't reach OpenAI.", "Try again in a moment.");
   }
   if (!res.ok || !res.body) {
-    const why = await openaiError(res);
+    const why = await upstreamMessage(res);
     if (res.status === 401 || res.status === 403) throw err(502, "builder_key_rejected", "OpenAI rejected your API key.", "Paste a new key on the New app page (ChatGPT → Change key).");
     if (res.status === 429) throw err(429, "builder_quota", `Your OpenAI account is over a limit: ${why}`, "Wait a bit, or check your usage and billing at platform.openai.com.");
     throw err(502, "builder_error", `OpenAI had a problem: ${why}`, "Try again in a moment.");
@@ -278,33 +293,18 @@ async function generateWithOpenAi(key: string, system: string, prompt: string, p
   let tokens = 0;
   let failure: string | null = null;
   let incomplete = false;
-  const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
-  let buf = "";
-  for (;;) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    buf += value;
-    let nl: number;
-    while ((nl = buf.indexOf("\n")) >= 0) {
-      const line = buf.slice(0, nl).trim();
-      buf = buf.slice(nl + 1);
-      if (!line.startsWith("data:")) continue;
-      let ev: { type?: string; delta?: string; message?: string; response?: { usage?: { total_tokens?: number }; error?: { message?: string }; incomplete_details?: { reason?: string } } };
-      try {
-        ev = JSON.parse(line.slice(5));
-      } catch {
-        continue;
-      }
-      if (ev.type === "response.output_text.delta" && ev.delta) {
-        text += ev.delta;
-        progress(text.length);
-      } else if (ev.type === "response.completed") {
-        tokens = ev.response?.usage?.total_tokens ?? 0;
-      } else if (ev.type === "response.incomplete") {
-        incomplete = true;
-      } else if (ev.type === "response.failed" || ev.type === "error") {
-        failure = ev.response?.error?.message ?? ev.message ?? "unknown error";
-      }
+  type Event = { type?: string; delta?: string; message?: string; response?: { usage?: { total_tokens?: number }; error?: { message?: string } } };
+  for await (const data of sseData(res.body)) {
+    const ev = parseEvent<Event>(data);
+    if (ev?.type === "response.output_text.delta" && ev.delta) {
+      text += ev.delta;
+      progress(text.length);
+    } else if (ev?.type === "response.completed") {
+      tokens = ev.response?.usage?.total_tokens ?? 0;
+    } else if (ev?.type === "response.incomplete") {
+      incomplete = true;
+    } else if (ev?.type === "response.failed" || ev?.type === "error") {
+      failure = ev.response?.error?.message ?? ev.message ?? "unknown error";
     }
   }
   if (failure) throw err(502, "builder_error", `OpenAI had a problem: ${failure}`, "Try again in a moment.");
@@ -312,13 +312,11 @@ async function generateWithOpenAi(key: string, system: string, prompt: string, p
   return { html: extractHtml(text), model, tokens };
 }
 
-const GEMINI_API = "https://generativelanguage.googleapis.com/v1beta";
-
 /** The newest Gemini Flash model the key can use (free tier); Flash-Lite if there's none. */
 async function pickGeminiModel(key: string): Promise<string> {
   const res = await fetch(`${GEMINI_API}/models?pageSize=1000`, { headers: { "x-goog-api-key": key } });
   if (res.status === 400 || res.status === 401 || res.status === 403) throw err(502, "builder_key_rejected", "Google rejected your Gemini API key.", "Paste a new key on the New app page (Gemini → Change key).");
-  if (!res.ok) throw err(502, "builder_error", `Gemini had a problem: ${await openaiError(res)}`, "Try again in a moment.");
+  if (!res.ok) throw err(502, "builder_error", `Gemini had a problem: ${await upstreamMessage(res)}`, "Try again in a moment.");
   const { models = [] } = await res.json<{ models?: { name: string }[] }>();
   const ranked = models
     .map((m) => ({ id: m.name.replace(/^models\//, ""), v: m.name.match(/^models\/gemini-(\d+(?:\.\d+)?)-flash$/)?.[1] }))
@@ -344,7 +342,7 @@ async function generateWithGemini(key: string, system: string, prompt: string, p
     throw err(504, "builder_unreachable", "Couldn't reach Gemini.", "Try again in a moment.");
   }
   if (!res.ok || !res.body) {
-    const why = await openaiError(res);
+    const why = await upstreamMessage(res);
     if (res.status === 401 || res.status === 403) throw err(502, "builder_key_rejected", "Google rejected your Gemini API key.", "Paste a new key on the New app page (Gemini → Change key).");
     if (res.status === 429) throw err(429, "builder_quota", `You've reached Gemini's free limit for now: ${why}`, "Wait a minute and try again. The daily limit resets at midnight Pacific time.");
     throw err(502, "builder_error", `Gemini had a problem: ${why}`, "Try again in a moment.");
@@ -353,34 +351,20 @@ async function generateWithGemini(key: string, system: string, prompt: string, p
   let tokens = 0;
   let finish: string | undefined;
   let blocked: string | undefined;
-  const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
-  let buf = "";
-  for (;;) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    buf += value;
-    let nl: number;
-    while ((nl = buf.indexOf("\n")) >= 0) {
-      const line = buf.slice(0, nl).trim();
-      buf = buf.slice(nl + 1);
-      if (!line.startsWith("data:")) continue;
-      let ev: {
-        candidates?: { content?: { parts?: { text?: string; thought?: boolean }[] }; finishReason?: string }[];
-        promptFeedback?: { blockReason?: string };
-        usageMetadata?: { totalTokenCount?: number };
-      };
-      try {
-        ev = JSON.parse(line.slice(5));
-      } catch {
-        continue;
-      }
-      const cand = ev.candidates?.[0];
-      for (const p of cand?.content?.parts ?? []) if (!p.thought && p.text) text += p.text;
-      if (cand?.finishReason) finish = cand.finishReason;
-      if (ev.promptFeedback?.blockReason) blocked = ev.promptFeedback.blockReason;
-      if (ev.usageMetadata?.totalTokenCount) tokens = ev.usageMetadata.totalTokenCount;
-      progress(text.length);
-    }
+  type Event = {
+    candidates?: { content?: { parts?: { text?: string; thought?: boolean }[] }; finishReason?: string }[];
+    promptFeedback?: { blockReason?: string };
+    usageMetadata?: { totalTokenCount?: number };
+  };
+  for await (const data of sseData(res.body)) {
+    const ev = parseEvent<Event>(data);
+    if (!ev) continue;
+    const cand = ev.candidates?.[0];
+    for (const p of cand?.content?.parts ?? []) if (!p.thought && p.text) text += p.text;
+    if (cand?.finishReason) finish = cand.finishReason;
+    if (ev.promptFeedback?.blockReason) blocked = ev.promptFeedback.blockReason;
+    if (ev.usageMetadata?.totalTokenCount) tokens = ev.usageMetadata.totalTokenCount;
+    progress(text.length);
   }
   if (blocked || finish === "SAFETY" || finish === "PROHIBITED_CONTENT") throw badRequest("Gemini declined to build this app.", "Try describing it differently.");
   if (finish === "MAX_TOKENS") throw err(502, "builder_too_long", "The app came out too long to finish.", "Ask for a smaller first version, then add to it.");
@@ -391,7 +375,7 @@ async function generateWithGemini(key: string, system: string, prompt: string, p
 async function pickGrokModel(key: string): Promise<string> {
   const res = await fetch(`${XAI_API}/models`, { headers: { authorization: `Bearer ${key}` } });
   if (res.status === 400 || res.status === 401 || res.status === 403) throw err(502, "builder_key_rejected", "xAI rejected your Grok API key.", "Paste a new key on the New app page (Grok → Change key).");
-  if (!res.ok) throw err(502, "builder_error", `Grok had a problem: ${await openaiError(res)}`, "Try again in a moment.");
+  if (!res.ok) throw err(502, "builder_error", `Grok had a problem: ${await upstreamMessage(res)}`, "Try again in a moment.");
   const { data = [] } = await res.json<{ data?: { id: string }[] }>();
   // xAI writes point versions either way: "grok-4.1" or "grok-4-1".
   const ranked = data
@@ -428,7 +412,7 @@ async function generateWithGrok(key: string, system: string, prompt: string, pro
     throw err(504, "builder_unreachable", "Couldn't reach Grok.", "Try again in a moment.");
   }
   if (!res.ok || !res.body) {
-    const why = await openaiError(res);
+    const why = await upstreamMessage(res);
     if (res.status === 401 || res.status === 403 || (res.status === 400 && /api key/i.test(why))) throw err(502, "builder_key_rejected", "xAI rejected your Grok API key.", "Paste a new key on the New app page (Grok → Change key).");
     if (res.status === 429) throw err(429, "builder_quota", `Your xAI account is over a limit: ${why}`, "Wait a bit, or check your usage and credits at console.x.ai.");
     throw err(502, "builder_error", `Grok had a problem: ${why}`, "Try again in a moment.");
@@ -436,34 +420,18 @@ async function generateWithGrok(key: string, system: string, prompt: string, pro
   let text = "";
   let tokens = 0;
   let finish: string | undefined;
-  const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
-  let buf = "";
-  for (;;) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    buf += value;
-    let nl: number;
-    while ((nl = buf.indexOf("\n")) >= 0) {
-      const line = buf.slice(0, nl).trim();
-      buf = buf.slice(nl + 1);
-      if (!line.startsWith("data:")) continue;
-      const data = line.slice(5).trim();
-      if (data === "[DONE]") continue;
-      let ev: { choices?: { delta?: { content?: string | null }; finish_reason?: string | null }[]; usage?: { total_tokens?: number }; error?: { message?: string } | string };
-      try {
-        ev = JSON.parse(data);
-      } catch {
-        continue;
-      }
-      if (ev.error) throw err(502, "builder_error", `Grok had a problem: ${typeof ev.error === "string" ? ev.error : (ev.error.message ?? "unknown error")}`, "Try again in a moment.");
-      const choice = ev.choices?.[0];
-      if (choice?.delta?.content) {
-        text += choice.delta.content;
-        progress(text.length);
-      }
-      if (choice?.finish_reason) finish = choice.finish_reason;
-      if (ev.usage?.total_tokens) tokens = ev.usage.total_tokens;
+  type Event = { choices?: { delta?: { content?: string | null }; finish_reason?: string | null }[]; usage?: { total_tokens?: number }; error?: { message?: string } | string };
+  for await (const data of sseData(res.body)) {
+    const ev = parseEvent<Event>(data);
+    if (!ev) continue;
+    if (ev.error) throw err(502, "builder_error", `Grok had a problem: ${typeof ev.error === "string" ? ev.error : (ev.error.message ?? "unknown error")}`, "Try again in a moment.");
+    const choice = ev.choices?.[0];
+    if (choice?.delta?.content) {
+      text += choice.delta.content;
+      progress(text.length);
     }
+    if (choice?.finish_reason) finish = choice.finish_reason;
+    if (ev.usage?.total_tokens) tokens = ev.usage.total_tokens;
   }
   if (finish === "content_filter") throw badRequest("Grok declined to build this app.", "Try describing it differently.");
   if (finish === "length") throw err(502, "builder_too_long", "The app came out too long to finish.", "Ask for a smaller first version, then add to it.");
@@ -504,26 +472,26 @@ type Prepared = { key: string; guide: string };
 /** Checks the request and the person's key, and loads what every build needs. */
 async function prepare(ctx: Ctx, b: Builder, text: string, what: string): Promise<Prepared> {
   const { env, user } = ctx;
-  if (!user.active) throw err(403, "waitlisted", "Your account is still on the waitlist.", "You can make apps once you're let in.");
+  if (!user.active) throw waitlisted();
   if (!text) throw badRequest(`Describe ${what} first.`, "Say what you want, in your own words.");
   if (text.length > MAX_IDEA) throw badRequest(`Keep the description under ${MAX_IDEA} characters.`, "Start with the main idea; you can make more changes after.");
   const row = await loadRow(env, user.email, b);
   if (!row) throw err(409, "builder_not_connected", `Connect ${BUILDERS[b].name} first.`, "Paste your API key on the New app page.");
   await rateLimit(env, `build:${user.email}`, BUILDS_PER_MINUTE, `You started more than ${BUILDS_PER_MINUTE} builds in a minute.`);
-  const key = await decryptSecret(env, scope(user.email), BUILDERS[b].service, row.iv, row.ciphertext);
+  const key = await readServiceKey(env, user.email, BUILDERS[b].service, row);
   return { key, guide: withFlags(GUIDE_MD, await enabledFlags(env, user)) };
 }
 
+const GENERATORS: Record<Builder, (key: string, system: string, prompt: string, progress: Progress) => Promise<Generated>> = {
+  claude: generateWithClaude,
+  openai: generateWithOpenAi,
+  gemini: generateWithGemini,
+  grok: generateWithGrok,
+};
+
 async function generate(ctx: Ctx, b: Builder, key: string, system: string, prompt: string, progress: Progress): Promise<Generated> {
-  const generated =
-    b === "claude"
-      ? await generateWithClaude(key, system, prompt, progress)
-      : b === "openai"
-        ? await generateWithOpenAi(key, system, prompt, progress)
-        : b === "gemini"
-          ? await generateWithGemini(key, system, prompt, progress)
-          : await generateWithGrok(key, system, prompt, progress);
-  await ctx.env.DB.prepare("UPDATE service_keys SET last_used_at = ? WHERE owner_email = ? AND service = ?").bind(now(), ctx.user.email, BUILDERS[b].service).run();
+  const generated = await GENERATORS[b](key, system, prompt, progress);
+  await markServiceKeyUsed(ctx.env, ctx.user.email, BUILDERS[b].service);
   return generated;
 }
 

@@ -45,7 +45,7 @@ export async function savedKeys(env: Env, siteId: string): Promise<SavedKey[]> {
   const { results } = await env.DB.prepare("SELECT name, hosts, updated_at FROM secrets WHERE site_id = ? ORDER BY name")
     .bind(siteId)
     .all<{ name: string; hosts: string | null; updated_at: number }>();
-  return results.map((r) => ({ name: r.name, hosts: r.hosts ? parseJsonArray(r.hosts) : [], updatedAt: r.updated_at }));
+  return results.map((r) => ({ name: r.name, hosts: parseJsonArray(r.hosts), updatedAt: r.updated_at }));
 }
 
 /** When the app last called Gemini, or null if it never has (within the activity kept, a year). */
@@ -95,7 +95,7 @@ export async function replaceSavedKey(ctx: Ctx, id: string, name: string, rawVal
   validateSecretName(name);
   const row = await ctx.env.DB.prepare("SELECT hosts FROM secrets WHERE site_id = ? AND name = ?").bind(site.id, name).first<{ hosts: string | null }>();
   if (!row) throw notFound(`The key ${name}`);
-  const hosts = row.hosts ? parseJsonArray(row.hosts) : [];
+  const hosts = parseJsonArray(row.hosts);
   if (!hosts.length) {
     throw err(409, "no_hosts", `${name} was saved before keys listed where they may be sent.`, "Ask your AI to set it again with formelab.secrets.set and its hosts.");
   }

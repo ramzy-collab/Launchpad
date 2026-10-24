@@ -1,10 +1,11 @@
 import type { Env } from "./env";
 import { now } from "./env";
-import { badRequest, err, forbidden } from "./errors";
-import { normEmail } from "./util";
-import { notifyAdminOfSignup, publicOrigin, sendEmail, waitlistJoinedEmail } from "./email";
+import { badRequest, forbidden } from "./errors";
+import { aiOrigin } from "./hosts";
+import { rateLimit } from "./secrets";
+import { isEmail, normEmail } from "./util";
+import { notifyAdminOfSignup, sendEmail, waitlistJoinedEmail } from "./email";
 
-const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 export const WAITLIST_RATE_PER_MINUTE = 10;
 
 export interface WaitlistEntry {
@@ -33,19 +34,29 @@ export async function joinWaitlist(req: Request, env: Env, waitUntil: (p: Promis
   }
   const raw = typeof body === "object" && body && "email" in body ? (body as { email: unknown }).email : null;
   const email = typeof raw === "string" ? normEmail(raw) : "";
-  if (email.length > 254 || !EMAIL.test(email)) {
+  if (!isEmail(email)) {
     throw badRequest("That email address is not valid.", "Hmm, that email looks a little off. Mind checking it?");
   }
-  await checkRate(env, req.headers.get("cf-connecting-ip") ?? "unknown");
-  const res = await env.DB.prepare("INSERT INTO waitlist (email, created_at) VALUES (?, ?) ON CONFLICT(email) DO NOTHING")
-    .bind(email, now())
-    .run();
-  // Only the first sign-up sends the confirmation, so the form can't be used to repeat-email someone.
-  if (res.meta.changes) {
-    const origin = publicOrigin(env, req.url);
-    waitUntil(sendEmail(env, waitlistJoinedEmail(origin, email)));
-    waitUntil(notifyAdminOfSignup(env, req.url, email, "form"));
-  }
+  await rateLimit(
+    env,
+    `waitlist:${req.headers.get("cf-connecting-ip") ?? "unknown"}`,
+    WAITLIST_RATE_PER_MINUTE,
+    "Too many sign-ups from this address.",
+    env.WAITLIST_LIMITER,
+    "Give it a minute and try again.",
+  );
+  await addToWaitlist(env, email, req.url, "form", waitUntil);
+}
+
+/**
+ * Puts `email` on the waitlist, from the home page's form or a sign-in before being let in. Only
+ * the first time sends the confirmation and tells the admin, so it can't be used to repeat-email someone.
+ */
+export async function addToWaitlist(env: Env, email: string, requestUrl: string, via: "form" | "login", waitUntil: (p: Promise<unknown>) => void) {
+  const res = await env.DB.prepare("INSERT INTO waitlist (email, created_at) VALUES (?, ?) ON CONFLICT(email) DO NOTHING").bind(email, now()).run();
+  if (!res.meta.changes) return;
+  waitUntil(sendEmail(env, waitlistJoinedEmail(aiOrigin(env, requestUrl), email)));
+  waitUntil(notifyAdminOfSignup(env, requestUrl, email, via));
 }
 
 export async function listWaitlist(
@@ -65,21 +76,4 @@ export async function listWaitlist(
     total: count?.n ?? 0,
     entries: rows.results.map((r) => ({ email: r.email, createdAt: r.created_at, approvedAt: r.approved_at, signedIn: r.signed_in === 1 })),
   };
-}
-
-async function checkRate(env: Env, ip: string) {
-  let ok: boolean;
-  if (env.WAITLIST_LIMITER) {
-    ok = (await env.WAITLIST_LIMITER.limit({ key: ip })).success;
-  } else {
-    const minute = Math.floor(now() / 60_000);
-    const row = await env.DB.prepare(
-      `INSERT INTO rate_counters (bucket, count, expires_at) VALUES (?1, 1, ?2)
-       ON CONFLICT(bucket) DO UPDATE SET count = count + 1 RETURNING count`,
-    )
-      .bind(`waitlist:${ip}:${minute}`, (minute + 2) * 60_000)
-      .first<{ count: number }>();
-    ok = (row?.count ?? 0) <= WAITLIST_RATE_PER_MINUTE;
-  }
-  if (!ok) throw err(429, "rate_limited", "Too many sign-ups from this address.", "Give it a minute and try again.");
 }

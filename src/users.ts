@@ -2,7 +2,9 @@
 import { audit } from "./audit";
 import { isOwnerEmail } from "./auth";
 import type { Env, User } from "./env";
+import { now } from "./env";
 import { badRequest, err, notFound } from "./errors";
+import { WORKOS_API } from "./login";
 import { listConnections, oauthHelpers } from "./oauth";
 import { removeSite, type NamespaceRow, type SiteRow } from "./sites";
 import { normEmail, parseJsonArray, randomId } from "./util";
@@ -35,20 +37,20 @@ export async function listUsers(env: Env, limit = 500): Promise<UserSummary[]> {
 }
 
 /** Rewrites a JSON email list without `email`; null when it wasn't in the list. */
-function without(list: string, email: string): string | null {
+function without(list: string | null | undefined, email: string): string | null {
   const items = parseJsonArray(list);
   const kept = items.filter((x) => normEmail(String(x)) !== email);
   return kept.length === items.length ? null : JSON.stringify(kept);
 }
+
+/** How deleted people appear in usage metrics: this, then a random code. */
+export const DELETED_USER_PREFIX = "deleted-user-";
 
 /**
  * Deletes a user and everything they own: their namespaces (with every app in them), their other
  * apps (files, KV data, secrets), their place on other apps' share and editor lists, deploy tokens,
  * sessions, connected AI apps, waitlist entry, and their WorkOS user. Audit history is kept.
  */
-/** How deleted people appear in usage metrics: this, then a random code. */
-export const DELETED_USER_PREFIX = "deleted-user-";
-
 export async function deleteUser(env: Env, admin: User, rawEmail: string) {
   if (!admin.isAdmin) throw err(403, "admin_only", "Only an admin can delete users.", "Ask the Formelab owner.");
   const email = normEmail(rawEmail);
@@ -82,7 +84,7 @@ export async function deleteUser(env: Env, admin: User, rawEmail: string) {
   const updates = [
     ...sites.map((s) =>
       env.DB.prepare("UPDATE sites SET editors = COALESCE(?, editors), allowed_emails = COALESCE(?, allowed_emails), sharers = COALESCE(?, sharers) WHERE id = ?")
-        .bind(without(s.editors, email), without(s.allowed_emails, email), without(s.sharers ?? "[]", email), s.id),
+        .bind(without(s.editors, email), without(s.allowed_emails, email), without(s.sharers, email), s.id),
     ),
     ...namespaces.map((n) => env.DB.prepare("UPDATE namespaces SET editors = COALESCE(?, editors) WHERE label = ?").bind(without(n.editors, email), n.label)),
   ];
@@ -110,7 +112,7 @@ export async function deleteUser(env: Env, admin: User, rawEmail: string) {
     await oauthHelpers(env).revokeGrant(g.id, email).then(() => disconnected++, () => {});
   }
   if (user.workos_id && env.WORKOS_API_KEY) {
-    const res = await fetch(`https://api.workos.com/user_management/users/${encodeURIComponent(user.workos_id)}`, {
+    const res = await fetch(`${WORKOS_API}/user_management/users/${encodeURIComponent(user.workos_id)}`, {
       method: "DELETE",
       headers: { authorization: `Bearer ${env.WORKOS_API_KEY}` },
     }).catch(() => null);
@@ -153,7 +155,7 @@ export interface AdminStats {
 }
 
 export async function adminStats(env: Env): Promise<AdminStats> {
-  const weekAgo = Date.now() - 7 * 24 * 3600_000;
+  const weekAgo = now() - 7 * 86_400_000;
   const row = await env.DB.prepare(
     `SELECT (SELECT COUNT(*) FROM users) AS users,
             (SELECT COUNT(*) FROM users WHERE status = 'active') AS active,

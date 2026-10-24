@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { checkProxyUrl } from "../src/secrets";
+import { checkProxyUrl } from "../src/ssrf";
 
 const opts = { domain: "example.com", allowHttp: false };
 

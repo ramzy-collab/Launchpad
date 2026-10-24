@@ -32,6 +32,16 @@ export function onError(e: Error, _c: Context): Response {
   return jsonError(err(500, "internal", "Something went wrong on the server.", "Try again. If it keeps happening, check the Worker logs."));
 }
 
+/** The error message in an upstream API's JSON answer ({ error: { message } }), else its HTTP status. */
+export async function upstreamMessage(res: Response): Promise<string> {
+  try {
+    const body = await res.json<{ error?: { message?: string } }>();
+    return body.error?.message?.slice(0, 300) ?? `HTTP ${res.status}`;
+  } catch {
+    return `HTTP ${res.status}`;
+  }
+}
+
 export const unauthorized = () =>
   err(401, "unauthorized", "You are not signed in.", "Open the page in a browser to sign in through Cloudflare Access, or send a valid deploy token.");
 export const forbidden = (message = "You do not have permission to do that.") =>

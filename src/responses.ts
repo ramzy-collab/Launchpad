@@ -141,6 +141,19 @@ export async function responsesCsv(env: Env, siteId: string): Promise<string> {
   return lines.join("\r\n") + "\r\n";
 }
 
+/** A CSV file to download, named "<app> <what>.csv" (byte order mark first, so Excel reads it as UTF-8). */
+export function csvDownload(app: string, what: string, csv: string): Response {
+  const file = `${app.replace(/[^A-Za-z0-9 _-]+/g, "").trim() || "app"} ${what}.csv`;
+  return new Response("\uFEFF" + csv, {
+    headers: {
+      "content-type": "text/csv; charset=utf-8",
+      "content-disposition": `attachment; filename="${file}"`,
+      "cache-control": "no-store",
+      "x-content-type-options": "nosniff",
+    },
+  });
+}
+
 function csvCell(v: unknown): string {
   let s = v === undefined || v === null ? "" : typeof v === "string" ? v : JSON.stringify(v);
   // Spreadsheets run text starting with these as a formula; a leading quote keeps it as text.

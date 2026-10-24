@@ -32,9 +32,11 @@ export function sortableId(): string {
   return ts + base32(randomBytes(7)).slice(0, 10);
 }
 
-export async function sha256Hex(input: string): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(input));
-  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+export const hex = (bytes: Uint8Array) => [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
+
+export async function sha256Hex(input: string | Uint8Array): Promise<string> {
+  const data = typeof input === "string" ? new TextEncoder().encode(input) : input;
+  return hex(new Uint8Array(await crypto.subtle.digest("SHA-256", data)));
 }
 
 export function b64encode(bytes: Uint8Array): string {
@@ -42,6 +44,8 @@ export function b64encode(bytes: Uint8Array): string {
   for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
   return btoa(s);
 }
+
+export const b64url = (bytes: Uint8Array) => b64encode(bytes).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 
 export function b64decode(s: string): Uint8Array {
   const bin = atob(s);
@@ -71,3 +75,25 @@ export function parseJsonArray(s: string | null | undefined): string[] {
 const EMAIL_RE = /^[^\s@<>"']+@[^\s@<>"']+\.[^\s@<>"']+$/;
 export const isEmail = (s: string) => s.length <= 254 && EMAIL_RE.test(s);
 export const normEmail = (s: string) => s.trim().toLowerCase();
+
+/** "Quo SMS!" -> "quo-sms", at most `max` characters; "" when nothing is left. */
+export const slug = (s: string, max: number) =>
+  s.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-+/, "").slice(0, max).replace(/-+$/, "");
+
+/** A whole number written as a number or a string of digits, else NaN. */
+export const wholeNumber = (raw: unknown) =>
+  typeof raw === "number" ? raw : typeof raw === "string" && /^\s*\d+\s*$/.test(raw) ? Number(raw) : NaN;
+
+/** Whether a fetch failed because its AbortSignal timed out. */
+export const isTimeout = (e: unknown) => e instanceof Error && (e.name === "TimeoutError" || e.name === "AbortError");
+
+/** "just now", "5 minutes ago", "3 days ago", or a date for anything older than a month. */
+export function ago(ms: number, now = Date.now()): string {
+  const s = Math.max(0, Math.round((now - ms) / 1000));
+  const unit = (n: number, u: string) => `${n} ${u}${n === 1 ? "" : "s"} ago`;
+  if (s < 60) return "just now";
+  if (s < 3600) return unit(Math.floor(s / 60), "minute");
+  if (s < 86400) return unit(Math.floor(s / 3600), "hour");
+  if (s < 30 * 86400) return unit(Math.floor(s / 86400), "day");
+  return new Date(ms).toISOString().slice(0, 10);
+}

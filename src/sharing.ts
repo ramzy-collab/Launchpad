@@ -134,7 +134,7 @@ export async function transferOwnership(ctx: Ctx, id: string, rawTo: unknown, co
   if (confirmed !== true) throw badRequest("Confirm the transfer.", "Send confirm: true: only the new owner can transfer it back.");
   const to = normEmail(String(rawTo ?? ""));
   const editors = parseJsonArray(site.editors).map(normEmail);
-  const sharers = parseJsonArray(site.sharers ?? "[]").map(normEmail);
+  const sharers = parseJsonArray(site.sharers).map(normEmail);
   if (to === site.owner_email) throw badRequest(`${to} already owns this app.`, "Pick one of its Admins.");
   if (!editors.includes(to) || !sharers.includes(to)) throw badRequest("Only Admins can become the owner.", `Make ${to || "them"} an Admin first.`);
   if (!(await accountsAmong(ctx.env, [to])).has(to)) throw badRequest(`${to} doesn't have a Formelab account yet.`, "They can become the owner once they've joined.");
