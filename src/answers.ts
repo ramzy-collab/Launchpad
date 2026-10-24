@@ -3,12 +3,11 @@
 // answer in a table (one column per field), with a spreadsheet download at /answers.csv. Apps
 // can't serve their own page at /answers while the responses feature is on for their owner.
 import type { Context } from "hono";
-import { canManageSite } from "./auth";
-import type { AppEnv, Env, User } from "./env";
+import type { AppEnv, Env } from "./env";
 import { flagOnForOwner } from "./flags";
 import { countResponses, csvDownload, listResponses, responsesCsv } from "./responses";
 import { plainPage } from "./serve";
-import { getNamespace, siteName, siteUrl, type SiteRow } from "./sites";
+import { siteName, siteUrl, type SiteRow } from "./sites";
 import { ago, escapeHtml as e, parseJsonArray } from "./util";
 
 export const ANSWERS_PATH = "/answers";
@@ -19,19 +18,13 @@ const ANSWERS_CSP = "default-src 'none'; style-src 'unsafe-inline'; img-src data
 /** Whether this app's owner has the responses feature: the page only exists when they do. */
 export const answersOn = (env: Env, site: SiteRow) => flagOnForOwner(env, "responses", site.owner_email);
 
-/** The signed-in person may see the app's answers: its owner and editors (and its space's editors). */
-export async function canSeeAnswers(env: Env, site: SiteRow, user: User | undefined): Promise<boolean> {
-  if (!user) return false;
-  const ns = await getNamespace(env, site.namespace);
-  return !!ns && canManageSite(user, site, ns);
-}
-
 /**
- * Whether to add the small Answers link to one of the app's pages for this person: they can see
- * the answers, the app collects them (its page uses formelab.responses, or it already has some).
+ * Whether to add the small Answers link to one of the app's pages, for someone who manages the app
+ * (the caller checks that): the app collects answers (its page uses formelab.responses, or it
+ * already has some).
  */
-export async function showAnswersLink(env: Env, site: SiteRow, user: User | undefined, html: string): Promise<boolean> {
-  if (!(await canSeeAnswers(env, site, user)) || !(await answersOn(env, site))) return false;
+export async function showAnswersLink(env: Env, site: SiteRow, html: string): Promise<boolean> {
+  if (!(await answersOn(env, site))) return false;
   return html.includes("formelab.responses") || (await countResponses(env, site.id)) > 0;
 }
 
@@ -46,7 +39,8 @@ const cell = (v: unknown) => (v === undefined || v === null || v === "" ? `<span
 export async function answersRoute(c: Context<AppEnv>, next: () => Promise<void>, csv = false): Promise<Response | void> {
   const site = c.get("site");
   if (!(await answersOn(c.env, site))) return next();
-  if (c.get("guest") || !(await canSeeAnswers(c.env, site, c.get("user")))) return notForYou();
+  // Only the app's owner and editors (and its space's editors); never guests from the public link.
+  if (!c.get("manages")) return notForYou();
   const name = siteName(site);
   if (csv) return csvDownload(name, "answers", await responsesCsv(c.env, site.id));
   const { total, responses } = await listResponses(c.env, site.id);

@@ -159,6 +159,16 @@ describe("Google Sheets as a connected app (OAuth)", () => {
     expect((await read(OWNER)).status).toBe(200);
   });
 
+  it("treats spreadsheet ids that differ only in case as different spreadsheets", async () => {
+    const ns = uniq();
+    await publishHtml(OWNER, ns, "s", PAGE("x"));
+    expect((await allowSheets(OWNER, ns, [SHEET])).status).toBe(200);
+    const other = SHEET.toUpperCase();
+    const res = await allowSheets(OWNER, ns, [other]);
+    expect(res.status).toBe(200);
+    expect((await res.json<{ sheets: string[] }>()).sheets).toEqual([other]);
+  });
+
   it("only lets an app use the spreadsheets its owner listed for it", async () => {
     mockGoogle();
     const ns = uniq();

@@ -54,7 +54,8 @@ export type AppEnv = {
      * may open it by name. `user` is not set; the runtime API only lets guests read.
      */
     guest: boolean | undefined;
-    namespace: string;
+    /** On an app's host: whether the signed-in person is one of the app's owners or editors (never a guest). */
+    manages: boolean;
     site: import("./sites").SiteRow;
     /** The browser session behind the request, when it came from Formelab's own login. */
     sessionId: string | undefined;

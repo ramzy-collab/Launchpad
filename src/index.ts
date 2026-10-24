@@ -308,7 +308,7 @@ siteApp.use("*", async (c, next) => {
   const allowed = !!who && !!nsRow && canViewSite(who.user, site, nsRow);
   if (!allowed && hasPublicLink(site, c.req.raw)) {
     c.set("guest", true);
-    c.set("namespace", site.namespace);
+    c.set("manages", false);
     // Guests are anonymous: their page views count toward the app's views, not its visitors.
     if (isPageView(c.req.raw)) c.executionCtx.waitUntil(recordAppVisit(c.env, site.id, GUEST, false).catch(() => {}));
     return next();
@@ -323,12 +323,11 @@ siteApp.use("*", async (c, next) => {
   if (!allowed) {
     return c.req.path.startsWith("/_api/") ? jsonError(forbidden("You don't have access to this app.")) : noAccessPage(site, who.user);
   }
+  const manages = canManageSite(who.user, site, nsRow);
   c.set("user", who.user);
-  c.set("namespace", site.namespace);
+  c.set("manages", manages);
   // Someone opening one of the app's pages counts toward its visitors (admin panel → Metrics).
-  if (isPageView(c.req.raw)) {
-    c.executionCtx.waitUntil(recordAppVisit(c.env, site.id, who.user.email, canManageSite(who.user, site, nsRow)).catch(() => {}));
-  }
+  if (isPageView(c.req.raw)) c.executionCtx.waitUntil(recordAppVisit(c.env, site.id, who.user.email, manages).catch(() => {}));
   await next();
 });
 
@@ -343,7 +342,7 @@ siteApp.get(ANSWERS_PATH, (c, next) => answersRoute(c, next));
 siteApp.get(`${ANSWERS_PATH}.csv`, (c, next) => answersRoute(c, next, true));
 siteApp.all("*", (c) =>
   serveAppFile(c.req.raw, c.env, c.get("site"), {
-    answersLink: c.get("guest") ? undefined : (html) => showAnswersLink(c.env, c.get("site"), c.get("user"), html),
+    answersLink: c.get("manages") ? (html) => showAnswersLink(c.env, c.get("site"), html) : undefined,
   }),
 );
 

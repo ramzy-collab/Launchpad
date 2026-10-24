@@ -19,6 +19,9 @@ const added = (next: string[], prev: string[]) => {
   return next.map(normEmail).filter((e) => !before.has(e));
 };
 
+/** Items in `next` that weren't in `prev`, compared exactly: spreadsheet ids are case-sensitive. */
+const newIn = (next: string[], prev: string[]) => next.filter((x) => !prev.includes(x));
+
 /**
  * Emails the people an app was just shared with, within the sharer's daily share email limits
  * (see shareEmailAllowance). Returns the ones who weren't emailed, so the sharer can be told.
@@ -947,7 +950,7 @@ export async function updateSite(ctx: Ctx, id: string, patch: SitePatch) {
     // The spreadsheets are reached with the owner's own Google account, so only the owner chooses them.
     const list = sheetIdList(patch.sheets);
     const before = parseJsonArray(site.sheets);
-    if (added(list, before).length || added(before, list).length) {
+    if (newIn(list, before).length || newIn(before, list).length) {
       if (site.owner_email !== ctx.user.email) {
         throw err(403, "owner_only", "Only the app's owner can choose which Google spreadsheets it uses.", "They're reached with the owner's Google account. Ask the owner to change this.");
       }
@@ -959,8 +962,8 @@ export async function updateSite(ctx: Ctx, id: string, patch: SitePatch) {
     // Connectors use the owner's own keys, so only the owner chooses which ones the app uses.
     const list = await connectorNameList(ctx.env, site.owner_email, patch.connectors);
     const before = parseJsonArray(site.connectors);
-    const gained = added(list, before);
-    const lost = added(before, list);
+    const gained = newIn(list, before);
+    const lost = newIn(before, list);
     if (gained.length || lost.length) {
       if (site.owner_email !== ctx.user.email) {
         throw err(
@@ -1003,10 +1006,14 @@ export async function updateSite(ctx: Ctx, id: string, patch: SitePatch) {
   return { ...siteView(ctx.env, updated, ctx.requestUrl), ...(note ? { note, notEmailed: held } : {}) };
 }
 
-/** A site the signed-in person may manage (owner, editor or namespace owner); 404 for others. */
-export async function getManageableSite(ctx: Ctx, id: string): Promise<SiteView & { canEditEditors: boolean; canShare: boolean }> {
+/**
+ * A site the signed-in person may manage (owner, editor or namespace owner), 404 for others: its
+ * view for the web app, plus the row and namespace it was checked against.
+ */
+export async function getManageableSite(ctx: Ctx, id: string): Promise<{ view: SiteView & { canEditEditors: boolean; canShare: boolean }; site: SiteRow; ns: NamespaceRow }> {
   const { site, ns } = await requireManageableSite(ctx, id);
-  return { ...siteView(ctx.env, site, ctx.requestUrl), canEditEditors: isAppOwner(ctx.user, site, ns), canShare: canShareSite(ctx.user, site, ns) };
+  const view = { ...siteView(ctx.env, site, ctx.requestUrl), canEditEditors: isAppOwner(ctx.user, site, ns), canShare: canShareSite(ctx.user, site, ns) };
+  return { view, site, ns };
 }
 
 /** Removes a site's files, KV rows, secret rows and the site row itself. */
