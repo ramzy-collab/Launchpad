@@ -28,6 +28,12 @@ afterEach(() => onOutbound(undefined));
 const setFlag = (state: string, as = OWNER) => call("/_api/admin/features/connected_apps", { as, method: "PUT", json: { state } });
 
 const connect = (as: string, apiKey: string) => call("/_api/admin/services/gemini", { as, method: "PUT", json: { apiKey } });
+/** Builds the app to use Gemini: its connectors list "gemini" (update_site, owner only). */
+const useGemini = async (as: string, ns: string, mount: string) => {
+  const site = await env.DB.prepare("SELECT id FROM sites WHERE namespace = ? AND mount_path = ?").bind(ns, mount).first<{ id: string }>();
+  const res = await call(`/_api/admin/sites/${site!.id}`, { as, method: "PATCH", json: { connectors: ["gemini"] } });
+  expect(res.status).toBe(200);
+};
 const ask = async (as: string, ns: string, mount: string, json: unknown) => call(`${await appAt(ns, mount)}/_api/ai/gemini`, { as, mount: "/", method: "POST", json });
 
 describe("Google Gemini as a connected app", () => {
@@ -56,9 +62,9 @@ describe("Google Gemini as a connected app", () => {
     const row = await env.DB.prepare("SELECT * FROM service_keys WHERE owner_email = ?").bind(me).first();
     expect(JSON.stringify(row)).not.toContain(GOOD);
 
-    const page = await (await call("/app/connected", { as: me })).text();
+    const page = await (await call("/app/connected/gemini", { as: me })).text();
     expect(page).toContain("Connected</span>");
-    expect(page).toContain("the key ending in GHIJ");
+    expect(page).toContain("your key ending in <code>…GHIJ</code>");
     expect(page).not.toContain(GOOD);
   });
 
@@ -68,8 +74,14 @@ describe("Google Gemini as a connected app", () => {
     const friend = `gf-${uniq()}@example.com`;
     await publishHtml(OWNER, ns, "ai", PAGE("x"), { allowed_emails: friend });
     expect((await connect(OWNER, GOOD)).status).toBe(200);
+    // Only an app built to use Gemini can.
+    expect(await (await call(`${await appAt(ns, "ai")}/_api/ai/gemini`, { as: OWNER, mount: "/" })).json()).toEqual({ connected: false, inApp: false, available: true, model: "gemini-3.5-flash-lite" });
+    const refused = await ask(OWNER, ns, "ai", { prompt: "hi" });
+    expect(refused.status).toBe(403);
+    expect((await refused.json<{ error: { code: string } }>()).error.code).toBe("connector_not_in_app");
+    await useGemini(OWNER, ns, "ai");
 
-    expect(await (await call(`${await appAt(ns, "ai")}/_api/ai/gemini`, { as: OWNER, mount: "/" })).json()).toEqual({ connected: true, available: true, model: "gemini-3.5-flash-lite" });
+    expect(await (await call(`${await appAt(ns, "ai")}/_api/ai/gemini`, { as: OWNER, mount: "/" })).json()).toEqual({ connected: true, inApp: true, available: true, model: "gemini-3.5-flash-lite" });
     const res = await ask(OWNER, ns, "ai", { prompt: "Summarize: lots of text", system: "Be brief.", schema: { type: "string" }, maxOutputTokens: 50 });
     expect(res.status).toBe(200);
     const text = await res.text();
@@ -101,6 +113,8 @@ describe("Google Gemini as a connected app", () => {
     const ns = uniq();
     await publishHtml(owner, ns, "one", PAGE("x"), { allowed_emails: `${a}, ${b}` });
     await publishHtml(owner, ns, "two", PAGE("x"), { allowed_emails: `${a}, ${b}` });
+    await useGemini(owner, ns, "one");
+    await useGemini(owner, ns, "two");
     expect((await connect(owner, GOOD)).status).toBe(200);
     const error = async (res: Response) => (await res.json<{ error: { code: string; message: string } }>()).error;
 
@@ -132,7 +146,7 @@ describe("Google Gemini as a connected app", () => {
     for (const bad of [-1, 100_001, 2.5, "many"]) expect((await set(bad)).status, String(bad)).toBe(400);
     expect((await call("/_api/admin/services/gemini", { as: a, method: "PATCH", json: { dailyLimit: 5 } })).status).toBe(409);
 
-    const page = await (await call("/app/connected", { as: owner })).text();
+    const page = await (await call("/app/connected/gemini", { as: owner })).text();
     expect(page).toContain('data-action="gemini-limit"');
     expect(page).toContain('value="23"');
   });
@@ -142,6 +156,7 @@ describe("Google Gemini as a connected app", () => {
     const owner = `gn-${uniq()}@example.com`;
     const ns = uniq();
     expect((await publishHtml(owner, ns, "", PAGE("x"))).status).toBe(201);
+    await useGemini(owner, ns, "");
     const res = await ask(owner, ns, "", { prompt: "hi" });
     expect(res.status).toBe(409);
     expect((await res.json<{ error: { code: string } }>()).error.code).toBe("gemini_not_connected");
@@ -161,7 +176,7 @@ describe("the connected_apps feature flag", () => {
     expect((await setFlag("off")).status).toBe(200);
     const page = await (await call("/app/connected", { as: OWNER })).text();
     expect(page).toContain("Coming soon");
-    expect(page).not.toContain("dlg-gemini-service");
+    expect(page).not.toContain('href="/connected/gemini"');
     expect(page).not.toContain('href="/connected"'); // no menu link while the feature is off
     expect((await connect(OWNER, GOOD)).status).toBe(404);
     const ns = uniq();
@@ -183,18 +198,19 @@ describe("the connected_apps feature flag", () => {
     expect((await call("/_api/admin/features/nope", { as: OWNER, method: "PUT", json: { state: "on" } })).status).toBe(404);
 
     expect((await setFlag("admins")).status).toBe(200);
-    expect(await (await call("/app/connected", { as: OWNER })).text()).toContain("dlg-gemini-service");
-    expect(await (await call("/app/connected", { as: person })).text()).not.toContain("dlg-gemini-service");
+    expect(await (await call("/app/connected", { as: OWNER })).text()).toContain('href="/connected/gemini"');
+    expect(await (await call("/app/connected", { as: person })).text()).not.toContain('href="/connected/gemini"');
     expect(await (await call("/_platform/guide.md", { as: OWNER })).text()).toContain("formelab.gemini.generate");
     expect(await (await call("/_platform/guide.md", { as: person })).text()).not.toContain("formelab.gemini");
     // An admin's app works for the people it's shared with (it follows the app's owner).
     expect((await connect(OWNER, GOOD)).status).toBe(200);
     const ns = uniq();
     await publishHtml(OWNER, ns, "ai", PAGE("x"), { allowed_emails: person });
+    await useGemini(OWNER, ns, "ai");
     expect((await ask(person, ns, "ai", { prompt: "hi" })).status).toBe(200);
 
     expect((await setFlag("on")).status).toBe(200);
-    expect(await (await call("/app/connected", { as: person })).text()).toContain("dlg-gemini-service");
+    expect(await (await call("/app/connected", { as: person })).text()).toContain('href="/connected/gemini"');
     const admin = await (await call("https://admin.example.com/features", { as: OWNER })).text();
     expect(admin).toContain('data-action="feature-set" data-name="connected_apps"');
     expect(admin).toContain('<option value="on" selected>Everyone</option>');
@@ -213,13 +229,14 @@ describe("the connected_apps feature flag", () => {
     expect((await call("/_api/admin/features/nope/users", { as: OWNER, method: "POST", json: { email: person } })).status).toBe(404);
 
     expect((await addUser(` ${person.toUpperCase()} `)).status).toBe(200);
-    expect(await (await call("/app/connected", { as: person })).text()).toContain("dlg-gemini-service");
-    expect(await (await call("/app/connected", { as: other })).text()).not.toContain("dlg-gemini-service");
+    expect(await (await call("/app/connected", { as: person })).text()).toContain('href="/connected/gemini"');
+    expect(await (await call("/app/connected", { as: other })).text()).not.toContain('href="/connected/gemini"');
     expect(await (await call("/_platform/guide.md", { as: person })).text()).toContain("formelab.gemini.generate");
     // Their apps get it too, for whoever opens them.
     expect((await connect(person, GOOD)).status).toBe(200);
     const ns = uniq();
     await publishHtml(person, ns, "ai", PAGE("x"), { allowed_emails: other });
+    await useGemini(person, ns, "ai");
     expect((await ask(other, ns, "ai", { prompt: "hi" })).status).toBe(200);
 
     const admin = await (await call("https://admin.example.com/features", { as: OWNER })).text();
@@ -228,7 +245,7 @@ describe("the connected_apps feature flag", () => {
 
     expect((await removeUser(person)).status).toBe(200);
     expect((await removeUser(person)).status).toBe(404);
-    expect(await (await call("/app/connected", { as: person })).text()).not.toContain("dlg-gemini-service");
+    expect(await (await call("/app/connected", { as: person })).text()).not.toContain('href="/connected/gemini"');
     expect((await ask(other, ns, "ai", { prompt: "hi" })).status).toBe(403);
   });
 });

@@ -1,5 +1,5 @@
-// Google Gemini as a connected app: a person saves their Gemini API key once, and any of their
-// apps can call Gemini through Formelab (formelab.gemini.generate in the SDK). The key is
+// Google Gemini as a connected app: a person saves their Gemini API key once, and the apps built to
+// use it (their connectors list "gemini", see connectors.ts) can call Gemini through Formelab (formelab.gemini.generate in the SDK). The key is
 // encrypted at rest, never sent to a browser, and only used for apps that person owns, so people
 // they share an app with use the owner's key.
 import { audit } from "./audit";
@@ -7,6 +7,7 @@ import type { Env, User } from "./env";
 import { now } from "./env";
 import { badRequest, err } from "./errors";
 import { dailyLimit, decryptSecret, encryptSecret, rateLimit, usedToday } from "./secrets";
+import { siteUses } from "./connectors";
 import type { SiteRow } from "./sites";
 
 export const GEMINI_MODEL = "gemini-3.5-flash-lite";
@@ -167,13 +168,18 @@ export async function viewerLimits(env: Env, site: SiteRow, viewer: User, servic
 const notConnected = () =>
   err(409, "gemini_not_connected", "This app's owner hasn't connected Google Gemini to Formelab.", "The owner can add their Gemini API key in Formelab under Connected apps → Google Gemini.");
 
-/** Whether an app can use Gemini (its owner has connected a key). */
-export async function geminiAvailable(env: Env, site: SiteRow): Promise<{ connected: boolean; model: string }> {
-  return { connected: !!(await loadRow(env, site.owner_email)), model: GEMINI_MODEL };
+const notInApp = () =>
+  err(403, "connector_not_in_app", "This app wasn't built to use Google Gemini.", 'Its owner can ask their AI to add it: update_site with connectors including "gemini".');
+
+/** Whether an app can use Gemini: it was built to (its connectors list "gemini"), and its owner connected a key. */
+export async function geminiAvailable(env: Env, site: SiteRow): Promise<{ connected: boolean; inApp: boolean; model: string }> {
+  const inApp = siteUses(site, "gemini");
+  return { connected: inApp && !!(await loadRow(env, site.owner_email)), inApp, model: GEMINI_MODEL };
 }
 
 /** Calls Gemini for an app with its owner's key. The key never leaves the server. */
 export async function geminiGenerate(env: Env, site: SiteRow, viewer: User, req: GenerateRequest): Promise<GenerateResult> {
+  if (!siteUses(site, "gemini")) throw notInApp();
   const row = await loadRow(env, site.owner_email);
   if (!row) throw notConnected();
 

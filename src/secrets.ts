@@ -3,6 +3,7 @@ import type { Env, User } from "./env";
 import { isDev, now } from "./env";
 import { ApiError, badRequest, err, notFound } from "./errors";
 import type { SiteRow } from "./sites";
+import { connectorKey } from "./connectors";
 import { checkProxyUrl } from "./ssrf";
 import { b64decode, b64encode, parseJsonArray } from "./util";
 
@@ -18,7 +19,7 @@ export const PROXY_RATE_PER_MINUTE = 60;
 export const SECRET_MAX_HOSTS = 20;
 const PROXY_METHODS = new Set(["GET", "POST", "PUT", "PATCH", "DELETE"]);
 
-type SecretValue = string | Record<string, unknown>;
+export type SecretValue = string | Record<string, unknown>;
 
 // ---------------------------------------------------------------------------
 // Encryption at rest: AES-256-GCM, AAD = site_id + ":" + name
@@ -72,9 +73,12 @@ export function validateSecretName(name: string) {
   }
 }
 
-export async function secretList(env: Env, siteId: string): Promise<string[]> {
-  const { results } = await env.DB.prepare("SELECT name FROM secrets WHERE site_id = ? ORDER BY name").bind(siteId).all<{ name: string }>();
-  return results.map((r) => r.name);
+/** The app's saved secrets, and the connectors it was built to use (formelab.secrets.proxy reaches both). */
+export async function secretList(env: Env, site: Pick<SiteRow, "id" | "connectors">): Promise<string[]> {
+  const { results } = await env.DB.prepare("SELECT name FROM secrets WHERE site_id = ? ORDER BY name").bind(site.id).all<{ name: string }>();
+  const names = new Set(results.map((r) => r.name));
+  for (const n of parseJsonArray(site.connectors ?? "[]")) if (n !== "gemini") names.add(n);
+  return [...names].sort();
 }
 
 const HOST_RE = /^(\*\.)?[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/;
@@ -111,6 +115,14 @@ export function hostAllowed(hostname: string, hosts: string[]): boolean {
 
 export async function secretSet(env: Env, site: SiteRow, actor: User, name: string, body: unknown) {
   validateSecretName(name);
+  if (parseJsonArray(site.connectors ?? "[]").includes(name)) {
+    throw err(
+      409,
+      "is_connector",
+      `${name} is one of the owner's connectors, so its key isn't saved in the app.`,
+      `The owner can replace it in Formelab under Connected apps → ${name}. The app keeps using it with formelab.secrets.proxy("${name}", ...).`,
+    );
+  }
   const value = (body as { value?: unknown } | null)?.value;
   const okObject = value !== null && typeof value === "object" && !Array.isArray(value);
   if (typeof value !== "string" && !okObject) {
@@ -177,7 +189,7 @@ async function loadSecret(env: Env, siteId: string, name: string): Promise<{ sec
 
 const PLACEHOLDER = /\{\{\s*([A-Za-z0-9_.-]+)\s*\}\}/g;
 
-function placeholderValues(secret: SecretValue): Map<string, string> {
+export function placeholderValues(secret: SecretValue): Map<string, string> {
   const m = new Map<string, string>();
   if (typeof secret === "string") {
     m.set("value", secret);
@@ -241,7 +253,7 @@ export const PROXY_VIEWER_PER_MINUTE = 20;
  * The app's limit, and below it one for each person other than the owner, checked first so one
  * person can't use up the app's minute for everyone else (audit finding #8).
  */
-async function checkRate(env: Env, site: SiteRow, viewer: User) {
+export async function checkRate(env: Env, site: SiteRow, viewer: User) {
   if (viewer.email !== site.owner_email) {
     await rateLimit(
       env,
@@ -340,9 +352,15 @@ async function readCapped(res: Response, cap: number): Promise<{ text: string; t
   return { text: text + decoder.decode(), truncated };
 }
 
-export async function proxy(env: Env, site: SiteRow, viewer: User, name: string, req: ProxyRequest): Promise<ProxyResult> {
-  validateSecretName(name);
-  if (typeof req.url !== "string" || !req.url) throw badRequest("Missing url.", "Pass { url: \"https://api.example.com/...\" }.");
+export interface ParsedProxyRequest {
+  url: string;
+  method: string;
+  headers: Record<string, unknown>;
+  body?: string;
+}
+
+export function parseProxyRequest(req: ProxyRequest, how = "formelab.secrets.proxy(name, { url })"): ParsedProxyRequest {
+  if (typeof req.url !== "string" || !req.url) throw badRequest("Missing url.", `Pass { url: "https://api.example.com/..." } to ${how}.`);
   const method = typeof req.method === "string" ? req.method.toUpperCase() : "GET";
   if (!PROXY_METHODS.has(method)) throw badRequest(`Method ${method.slice(0, 10)} is not allowed.`, "Use GET, POST, PUT, PATCH or DELETE.");
   if (req.headers !== undefined && (req.headers === null || typeof req.headers !== "object" || Array.isArray(req.headers))) {
@@ -355,22 +373,60 @@ export async function proxy(env: Env, site: SiteRow, viewer: User, name: string,
     if (method === "GET") throw badRequest("GET requests cannot have a body.", "Use POST, or move the data into the URL.");
     body = req.body;
   }
+  return { url: req.url, method, headers: (req.headers as Record<string, unknown>) ?? {}, body };
+}
 
+/** A key the proxy sends: an app's saved secret or a connector (see src/connectors.ts). */
+export interface ProxyKey {
+  /** How errors name it, like `Secret "quo"` or `The connector quo`. */
+  what: string;
+  secret: SecretValue;
+  hosts: string[];
+  /** Added to the audit entry, like { secret: "quo" } or { connector: "quo" }. */
+  audit: Record<string, unknown>;
+  /** Puts the key into the request the way its service expects (connectors). */
+  inject?: (url: URL, headers: Headers, value: string) => void;
+  /** Where to change its hosts, for the host_not_allowed hint. */
+  hostsHint: string;
+}
+
+export async function proxy(env: Env, site: SiteRow, viewer: User, name: string, req: ProxyRequest): Promise<ProxyResult> {
+  validateSecretName(name);
+  const parsed = parseProxyRequest(req);
   await checkRate(env, site, viewer);
+  const saved = await env.DB.prepare("SELECT 1 FROM secrets WHERE site_id = ? AND name = ?").bind(site.id, name).first();
+  // No saved key by that name: one of the connectors the app was built to use, if it has that one.
+  if (!saved && parseJsonArray(site.connectors ?? "[]").includes(name)) {
+    return sendProxied(env, site, viewer, parsed, await connectorKey(env, site, name));
+  }
   const { secret, hosts } = await loadSecret(env, site.id, name);
+  return sendProxied(env, site, viewer, parsed, {
+    what: `Secret "${name}"`,
+    secret,
+    hosts,
+    audit: { secret: name },
+    hostsHint: "Call one of those hosts, or have an owner or editor set the secret again with this host added.",
+  });
+}
+
+/** Sends a parsed request with `key`, only to its hosts, and scrubs the key from the answer. */
+export async function sendProxied(env: Env, site: SiteRow, viewer: User, req: ParsedProxyRequest, key: ProxyKey): Promise<ProxyResult> {
+  const { secret, hosts } = key;
+  const method = req.method;
+  let body = req.body;
   const values = placeholderValues(secret);
 
-  const url = substitute(req.url, values, "url");
+  let url = substitute(req.url, values, "url");
   const reason =
     checkProxyUrl(url, { domain: env.DOMAIN, allowHttp: isDev(env) }) ?? checkProxyUrl(url, { domain: env.APP_DOMAIN, allowHttp: isDev(env) });
   if (reason) throw err(400, "url_blocked", `That URL is not allowed: ${reason}.`, "The proxy only calls public https APIs.");
   // The URL's host is never echoed: a placeholder may have put the secret into it.
   if (!hostAllowed(new URL(url).hostname, hosts)) {
-    throw err(403, "host_not_allowed", `Secret "${name}" may only be sent to: ${hosts.join(", ")}.`, "Call one of those hosts, or have an owner or editor set the secret again with this host added.");
+    throw err(403, "host_not_allowed", `${key.what} may only be sent to: ${hosts.join(", ")}.`, key.hostsHint);
   }
 
   const headers = new Headers();
-  for (const [k, v] of Object.entries((req.headers as Record<string, unknown>) ?? {})) {
+  for (const [k, v] of Object.entries(req.headers)) {
     if (typeof v !== "string") throw badRequest(`Header "${k.slice(0, 40)}" must be a string.`, "Convert header values to strings.");
     const lk = k.toLowerCase();
     if (lk === "cookie" || lk === "host" || lk === "content-length") continue;
@@ -382,6 +438,11 @@ export async function proxy(env: Env, site: SiteRow, viewer: User, name: string,
     }
   }
   if (body !== undefined) body = substitute(body, values, "body");
+  if (key.inject && typeof secret === "string") {
+    const u = new URL(url);
+    key.inject(u, headers, secret);
+    url = u.toString();
+  }
 
   const host = new URL(url).hostname;
   let upstream: Response;
@@ -389,13 +450,13 @@ export async function proxy(env: Env, site: SiteRow, viewer: User, name: string,
     upstream = await fetch(url, { method, headers, body, redirect: "manual", signal: AbortSignal.timeout(PROXY_TIMEOUT_MS) });
   } catch (e) {
     const timedOut = e instanceof Error && (e.name === "TimeoutError" || e.name === "AbortError");
-    await audit(env, viewer.email, "proxy", `${site.namespace}/${site.mount_path}`, { siteId: site.id, secret: name, host, status: timedOut ? "timeout" : "error" });
+    await audit(env, viewer.email, "proxy", `${site.namespace}/${site.mount_path}`, { siteId: site.id, ...key.audit, host, status: timedOut ? "timeout" : "error" });
     throw err(502, timedOut ? "upstream_timeout" : "upstream_error", timedOut ? "The API did not answer within 20 seconds." : "Could not reach the API.", "Check the URL and try again later.");
   }
   const capped = await readCapped(upstream, PROXY_MAX_RESPONSE);
   const text = redact(capped.text, values);
   const truncated = capped.truncated;
-  await audit(env, viewer.email, "proxy", `${site.namespace}/${site.mount_path}`, { siteId: site.id, secret: name, host, status: upstream.status });
+  await audit(env, viewer.email, "proxy", `${site.namespace}/${site.mount_path}`, { siteId: site.id, ...key.audit, host, status: upstream.status });
   const result: ProxyResult = { status: upstream.status, contentType: upstream.headers.get("content-type"), text, truncated };
   if (upstream.status >= 300 && upstream.status < 400) {
     const loc = upstream.headers.get("location");

@@ -11,9 +11,7 @@ import { adminOrigin, aiOrigin, appOrigin } from "../hosts";
 import { canSetPassword, workosEnabled } from "../login";
 import { ctxOf } from "../api";
 import { head, htmlResponse } from "./layout";
-import { SERVICE_ICONS, SPRITE_URL } from "./services";
-import { GEMINI_DAILY_DEFAULT, GEMINI_DAILY_MAX, GEMINI_MODEL_NAME, GEMINI_VIEWER_PER_DAY, geminiStatus, type ServiceStatus } from "../gemini";
-import { sheetsConfigured, sheetsStatus } from "../sheets";
+import { SERVICE_ICONS } from "./services";
 import { accessOf, ago, appBrowser, appName, hueClass, ICON, sharedWith, thumb } from "./apps";
 import { connectedAiApps, type AiApp } from "./aiapps";
 import { AI_LOGOS } from "./logos";
@@ -23,7 +21,7 @@ import { responsesCsv } from "../responses";
 import { flagOnForOwner } from "../flags";
 import { appPreviewText } from "../share";
 import { peopleWithAccounts, pendingInvites, starredIds } from "../sharing";
-import { appConnections, connectionsUsedBy, type AppConnections } from "../connections";
+import { appConnections, type AppConnections } from "../connections";
 
 export const fmtTime = (ms: number | null) => (ms ? new Date(ms).toISOString().replace("T", " ").slice(0, 16) + " UTC" : "never");
 
@@ -191,11 +189,20 @@ export async function appActivityPage(c: Context<AppEnv>, id: string): Promise<R
 }
 
 /** Google Sheets' logo, from the services sprite's data. */
-const SHEETS_LOGO = () => {
+export const SHEETS_LOGO = () => {
   const icon = SERVICE_ICONS.find(([name]) => name === "Google Sheets")!;
   return `<svg viewBox="0 0 48 48" aria-hidden="true"><rect width="48" height="48" rx="12" fill="${icon[1]}"/><path transform="translate(12 12)" fill="${icon[2]}" d="${icon[3]}"/></svg>`;
 };
-const KEY_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="15" r="4"/><path d="M10.8 12.2L20 3M16 7l3 3M14 9l2 2"/></svg>`;
+export const KEY_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="15" r="4"/><path d="M10.8 12.2L20 3M16 7l3 3M14 9l2 2"/></svg>`;
+
+/** A custom connector's tile logo: its first letter on a color picked from its name. */
+export function connectorLogo(label: string): string {
+  const colors = ["#5B4CF5", "#FF6B4A", "#1E8E4E", "#C2410C", "#0E7490", "#9D174D", "#4D7C0F", "#7C3AED"];
+  let h = 0;
+  for (const ch of label) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  const letter = e((label.trim()[0] ?? "?").toUpperCase());
+  return `<svg viewBox="0 0 48 48" aria-hidden="true"><rect width="48" height="48" rx="12" fill="${colors[h % colors.length]}"/><text x="24" y="31" text-anchor="middle" font-family="Bricolage Grotesque, system-ui, sans-serif" font-weight="800" font-size="22" fill="#fff">${letter}</text></svg>`;
+}
 
 /** A spreadsheet in an app's list: a link to open it in Google Sheets, and Remove for the owner. */
 export function sheetItem(id: string, canEdit: boolean): string {
@@ -208,18 +215,39 @@ export function sheetItem(id: string, canEdit: boolean): string {
 function connectionsPanel(site: SiteView, conns: AppConnections, opts: { isSiteOwner: boolean; canManage: boolean }): string {
   const owner = opts.isSiteOwner ? "your" : `${site.ownerEmail}'s`;
   const rows: string[] = [];
-  if (conns.gemini.used) {
+  // Open the connector's page and Remove it from the app: only for the app's owner, whose key it is.
+  const actions = (name: string, page: string | null) =>
+    opts.isSiteOwner
+      ? `<div class="conn-actions">${page ? `<a class="ghost small" href="${e(page)}">Open</a>` : ""}<button type="button" class="secondary small" data-conn-remove="${e(name)}">Remove</button></div>`
+      : "";
+  if (conns.gemini.inApp) {
     rows.push(`<div class="conn" data-conn="gemini">
   <span class="conn-ic">${AI_LOGOS.gemini}</span>
   <div class="conn-txt">
     <strong>Google Gemini ${conns.gemini.connected ? `<span class="chip ok">Connected</span>` : `<span class="chip off">Not connected</span>`}</strong>
     <span>AI that writes, sorts and summarizes inside this app, with ${e(owner)} Gemini key.${conns.gemini.lastUsedAt ? ` Last used ${e(ago(conns.gemini.lastUsedAt))}.` : ""}</span>
-    <span class="conn-note">${
+    ${
       conns.gemini.connected
-        ? `Every one of ${e(opts.isSiteOwner ? "your" : `${site.ownerEmail}'s`)} apps can use it. Disconnect it on <a href="/connected">Connected apps</a>.`
-        : `The key isn't connected any more, so this app can't use Gemini until it's connected again on <a href="/connected">Connected apps</a>.`
+        ? ""
+        : `<span class="conn-note">The key isn't connected any more, so this app can't use Gemini until it's connected again${opts.isSiteOwner ? ` on <a href="/connected/gemini">Google Gemini</a>` : ""}.</span>`
+    }
+  </div>
+  ${actions("gemini", "/connected/gemini")}
+</div>`);
+  }
+  for (const k of conns.connectors) {
+    const page = `/connected/${encodeURIComponent(k.name)}`;
+    rows.push(`<div class="conn" data-conn="${e(k.name)}">
+  <span class="conn-ic">${connectorLogo(k.label ?? k.name)}</span>
+  <div class="conn-txt">
+    <strong>${e(k.label ?? k.name)} ${k.label ? `<span class="chip ok">Connected</span>` : `<span class="chip off">Missing</span>`}</strong>
+    <span>${
+      k.label
+        ? `Only sent to ${e(k.hosts.join(", "))}, with ${e(owner)} key.${k.lastUsedAt ? ` Last used ${e(ago(k.lastUsedAt))}.` : ""}`
+        : `${opts.isSiteOwner ? "You don't" : `${e(site.ownerEmail)} doesn't`} have a connector called ${e(k.name)} any more, so this app can't use it.`
     }</span>
   </div>
+  ${actions(k.name, k.label ? page : null)}
 </div>`);
   }
   // Adding a spreadsheet, in the Google Sheets row (owner only). An app gets its first one from the
@@ -262,9 +290,9 @@ function connectionsPanel(site: SiteView, conns: AppConnections, opts: { isSiteO
 </div>`);
   }
   return `<h2>Connected to this app</h2>
-  <p class="muted" data-conn-intro${rows.length ? "" : " hidden"}>Services this app can use. To connect a new one, go to <a href="/connected">Connected apps</a>.</p>
+  <p class="muted" data-conn-intro${rows.length ? "" : " hidden"}>The services this app was built to use. To add another, ask your AI to use it in the app. Keys and settings are on each connector's page in <a href="/connected">Connected apps</a>.</p>
   <div class="conns" data-conns>${rows.join("\n")}</div>
-  <div class="conn-empty" data-conn-empty${rows.length ? " hidden" : ""}><strong>Nothing connected yet.</strong><br>Connect AI, spreadsheets or other services on the <a href="/connected">Connected apps</a> page, then let this app use them.</div>`;
+  <div class="conn-empty" data-conn-empty${rows.length ? " hidden" : ""}><strong>Nothing connected yet.</strong><br>Connect AI, spreadsheets or other services on the <a href="/connected">Connected apps</a> page, then ask your AI to use them in this app.</div>`;
 }
 
 /** The roles on an app's People list, from its share lists. */
@@ -859,134 +887,6 @@ export async function spacesPage(c: Context<AppEnv>): Promise<Response> {
   </form>
 </section>`;
   return shell(c, ctx.user, "spaces", body);
-}
-
-/** Connected apps: services a person's apps can use through Formelab (Google Gemini so far). */
-export async function connectedPage(c: Context<AppEnv>): Promise<Response> {
-  const user = c.get("user");
-  // Behind the connected_apps flag (admin panel → Features): off, the page lists no apps yet.
-  const on = !!c.get("features")?.has("connected_apps");
-  const gemini: ServiceStatus = on ? await geminiStatus(c.env, user.email) : { connected: false };
-  const sheets = on ? await sheetsStatus(c.env, user.email) : { connected: false };
-  const usedBy = on ? await connectionsUsedBy(ctxOf(c)) : null;
-  const appLinks = (apps: { id: string; name: string }[]) =>
-    apps.length ? `Used by ${apps.map((a) => `<a href="/apps/${e(encodeURIComponent(a.id))}">${e(a.name)}</a>`).join(", ")}` : "Not used by any of your apps yet";
-  const sheetsReady = sheetsConfigured(c.env);
-  const SHEETS_OUTCOME: Record<string, [boolean, string]> = {
-    connected: [true, "Connected. Your apps can use your Google Sheets now."],
-    denied: [false, "You didn't allow access in Google, so nothing was connected."],
-    expired: [false, "That sign-in took too long or was already used. Try Connect again."],
-    failed: [false, "Google didn't complete the sign-in. Try Connect again."],
-    scope: [false, "Google didn't give access to spreadsheets. Try again and leave the spreadsheets box ticked."],
-  };
-  const outcome = SHEETS_OUTCOME[c.req.query("sheets") ?? ""];
-  const sheetsLogo = SHEETS_LOGO();
-  // The coming-soon wall: each logo drawn once in a cached sprite and reused.
-  const tiles = Array.from({ length: Math.max(150, SERVICE_ICONS.length) }, (_, n) => {
-    const i = n % SERVICE_ICONS.length;
-    return `<svg class="svc" viewBox="0 0 48 48"><use href="${SPRITE_URL}#svc-${i}"/></svg>`;
-  }).join("");
-  const apps = on
-    ? `<section class="howto">
-  <h2>Your apps can use</h2>
-  <div class="ai-grid">
-    <button type="button" class="ai-tile" data-dialog="dlg-gemini-service" aria-haspopup="dialog">
-      <span class="ai-logo">${AI_LOGOS.gemini}</span>
-      <span class="ai-name">Google Gemini</span>
-      <span class="ai-where">${e(GEMINI_MODEL_NAME)}: AI answers, summaries, writing</span>
-      ${gemini.connected ? `<span class="badge on"><span class="dot" aria-hidden="true"></span>Connected</span>` : `<span class="badge">Connect</span>`}
-    </button>
-    <button type="button" class="ai-tile" data-dialog="dlg-google-sheets" aria-haspopup="dialog">
-      <span class="ai-logo">${sheetsLogo}</span>
-      <span class="ai-name">Google Sheets</span>
-      <span class="ai-where">Read and add rows to your spreadsheets</span>
-      ${sheets.connected ? `<span class="badge on"><span class="dot" aria-hidden="true"></span>Connected</span>` : `<span class="badge">${sheetsReady ? "Connect" : "Not set up yet"}</span>`}
-    </button>
-  </div>
-</section>
-
-<section class="used-by" aria-labelledby="used-by-title">
-  <h2 id="used-by-title">Where they're used</h2>
-  <ul class="used-list">
-    <li><span class="conn-ic">${AI_LOGOS.gemini}</span><div><strong>Google Gemini</strong><span>${appLinks(usedBy!.gemini)}</span></div></li>
-    <li><span class="conn-ic">${sheetsLogo}</span><div><strong>Google Sheets</strong><span>${appLinks(usedBy!.sheets)}</span></div></li>
-    ${usedBy!.keys
-      .map((k) => `<li><span class="conn-ic key">${KEY_ICON}</span><div><strong>${e(k.name)} <span class="chip ok">Key saved</span></strong><span>${appLinks(k.apps)}</span></div></li>`)
-      .join("")}
-  </ul>
-  <p class="muted">Keys belong to one app each: manage them on that app's Connected apps tab.</p>
-</section>
-
-<dialog id="dlg-google-sheets" class="howto-dialog" aria-labelledby="dlg-google-sheets-title">
-  <form method="dialog" class="dialog-close"><button aria-label="Close">×</button></form>
-  <div class="howto">
-    <div class="dialog-head"><span class="ai-logo">${sheetsLogo}</span><h2 id="dlg-google-sheets-title">Google Sheets</h2></div>
-    ${outcome ? `<div class="dialog-flash ${outcome[0] ? "ok" : "error"}" role="status">${e(outcome[1])}</div>` : ""}
-    <p>Let your apps read and add to your spreadsheets: a sign-up form that saves into a sheet, a dashboard over your numbers, a tracker everyone on your team can use. Sign in with Google once; no keys to copy.</p>
-    ${
-      !sheetsReady
-        ? `<p class="note">Google Sheets isn't set up on this Formelab yet: the admin needs to add a Google sign-in client first.</p>`
-        : sheets.connected
-          ? `<div class="conn-status"><p><span class="dot" aria-hidden="true"></span><strong>Connected</strong> as ${e(sheets.account ?? "")}.</p>
-      <p class="muted">Added ${e(fmtTime(sheets.createdAt ?? null))} · last used ${e(fmtTime(sheets.lastUsedAt ?? null))}</p></div>
-    <p><a class="cta" href="/services/google-sheets/connect">Reconnect with Google</a></p>
-    <p><button class="danger" data-action="service-disconnect" data-service="google-sheets">Disconnect Google Sheets</button></p>`
-          : `<p><a class="cta" href="/services/google-sheets/connect">Connect with Google</a></p>
-    <p class="muted">Google asks you to pick an account and allow access to your spreadsheets.</p>`
-    }
-    <p class="muted">Apps use your Google account, also when people you share them with use them. Your sign-in is encrypted and never shown to apps or people. Ask your AI for an app "that saves to Google Sheets" and it will use this.</p>
-  </div>
-</dialog>
-
-<dialog id="dlg-gemini-service" class="howto-dialog" aria-labelledby="dlg-gemini-service-title">
-  <form method="dialog" class="dialog-close"><button aria-label="Close">×</button></form>
-  <div class="howto">
-    <div class="dialog-head"><span class="ai-logo">${AI_LOGOS.gemini}</span><h2 id="dlg-gemini-service-title">Google Gemini</h2></div>
-    <p>Give your apps AI: answering questions, summarizing, drafting, sorting. Add your Gemini API key once and any of your apps can use <strong>${e(GEMINI_MODEL_NAME)}</strong>, without the key ever being put in an app.</p>
-    ${
-      gemini.connected
-        ? `<div class="conn-status"><p><span class="dot" aria-hidden="true"></span><strong>Connected</strong> with the key ending in ${e(gemini.hint ?? "")}.</p>
-      <p class="muted">Added ${e(fmtTime(gemini.createdAt ?? null))} · last used ${e(fmtTime(gemini.lastUsedAt ?? null))}</p></div>
-    <h3>Daily limit</h3>
-    <p class="muted">Your apps used Gemini ${gemini.usedToday ?? 0} time${gemini.usedToday === 1 ? "" : "s"} today (UTC). Past the limit, Gemini stops answering in all your apps until tomorrow, so someone you share an app with can't run up your Google bill. Each person other than you can also use it at most ${GEMINI_VIEWER_PER_DAY} times a day.</p>
-    <form class="inline" data-action="gemini-limit">
-      <label>Most calls a day, all apps together <input type="number" name="dailyLimit" min="0" max="${GEMINI_DAILY_MAX}" step="1" value="${gemini.dailyLimit ?? GEMINI_DAILY_DEFAULT}"></label>
-      <button class="ghost">Save</button>
-    </form>
-    <h3>Replace the key</h3>`
-        : `<h3>Connect it</h3>
-    <ol>
-      <li>Open <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Google AI Studio → API keys</a> and sign in with Google.</li>
-      <li>Click <strong>Create API key</strong> and copy it.</li>
-      <li>Paste it here and click <strong>Connect</strong>. Formelab checks it with Google first.</li>
-    </ol>`
-    }
-    <form class="inline" data-action="service-connect" data-service="gemini">
-      <input type="password" name="apiKey" required autocomplete="off" spellcheck="false" placeholder="Paste your Gemini API key" aria-label="Gemini API key">
-      <button>${gemini.connected ? "Replace key" : "Connect"}</button>
-    </form>
-    <p class="muted">Your key is encrypted and never shown to apps or to anyone. Apps you share use your key, so calls from people you share them with count toward your Google usage. Ask your AI for an app "that uses Gemini" and it will use this.</p>
-    ${c.get("features")?.has("app_builder") ? `<p class="muted">This is also the key behind <strong>Make it with Gemini</strong> on <a href="/new">New app</a>: save or remove it in either place and it changes in both.</p>` : ""}
-    ${gemini.connected ? `<p><button class="danger" data-action="service-disconnect" data-service="gemini">Disconnect Gemini</button></p>` : ""}
-  </div>
-</dialog>
-
-`
-    : "";
-  const body = `${apps}<section class="soon-wall${on ? " compact" : ""}">
-  <div class="wall" aria-hidden="true">${tiles}</div>
-  <div class="soon-card">
-    <p class="eyebrow">${on ? "More coming soon" : "Coming soon"}</p>
-    <h2>Plug your apps into the tools you already use</h2>
-    <p>${
-      on
-        ? "Next up: Stripe, Gmail, Notion and more. Connect them here once, and any of your apps can use them."
-        : "Soon you'll connect services like Google Sheets, Stripe, Gmail and Notion here, once, and any of your apps can use them. No keys to copy, no code to write."
-    }</p>
-    <p class="muted">Looking for Claude, ChatGPT or Gemini chat? They're under <a href="/connect">Connect your AI</a>.</p>
-  </div>
-</section>`;
-  return shell(c, user, "connected", body);
 }
 
 /** Access keys (deploy tokens) for tools that publish without signing in. */

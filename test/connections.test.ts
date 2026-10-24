@@ -59,10 +59,11 @@ describe("the Connected apps tab", () => {
     }
   });
 
-  it("lists Gemini once the app used it, its spreadsheets and its saved keys", async () => {
+  it("lists Gemini once the app is built to use it, its spreadsheets and its saved keys", async () => {
     const { site, settings, saveSecret } = await newApp();
     expect((await saveSecret("quo", "k1", ["api.quo.com"])).status).toBe(200);
     expect((await call(`/_api/admin/sites/${site.id}`, { as: OWNER, method: "PATCH", json: { sheets: [`https://docs.google.com/spreadsheets/d/${SHEET}/edit`] } })).status).toBe(200);
+    expect((await call(`/_api/admin/sites/${site.id}`, { as: OWNER, method: "PATCH", json: { connectors: ["gemini"] } })).status).toBe(200);
     await env.DB.prepare("INSERT INTO audit (at, actor, action, target, detail, site_id) VALUES (?, ?, 'gemini', 'x', '{\"status\":200}', ?)").bind(Date.now(), OWNER, site.id).run();
     const html = await settings();
     expect(html).toContain('<span class="tab-badge" data-conn-count>3</span>');
@@ -106,14 +107,17 @@ describe("the Connected apps tab", () => {
     expect((await keys("quo", "DELETE", undefined, viewer)).status).toBe(403);
   });
 
-  it("says which apps use each service on the Connected apps page", async () => {
+  it("drops Where they're used: each connector has its own page with the apps that use it", async () => {
     const used = await newApp(`Used ${uniq()}`);
-    await used.saveSecret("stripe", "k", ["api.stripe.com"]);
-    await call(`/_api/admin/sites/${used.site.id}`, { as: OWNER, method: "PATCH", json: { sheets: [SHEET] } });
+    await call(`/_api/admin/sites/${used.site.id}`, { as: OWNER, method: "PATCH", json: { sheets: [SHEET], connectors: ["gemini"] } });
     const page = await (await call("/app/connected", { as: OWNER })).text();
-    expect(page).toContain("Where they're used");
-    const sheetsRow = page.slice(page.indexOf("<strong>Google Sheets</strong>"), page.indexOf("</li>", page.indexOf("<strong>Google Sheets</strong>")));
-    expect(sheetsRow).toContain(`<a href="/apps/${used.site.id}">`);
-    expect(page).toContain("<strong>stripe <span class=\"chip ok\">Key saved</span></strong>");
+    expect(page).not.toContain("Where they're used");
+    expect(page).toContain('<a class="cta" href="/connected/new">+ Custom connector</a>');
+    expect(page).toContain('href="/connected/gemini"');
+    const gemini = await (await call("/app/connected/gemini", { as: OWNER })).text();
+    expect(gemini).toContain("Apps that use it");
+    expect(gemini).toContain(`<a href="/apps/${used.site.id}">`);
+    const sheets = await (await call("/app/connected/google-sheets", { as: OWNER })).text();
+    expect(sheets).toContain(`<a href="/apps/${used.site.id}#connected">`);
   });
 });

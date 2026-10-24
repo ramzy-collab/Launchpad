@@ -63,6 +63,7 @@ const FIELD_LABEL: Record<string, string> = {
   editors: "editors",
   kv_writes: "who can change its data",
   sheets: "Google Sheets it can use",
+  connectors: "connectors it uses",
   public_link: "public link",
   guest_responses: "whether people with the public link can send responses",
   guest_responses_per_day: "daily limit on responses from the public link",
@@ -140,6 +141,11 @@ export function describeActivity(row: AuditRow): string {
         explained.add("sharers");
         parts.push(d.sharers.length ? `let ${list(d.sharers)} share it too` : "let only the owner share it");
       }
+      if ("connectorsAdded" in d) {
+        explained.add("connectors");
+        if (list(d.connectorsAdded)) parts.push(`let it use ${list(d.connectorsAdded)}`);
+        if (list(d.connectorsRemoved)) parts.push(`stopped it using ${list(d.connectorsRemoved)}`);
+      }
       if (d.dataWrites) {
         explained.add("kv_writes");
         parts.push(`let ${d.dataWrites === "everyone" ? "everyone who can open it" : "only the owner and editors"} change its data`);
@@ -168,6 +174,7 @@ export function describeActivity(row: AuditRow): string {
     case "secret_delete":
       return `Removed the secret ${d.name}`;
     case "proxy":
+      if (d.connector) return `Called ${d.host} with the connector ${d.connector} (${d.status === "timeout" ? "timed out" : d.status === "error" ? "failed" : `HTTP ${d.status}`})`;
       return `Called ${d.host} with the secret ${d.secret} (${d.status === "timeout" ? "timed out" : d.status === "error" ? "failed" : `HTTP ${d.status}`})`;
     case "gemini":
       return d.status === 200 ? `Asked Gemini${d.tokens ? ` (${d.tokens} tokens)` : ""}` : `Asked Gemini, which failed (${d.status === "timeout" ? "no answer" : `HTTP ${d.status}`})`;
@@ -185,6 +192,16 @@ export function describeActivity(row: AuditRow): string {
       const what = d.method === "GET" ? "Read from" : "Wrote to";
       return typeof d.status === "number" && d.status < 300 ? `${what} Google Sheets` : `${what} Google Sheets, which failed (${d.status === "timeout" ? "no answer" : `HTTP ${d.status}`})`;
     }
+    case "connector_create":
+      return `Made the connector ${d.connector}`;
+    case "connector_update":
+      return `Changed the connector ${d.connector}`;
+    case "connector_key":
+      return `Replaced the key for the connector ${d.connector}`;
+    case "connector_delete":
+      return `Deleted the connector ${d.connector}${d.apps ? ` (${plural(d.apps, "app")} stopped using it)` : ""}`;
+    case "connector_move":
+      return `Turned the saved key ${d.connector} into a connector${d.apps ? ` for ${plural(d.apps, "app")}` : ""}`;
     case "service_connect":
       return `Connected ${d.service ?? "a service"} for their apps`;
     case "service_limit":

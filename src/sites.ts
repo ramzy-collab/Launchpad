@@ -11,6 +11,7 @@ import { base32, isEmail, normEmail, parseJsonArray, randomBytes, randomId, sort
 import { appSharedEmail, namespaceSharedEmail, sendEach, shareEmailAllowance } from "./email";
 import { appOrigin, siteOrigin } from "./hosts";
 import { flagOnForOwner } from "./flags";
+import { connectorNameList } from "./connectors";
 
 /** Addresses in `next` that weren't in `prev` (both normalized). */
 const added = (next: string[], prev: string[]) => {
@@ -86,6 +87,8 @@ export interface SiteRow {
   share_path?: string | null;
   /** JSON array of the Google spreadsheet ids the app may use (see src/sheets.ts). */
   sheets?: string;
+  /** JSON array of the connectors the app was built to use, by name (see src/connectors.ts). */
+  connectors?: string;
   /** The app's own host, <host_label>.APP_DOMAIN, e.g. "hoops-7kq2" (see src/hosts.ts). */
   host_label: string;
   /** Who may change the app's shared data (KV): "all" who can open it, or its owner and "editors". */
@@ -260,6 +263,8 @@ export interface SiteView {
   iconUrl: string | null;
   /** Google spreadsheet ids the app may use through its owner's Sheets connection. */
   sheets: string[];
+  /** The connectors the app was built to use: its owner's custom connectors by name, and "gemini". */
+  connectors: string[];
   /** Who may change the app's shared data: "everyone" who can open it, or only its owner and "editors". */
   dataWrites: "everyone" | "editors";
   /**
@@ -295,6 +300,7 @@ export const siteView = (env: Env, s: SiteRow, requestUrl?: string): SiteView =>
   updatedAt: s.updated_at,
   iconUrl: s.icon_path ? `/apps/${encodeURIComponent(s.id)}/icon?v=${s.current_version}` : null,
   sheets: parseJsonArray(s.sheets),
+  connectors: parseJsonArray(s.connectors ?? "[]"),
   dataWrites: s.kv_writes === "editors" ? "editors" : "everyone",
   publicUrl: publicLinkUrl(env, s, requestUrl),
   guestResponses: !!s.guest_responses,
@@ -332,7 +338,7 @@ export function parseGuestResponsesPerDay(raw: unknown): number | undefined {
 const listedView = (env: Env, s: SiteRow, canManage: boolean, requestUrl?: string) => {
   const v = siteView(env, s, requestUrl);
   if (canManage) return { ...v, canManage };
-  return { ...v, publicUrl: null, allowedEmails: [], editors: [], sharers: [], sheets: [], canManage };
+  return { ...v, publicUrl: null, allowedEmails: [], editors: [], sharers: [], sheets: [], connectors: [], canManage };
 };
 
 /** true (turn the public link on, keeping one that exists), false (off) or "new" (replace it). */
@@ -837,6 +843,7 @@ export interface SitePatch {
   allowed_emails?: unknown;
   editors?: unknown;
   sheets?: unknown;
+  connectors?: unknown;
   data_writes?: unknown;
   public_link?: unknown;
   guest_responses?: unknown;
@@ -955,6 +962,26 @@ export async function updateSite(ctx: Ctx, id: string, patch: SitePatch) {
       }
       set("sheets", JSON.stringify(list));
       detail.sheets = list.length;
+    }
+  }
+  if (patch.connectors !== undefined) {
+    // Connectors use the owner's own keys, so only the owner chooses which ones the app uses.
+    const list = await connectorNameList(ctx.env, site.owner_email, patch.connectors);
+    const before = parseJsonArray(site.connectors ?? "[]");
+    const gained = added(list, before);
+    const lost = added(before, list);
+    if (gained.length || lost.length) {
+      if (site.owner_email !== ctx.user.email) {
+        throw err(
+          403,
+          "owner_only",
+          `Only the app's owner can ${gained.length ? `add ${gained.join(", ")} to` : `remove ${lost.join(", ")} from`} this app.`,
+          "Connectors use the owner's own keys. Ask the owner to change this.",
+        );
+      }
+      set("connectors", JSON.stringify(list));
+      detail.connectorsAdded = gained;
+      detail.connectorsRemoved = lost;
     }
   }
   if (changed.some((col) => SHARING_COLUMNS.includes(col)) && !canShareSite(ctx.user, site, ns)) {
