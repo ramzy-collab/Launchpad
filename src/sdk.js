@@ -39,6 +39,20 @@
 
   var enc = encodeURIComponent;
 
+  // Calls an API through Formelab with a saved key; json adds Content-Type for an object body.
+  function relay(path, req, json) {
+    req = req || {};
+    var body = req.body, headers = req.headers;
+    if (body != null && typeof body !== "string") {
+      body = JSON.stringify(body);
+      if (json) headers = Object.assign({ "Content-Type": "application/json" }, headers);
+    }
+    return call("POST", path, { url: req.url, method: req.method, headers: headers, body: body }).then(function (r) {
+      r.json = function () { return JSON.parse(r.text); };
+      return r;
+    });
+  }
+
   // Installing the app (formelab.app): keeps the browser's install dialog for app.install().
   var bip = null;
   function changed() { window.dispatchEvent(new Event("formelab:installchange")); }
@@ -99,16 +113,14 @@
       },
       list: function () { return call("GET", "secrets"); },
       "delete": function (name) { return call("DELETE", "secrets/" + enc(name)); },
-      proxy: function (name, req) {
-        req = req || {};
-        var body = req.body;
-        if (body !== undefined && body !== null && typeof body !== "string") body = JSON.stringify(body);
-        return call("POST", "secrets/" + enc(name) + "/proxy", {
-          url: req.url, method: req.method, headers: req.headers, body: body
-        }).then(function (r) {
-          r.json = function () { return JSON.parse(r.text); };
-          return r;
-        });
+      proxy: function (name, req) { return relay("secrets/" + enc(name) + "/proxy", req); }
+    },
+    // The owner's connectors this app was built to use. Formelab adds the key; url may be a path.
+    connectors: {
+      list: function () { return call("GET", "connectors").then(function (r) { return Array.isArray(r) ? r : []; }); },
+      fetch: function (name, url, o) {
+        o = o || {};
+        return relay("connectors/" + enc(name) + "/fetch", { url: url, method: o.method, headers: o.headers, body: o.body }, true);
       }
     },
     // Google Sheets through the app owner's connected Google account (Formelab: Connected apps).

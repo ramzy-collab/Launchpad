@@ -112,6 +112,23 @@
         reloadSoon();
       });
     },
+    "connector-create": function (form) {
+      var f = form.elements;
+      return api("POST", "/connectors", {
+        label: f.label.value, description: f.description.value, key: f.key.value,
+        hosts: f.hosts.value, auth: f.auth.value, authName: f.authName.value
+      }).then(function (k) {
+        flashNext(k.label + " is ready. Ask your AI to use it in an app.");
+        location.href = "/connected/" + encodeURIComponent(k.name);
+      });
+    },
+    "connector-key": function (form) {
+      return api("PATCH", "/connectors/" + encodeURIComponent(form.dataset.name), { key: form.elements.key.value }).then(function () {
+        form.reset();
+        flashNext("Key replaced. Apps use the new one from now on.");
+        location.reload();
+      });
+    },
     "gemini-limit": function (form) {
       return api("PATCH", "/services/gemini", { dailyLimit: form.elements.dailyLimit.value }).then(function () {
         show("Daily limit saved.");
@@ -583,6 +600,19 @@
     } else if (action === "service-disconnect") {
       if (!confirm("Disconnect? Your apps that use it will stop working until you connect it again.")) return;
       p = api("DELETE", "/services/" + encodeURIComponent(btn.dataset.service)).then(function () { show("Disconnected."); reloadSoon(); });
+    } else if (action === "connector-delete") {
+      var apps = Number(btn.dataset.apps) || 0;
+      if (!confirm("Delete " + btn.dataset.label + "? " + (apps ? apps + (apps === 1 ? " app stops" : " apps stop") + " being able to use it. " : "") + "The key is deleted and can't be brought back.")) return;
+      p = api("DELETE", "/connectors/" + encodeURIComponent(btn.dataset.name)).then(function () {
+        flashNext(btn.dataset.label + " deleted");
+        location.href = "/connected";
+      });
+    } else if (action === "keys-move") {
+      p = api("POST", "/connectors/saved-keys").then(function (r) {
+        var n = r.moves.length;
+        flashNext(n === 1 ? "Done. " + r.moves[0].name + " is a connector now." : "Done. Your saved keys are " + n + " connectors now.");
+        location.reload();
+      });
     } else if (action === "token-revoke") {
       if (!confirm("Revoke this key? Anything using it will stop working.")) return;
       p = api("DELETE", "/tokens/" + encodeURIComponent(btn.dataset.id)).then(function () { show("Key revoked."); reloadSoon(); });
@@ -592,6 +622,58 @@
       p.catch(function (e) { show(e.message, true); }).then(function () { btn.disabled = false; });
     }
   });
+
+  // Custom connectors: the name apps use follows the name typed; the header or parameter field shows
+  // only when the key goes in one; on a connector's page, settings save as they change.
+  (function () {
+    var label = document.querySelector("[data-connector-label]");
+    var slug = document.querySelector("[data-connector-slug]");
+    function slugOf(v) {
+      return v.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 64);
+    }
+    if (label && slug) {
+      var paint = function () { slug.textContent = slugOf(label.value) || "…"; };
+      label.addEventListener("input", paint);
+      paint();
+    }
+    var auth = document.querySelector("[data-connector-auth]");
+    var authName = document.querySelector("[data-connector-auth-name]");
+    function paintAuth() {
+      if (!auth || !authName) return;
+      var needs = auth.value === "header" || auth.value === "query";
+      authName.hidden = !needs;
+      authName.firstChild.textContent = auth.value === "query" ? "Query parameter" : "Header";
+      var input = authName.querySelector("input");
+      input.placeholder = auth.value === "query" ? "api_key" : "X-API-Key";
+      input.required = needs;
+    }
+    if (auth) auth.addEventListener("change", paintAuth);
+    var box = document.querySelector("[data-connector-settings]");
+    if (!box) return;
+    var saved = {};
+    Array.prototype.forEach.call(box.querySelectorAll("input, select"), function (el) { saved[el.name] = el.value; });
+    function save(el) {
+      if (el.value === saved[el.name]) return;
+      var body = {};
+      if (el.name === "auth" || el.name === "authName") {
+        body.auth = box.querySelector("[name=auth]").value;
+        body.authName = box.querySelector("[name=authName]").value;
+        // Waits for the header or parameter's name before saving.
+        if ((body.auth === "header" || body.auth === "query") && !body.authName.trim()) { box.querySelector("[name=authName]").focus(); return; }
+      } else {
+        body[el.name] = el.value;
+      }
+      api("PATCH", "/connectors/" + encodeURIComponent(box.dataset.name), body).then(function () {
+        saved[el.name] = el.value;
+        if (body.auth) { saved.auth = body.auth; saved.authName = body.authName; }
+        toast("Saved");
+      }, function (e) { toast(e.message, true); });
+    }
+    box.addEventListener("change", function (ev) {
+      if (ev.target.name === "auth") paintAuth();
+      if (ev.target.name) save(ev.target);
+    });
+  })();
 
   // Close buttons inside dialogs.
   document.addEventListener("click", function (ev) {
@@ -1007,7 +1089,7 @@
     function initConnections() {
       var SHEET_LOGO = (conns.querySelector('[data-conn="sheets"] .conn-ic') || { innerHTML: "" }).innerHTML;
       function refresh() {
-        var n = conns.querySelectorAll("[data-key]").length + (conns.querySelector('[data-conn="gemini"]') ? 1 : 0) + (S.sheets.length ? 1 : 0);
+        var n = conns.querySelectorAll("[data-key], [data-conn]").length - (conns.querySelector('[data-conn="sheets"]') ? 1 : 0) + (S.sheets.length ? 1 : 0);
         var badge = $("[data-conn-count]");
         if (badge) badge.textContent = n;
         var any = conns.children.length > 0;
@@ -1071,6 +1153,19 @@
             renderSheets();
             toast("Spreadsheet removed. This app can't reach it any more.");
           }, failed);
+          return;
+        }
+        var rmConn = ev.target.closest("[data-conn-remove]");
+        if (rmConn) {
+          var cname = rmConn.dataset.connRemove;
+          var clabel = rmConn.closest(".conn").querySelector("strong").firstChild.textContent.trim();
+          if (!confirm("Stop " + name() + " using " + clabel + "? To use it again, ask your AI to add it back.")) return;
+          rmConn.disabled = true;
+          api("DELETE", "/sites/" + encodeURIComponent(S.id) + "/connectors/" + encodeURIComponent(cname)).then(function () {
+            rmConn.closest(".conn").remove();
+            refresh();
+            toast(clabel + " removed from this app");
+          }, function (e) { rmConn.disabled = false; toast(e.message, true); });
           return;
         }
         var row = ev.target.closest("[data-key]");

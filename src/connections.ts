@@ -1,19 +1,19 @@
-// What each app is connected to (the app page's Connected apps tab), and which apps use each
-// connected service (the Connected apps page). Behind the connected_apps flag.
+// What each app is connected to: the app page's Connected apps tab. Behind the connected_apps flag.
 //
-// - Google Gemini is connected once per person and every one of their apps may use it, so an app
-//   counts as using it once it has called it (its activity has Gemini calls).
+// - Google Gemini, once the app was built to use it (its connectors list "gemini").
 // - Google Sheets: the spreadsheets listed for the app (sites.sheets), reached with its owner's
 //   Google account.
+// - Custom connectors the app was built to use (see connectors.ts), with its owner's keys.
 // - Saved keys: the app's own secrets, each sent only to the hosts listed for it.
 import { audit } from "./audit";
+import { authSentence, listConnectors } from "./connectors";
 import type { Env } from "./env";
 import { now } from "./env";
 import { badRequest, err, notFound } from "./errors";
 import { geminiStatus } from "./gemini";
 import { encryptSecret, validateSecretName, SECRET_MAX_BYTES } from "./secrets";
 import { sheetsStatus } from "./sheets";
-import { requireManageableSite, type Ctx, type SiteRow, type SiteView } from "./sites";
+import { requireManageableSite, type Ctx, type SiteView } from "./sites";
 import { parseJsonArray } from "./util";
 
 export interface SavedKey {
@@ -23,9 +23,19 @@ export interface SavedKey {
   updatedAt: number;
 }
 
+export interface AppConnector {
+  name: string;
+  /** null when the owner has no connector by that name any more. */
+  label: string | null;
+  hosts: string[];
+  sends: string;
+  lastUsedAt: number | null;
+}
+
 export interface AppConnections {
-  gemini: { connected: boolean; used: boolean; lastUsedAt: number | null };
+  gemini: { connected: boolean; inApp: boolean; lastUsedAt: number | null };
   sheets: { connected: boolean; ids: string[] };
+  connectors: AppConnector[];
   keys: SavedKey[];
   /** How many things the app is connected to, for the tab's badge. */
   count: number;
@@ -44,45 +54,35 @@ async function lastGeminiCall(env: Env, siteId: string): Promise<number | null> 
   return row?.at ?? null;
 }
 
-export async function appConnections(env: Env, site: Pick<SiteView, "id" | "ownerEmail" | "sheets">): Promise<AppConnections> {
-  const [gemini, sheets, keys, lastUsedAt] = await Promise.all([geminiStatus(env, site.ownerEmail), sheetsStatus(env, site.ownerEmail), savedKeys(env, site.id), lastGeminiCall(env, site.id)]);
-  const used = lastUsedAt !== null;
-  return {
-    gemini: { connected: gemini.connected, used, lastUsedAt },
-    sheets: { connected: sheets.connected, ids: site.sheets },
-    keys,
-    count: (used ? 1 : 0) + (site.sheets.length ? 1 : 0) + keys.length,
-  };
+async function lastConnectorCall(env: Env, siteId: string, name: string): Promise<number | null> {
+  const row = await env.DB.prepare("SELECT MAX(at) AS at FROM audit WHERE site_id = ? AND action = 'proxy' AND json_extract(detail, '$.connector') = ?")
+    .bind(siteId, name)
+    .first<{ at: number | null }>();
+  return row?.at ?? null;
 }
 
-export interface UsedBy {
-  gemini: { id: string; name: string }[];
-  sheets: { id: string; name: string }[];
-  /** Saved keys by name, with the apps that have a key by that name. */
-  keys: { name: string; apps: { id: string; name: string }[] }[];
-}
-
-const nameOf = (s: Pick<SiteRow, "title" | "mount_path" | "namespace">) => s.title || s.mount_path || s.namespace;
-
-/** For the Connected apps page: which of this person's own apps use each service. */
-export async function connectionsUsedBy(ctx: Ctx): Promise<UsedBy> {
-  const { env, user } = ctx;
-  const [{ results: sites }, { results: gemini }, { results: keys }] = await Promise.all([
-    env.DB.prepare("SELECT id, title, mount_path, namespace, sheets FROM sites WHERE owner_email = ? ORDER BY title, mount_path").bind(user.email).all<SiteRow>(),
-    env.DB.prepare("SELECT DISTINCT a.site_id FROM audit a JOIN sites s ON s.id = a.site_id WHERE s.owner_email = ? AND a.action = 'gemini'").bind(user.email).all<{ site_id: string }>(),
-    env.DB.prepare("SELECT k.name, k.site_id FROM secrets k JOIN sites s ON s.id = k.site_id WHERE s.owner_email = ? ORDER BY k.name").bind(user.email).all<{ name: string; site_id: string }>(),
+export async function appConnections(env: Env, site: Pick<SiteView, "id" | "ownerEmail" | "sheets" | "connectors">): Promise<AppConnections> {
+  const inApp = site.connectors.includes("gemini");
+  const custom = site.connectors.filter((n) => n !== "gemini");
+  const [gemini, sheets, keys, lastUsedAt, owned] = await Promise.all([
+    geminiStatus(env, site.ownerEmail),
+    sheetsStatus(env, site.ownerEmail),
+    savedKeys(env, site.id),
+    inApp ? lastGeminiCall(env, site.id) : null,
+    custom.length ? listConnectors(env, site.ownerEmail) : [],
   ]);
-  const byId = new Map(sites.map((s) => [s.id, { id: s.id, name: nameOf(s) }]));
-  const geminiIds = new Set(gemini.map((g) => g.site_id));
-  const keyGroups = new Map<string, { id: string; name: string }[]>();
-  for (const k of keys) {
-    const app = byId.get(k.site_id);
-    if (app) keyGroups.set(k.name, [...(keyGroups.get(k.name) ?? []), app]);
-  }
+  const connectors = await Promise.all(
+    custom.map(async (name) => {
+      const k = owned.find((o) => o.name === name);
+      return { name, label: k?.label ?? null, hosts: k?.hosts ?? [], sends: k ? authSentence(k) : "", lastUsedAt: await lastConnectorCall(env, site.id, name) };
+    }),
+  );
   return {
-    gemini: sites.filter((s) => geminiIds.has(s.id)).map((s) => byId.get(s.id)!),
-    sheets: sites.filter((s) => parseJsonArray(s.sheets ?? "[]").length).map((s) => byId.get(s.id)!),
-    keys: [...keyGroups].map(([name, apps]) => ({ name, apps })),
+    gemini: { connected: gemini.connected, inApp, lastUsedAt },
+    sheets: { connected: sheets.connected, ids: site.sheets },
+    connectors,
+    keys,
+    count: (inApp ? 1 : 0) + (site.sheets.length ? 1 : 0) + connectors.length + keys.length,
   };
 }
 

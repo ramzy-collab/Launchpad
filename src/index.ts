@@ -7,8 +7,9 @@ import { connectPage } from "./dashboard/connect";
 import { SERVICES_SPRITE } from "./dashboard/services";
 import { appIcon } from "./icons";
 import { sheetsCallback, sheetsConnect } from "./sheets";
+import { connectedPage, connectorPage } from "./dashboard/connected";
 import { enabledFlags, withFlags } from "./flags";
-import { accountPage, appActivityPage, appResponsesCsv, appSettingsPage, connectedPage, dashboardPage, installPage, keysPage, newAppPage, spacesPage } from "./dashboard/page";
+import { accountPage, appActivityPage, appResponsesCsv, appSettingsPage, dashboardPage, installPage, keysPage, newAppPage, spacesPage } from "./dashboard/page";
 import { homePage } from "./dashboard/home";
 import { forgotGet, forgotPost, resetGet, resetPost, signInCode, signInGet, signInPost } from "./signin";
 import type { AppEnv, Env } from "./env";
@@ -214,6 +215,7 @@ webApp.get("/new", (c) => newAppPage(c));
 webApp.get("/spaces", (c) => spacesPage(c));
 webApp.get("/connect", (c) => connectPage(c));
 webApp.get("/connected", (c) => connectedPage(c));
+webApp.get("/connected/:name", (c) => connectorPage(c));
 // Google Sheets sign-in (connected apps; behind the connected_apps flag).
 webApp.use("/services/*", async (c, next) => {
   if (!c.get("features").has("connected_apps")) return plainPage(404, "Not found", "There is nothing here.");

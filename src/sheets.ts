@@ -99,7 +99,7 @@ export async function sheetsConnect(c: Context<AppEnv>): Promise<Response> {
 }
 
 const back = (c: Context<AppEnv>, outcome: string) => {
-  const headers = new Headers({ location: `/connected?sheets=${outcome}#google-sheets`, "cache-control": "no-store" });
+  const headers = new Headers({ location: `/connected/google-sheets?sheets=${outcome}`, "cache-control": "no-store" });
   headers.append("set-cookie", cookieHeader(STATE_COOKIE, "", 0));
   return new Response(null, { status: 302, headers });
 };
