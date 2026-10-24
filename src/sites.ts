@@ -1,7 +1,7 @@
 import { audit } from "./audit";
 import { findIcon, iconPathFor } from "./icons";
 import { findShareImage, linkPreviewOf } from "./share";
-import { canManageSite, canPublishTo, canShareSite, canViewSite, isAppOwner, isNamespaceEditor, isNamespaceOwner, ownerOnly } from "./auth";
+import { accountsAmong, canManageSite, canPublishTo, canShareSite, canViewSite, isAppOwner, isNamespaceEditor, isNamespaceOwner, ownerOnly } from "./auth";
 import type { Env, User } from "./env";
 import { now } from "./env";
 import { badRequest, err, forbidden, notFound } from "./errors";
@@ -41,6 +41,21 @@ export const heldNote = (held: string[]) =>
   held.length
     ? `Shared, but ${held.length === 1 ? held[0] : `${held.length} people`} didn't get an email: you've reached today's limit on share emails. Send them the link yourself.`
     : undefined;
+
+/** Editors and Admins sign in to make changes, so each new one needs a Formelab account. */
+export async function requireAccounts(env: Env, emails: string[]): Promise<void> {
+  if (!emails.length) return;
+  const have = await accountsAmong(env, emails);
+  const missing = emails.filter((x) => !have.has(x));
+  if (missing.length) {
+    throw err(
+      409,
+      "needs_account",
+      `${missing.join(", ")} ${missing.length === 1 ? "doesn't" : "don't"} have a Formelab account yet. Editors and Admins need one, since they sign in to make changes.`,
+      "Send a sign-up invite from the app's People list (they become an Editor once they join), or share the app with them as a viewer.",
+    );
+  }
+}
 
 export interface NamespaceRow {
   label: string;
@@ -85,6 +100,8 @@ export interface SiteRow {
   link_preview?: "full" | "private" | null;
   /** JSON array of the editors who may also change who can open the app (see canShareSite). */
   sharers?: string;
+  /** 0 once the app was handed to someone else: its namespace's owner no longer owns it (isAppOwner). */
+  space_owner_powers?: number;
 }
 
 /** Everything a service call needs: bindings, the acting user, and a way to defer work. */
@@ -481,6 +498,16 @@ export async function deleteNamespace(ctx: Ctx, rawLabel: string) {
   const ns = await requireNamespace(ctx.env, String(rawLabel).toLowerCase());
   if (!isNamespaceOwner(ctx.user, ns)) throw ownerOnly();
   const { results } = await ctx.env.DB.prepare("SELECT * FROM sites WHERE namespace = ?").bind(ns.label).all<SiteRow>();
+  // Apps handed to someone else stay theirs: deleting the space would delete them too.
+  const handedOver = results.filter((s) => s.space_owner_powers === 0 && s.owner_email !== ctx.user.email);
+  if (handedOver.length) {
+    throw err(
+      409,
+      "space_has_transferred_apps",
+      `This space holds ${handedOver.length === 1 ? "an app" : `${handedOver.length} apps`} you gave to someone else, so it can't be deleted.`,
+      `Ask ${[...new Set(handedOver.map((s) => s.owner_email))].join(", ")} to delete ${handedOver.length === 1 ? "it" : "them"} first.`,
+    );
+  }
   for (const s of results) await removeSite(ctx.env, s);
   await ctx.env.DB.prepare("DELETE FROM namespaces WHERE label = ?").bind(ns.label).run();
   await audit(ctx.env, ctx.user.email, "namespace_delete", ns.label, { sites: results.length });
@@ -497,7 +524,7 @@ export const waitlisted = () =>
 const listed = (list: string, email: string) => parseJsonArray(list).map(normEmail).includes(email);
 
 /** Is this the person's own app: they own it, or own its namespace. */
-const ownsSite = (u: User, s: SiteRow, ns: NamespaceRow) => s.owner_email === u.email || isNamespaceOwner(u, ns);
+const ownsSite = (u: User, s: SiteRow, ns: NamespaceRow) => isAppOwner(u, s, ns);
 
 /**
  * Apps someone else owns that were shared with this person by name: as a viewer (allowed_emails),
@@ -700,6 +727,7 @@ export async function publishSite(ctx: Ctx, input: PublishInput) {
   } else if (!canPublishTo(user, ns)) {
     throw err(409, "namespace_taken", `The namespace "${label}" belongs to someone else.`, `Publish to your own namespace instead, or ask ${ns.owner_email} to add you as an editor.`);
   }
+  if (!existing && editors) await requireAccounts(env, editors);
   // Publishing a new version never changes who can open or edit the app; that only happens
   // through update_site / the app's settings. Say so when the caller asked for something else.
   const sharingNote = existing && sharingDiffers(existing, visibility, allowed, editors)
@@ -865,6 +893,7 @@ export async function updateSite(ctx: Ctx, id: string, patch: SitePatch) {
     if (!isAppOwner(ctx.user, site, ns)) throw ownerOnly();
     const before = parseJsonArray(site.editors);
     newEditors = added(editorsAfter, before);
+    await requireAccounts(ctx.env, newEditors);
     const gone = added(before, editorsAfter);
     if (newEditors.length || gone.length) {
       set("editors", JSON.stringify(editorsAfter));
@@ -943,6 +972,14 @@ export async function updateSite(ctx: Ctx, id: string, patch: SitePatch) {
     await audit(ctx.env, ctx.user.email, "update_site", `${site.namespace}/${site.mount_path}`, { ...detail, fields });
   }
   const updated = (await getSiteById(ctx.env, id))!;
+  // A sign-up invite ends once they're an editor anyway, or no longer have access at all.
+  const nowEditors = parseJsonArray(updated.editors);
+  const nowViewers = parseJsonArray(updated.allowed_emails);
+  const { results: pending } = await ctx.env.DB.prepare("SELECT email FROM pending_role_invites WHERE site_id = ?").bind(id).all<{ email: string }>();
+  const stale = pending.map((p) => p.email).filter((p) => nowEditors.includes(p) || !nowViewers.includes(p));
+  if (stale.length) {
+    await ctx.env.DB.batch(stale.map((p) => ctx.env.DB.prepare("DELETE FROM pending_role_invites WHERE site_id = ? AND email = ?").bind(id, p)));
+  }
   const held = await notifyShared(ctx, updated, newViewers, newEditors);
   const note = heldNote(held);
   return { ...siteView(ctx.env, updated, ctx.requestUrl), ...(note ? { note, notEmailed: held } : {}) };
@@ -961,6 +998,8 @@ export async function removeSite(env: Env, site: SiteRow) {
     env.DB.prepare("DELETE FROM kv_user WHERE site_id = ?").bind(site.id),
     env.DB.prepare("DELETE FROM secrets WHERE site_id = ?").bind(site.id),
     env.DB.prepare("DELETE FROM responses WHERE site_id = ?").bind(site.id),
+    env.DB.prepare("DELETE FROM app_stars WHERE site_id = ?").bind(site.id),
+    env.DB.prepare("DELETE FROM pending_role_invites WHERE site_id = ?").bind(site.id),
     env.DB.prepare("DELETE FROM rate_counters WHERE bucket LIKE ?").bind(site.id + ":%"),
     env.DB.prepare("DELETE FROM sites WHERE id = ?").bind(site.id),
   ]);
@@ -985,4 +1024,34 @@ export async function siteIdByMount(ctx: Ctx, rawNs: unknown, rawMount: unknown)
   const site = await getSiteByMount(ctx.env, label, mount);
   if (!site) throw notFound(`Site ${label}/${mount}`);
   return site.id;
+}
+
+/**
+ * Make a copy: the app's files as a new app in the same space, named "<name> (copy)", open only to
+ * the person who made it. Its data, keys, people and public link aren't copied.
+ */
+export async function copySite(ctx: Ctx, id: string) {
+  const { site, ns } = await requireManageableSite(ctx, id);
+  if (!canPublishTo(ctx.user, ns)) {
+    throw err(403, "cannot_publish_here", `Only people who can publish in the space ${ns.label} can copy its apps.`, `Ask ${ns.owner_email} to add you as an editor of the space.`);
+  }
+  const base = (site.mount_path || "app").slice(0, 40);
+  let mount = `${base}-copy`;
+  for (let n = 2; await getSiteByMount(ctx.env, ns.label, mount); n++) {
+    if (n > 50) throw err(409, "too_many_copies", "This app already has a lot of copies in this space.", "Delete some of them, then try again.");
+    mount = `${base}-copy-${n}`;
+  }
+  const name = (site.title || site.mount_path || site.namespace).slice(0, 190);
+  const result = await publishSite(ctx, {
+    namespace: ns.label,
+    mountPath: mount,
+    files: await currentFiles(ctx.env, site),
+    title: `${name} (copy)`,
+    spa: !!site.spa,
+    visibility: "restricted",
+    allowedEmails: [],
+    dataWrites: site.kv_writes === "editors" ? "editors" : "everyone",
+  });
+  await audit(ctx.env, ctx.user.email, "copy_site", `${ns.label}/${mount}`, { siteId: result.site.id, fromSiteId: id, from: `${site.namespace}/${site.mount_path}` });
+  return result;
 }

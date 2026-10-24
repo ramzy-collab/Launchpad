@@ -206,7 +206,7 @@ export function buildServer(ctx: Ctx, beforeTools?: (server: McpServer) => void,
         spa: z.boolean().optional(),
         visibility: z.enum(["all", "restricted"]).optional(),
         allowed_emails: emails,
-        editors: emails,
+        editors: emails.describe("Owner only: who can update the app. Replaces the list. Each new editor needs a Formelab account (needs_account otherwise); share with people who don't have one as viewers in allowed_emails, and the owner can send them a sign-up invite from the app's People list."),
         sharers: emails.describe("Owner only: which editors may also change who can open the app. Must be editors. Replaces the list."),
         data_writes: z
           .enum(["editors", "everyone"])

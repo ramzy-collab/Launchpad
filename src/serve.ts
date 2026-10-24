@@ -4,6 +4,16 @@ import { resolveSiteForPath, siteUrl, type SiteRow } from "./sites";
 import { appPwaTags } from "./pwa";
 import { escapeHtml } from "./util";
 
+/** The Answers link's markup; kept here (not imported from answers.ts) so the modules don't import each other. */
+export const ANSWERS_LINK =
+  `<a href="/answers" data-formelab-answers style="all:initial;position:fixed;right:max(12px,env(safe-area-inset-right));bottom:max(12px,env(safe-area-inset-bottom));z-index:2147483647;` +
+  `font:600 13px/1 system-ui,-apple-system,'Segoe UI',sans-serif;background:#5B4CF5;color:#fff;text-decoration:none;padding:9px 14px;border-radius:999px;box-shadow:0 4px 14px rgba(0,0,0,.25);cursor:pointer">Answers</a>`;
+
+export interface ServeOptions {
+  /** Whether to add the Answers link to an HTML page, given its text (see answers.ts showAnswersLink). */
+  answersLink?: (html: string) => Promise<boolean>;
+}
+
 const BASE_HEADERS = {
   "x-content-type-options": "nosniff",
   "referrer-policy": "strict-origin-when-cross-origin",
@@ -21,8 +31,13 @@ export function plainPage(status: number, title: string, message: string): Respo
  * Inserts <base href="/"> as the first child of <head> (or synthesizes one), followed by
  * the tags that let the app be installed on a device (see pwa.ts).
  */
-async function injectHead(res: Response, env: Env, site: SiteRow, baseHref: string): Promise<Response> {
-  const text = await res.text();
+async function injectHead(res: Response, env: Env, site: SiteRow, baseHref: string, opts: ServeOptions = {}): Promise<Response> {
+  let text = await res.text();
+  // The Answers link for the app's owner and editors, at the end of the page (see answers.ts).
+  if (opts.answersLink && (await opts.answersLink(text))) {
+    const end = text.search(/<\/body>(?![\s\S]*<\/body>)/i);
+    text = end === -1 ? text + ANSWERS_LINK : text.slice(0, end) + ANSWERS_LINK + text.slice(end);
+  }
   const tag = `<base href="${escapeHtml(baseHref)}">` + (await appPwaTags(env, site, text));
   if (/<head[\s>]/i.test(text)) {
     return new HTMLRewriter()
@@ -59,7 +74,7 @@ export function noAccessPage(site: SiteRow, user: User): Response {
  * Serves a file of the app on its own host (<host_label>.APP_DOMAIN). Identity and the
  * visibility check have already happened; this does the file lookup.
  */
-export async function serveAppFile(req: Request, env: Env, site: SiteRow): Promise<Response> {
+export async function serveAppFile(req: Request, env: Env, site: SiteRow, opts: ServeOptions = {}): Promise<Response> {
   if (req.method !== "GET" && req.method !== "HEAD") {
     return new Response("Method not allowed", { status: 405, headers: { ...BASE_HEADERS, allow: "GET, HEAD" } });
   }
@@ -70,7 +85,7 @@ export async function serveAppFile(req: Request, env: Env, site: SiteRow): Promi
     return plainPage(400, "Bad request", "The address is not valid.");
   }
   if (path.includes("\0") || path.split("/").includes("..")) return plainPage(400, "Bad request", "The address is not valid.");
-  return serveFromSite(req, env, site, path.slice(1), "/");
+  return serveFromSite(req, env, site, path.slice(1), "/", opts);
 }
 
 /**
@@ -97,7 +112,7 @@ export async function legacyAppRedirect(req: Request, env: Env, ns: string): Pro
   });
 }
 
-async function serveFromSite(req: Request, env: Env, site: SiteRow, rel: string, baseHref: string): Promise<Response> {
+async function serveFromSite(req: Request, env: Env, site: SiteRow, rel: string, baseHref: string, opts: ServeOptions = {}): Promise<Response> {
   const prefix = `sites/${site.id}/${site.current_version}/`;
   for (const candidate of candidatesFor(rel, !!site.spa)) {
     const obj = await env.BUCKET.get(prefix + candidate, {
@@ -123,7 +138,7 @@ async function serveFromSite(req: Request, env: Env, site: SiteRow, rel: string,
       return new Response(null, { status: 200, headers });
     }
     const res = new Response(obj.body, { status: 200, headers });
-    return html ? injectHead(res, env, site, baseHref) : res;
+    return html ? injectHead(res, env, site, baseHref, opts) : res;
   }
   return plainPage(404, "Not found", "This app has no file at this address.");
 }

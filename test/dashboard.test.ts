@@ -1,7 +1,7 @@
 import { env } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
 import { ASSET_VERSION } from "../src/generated/assets";
-import { call, OWNER, PAGE, publishHtml, uniq, appAt } from "./helpers";
+import { accounts, call, OWNER, PAGE, publishHtml, uniq, appAt } from "./helpers";
 
 describe("dashboard", () => {
   it("renders with a strict CSP and no inline script", async () => {
@@ -152,6 +152,7 @@ describe("app activity logs", () => {
     const ns = uniq();
     const editor = `ed-${uniq()}@example.com`;
     const viewer = `vw-${uniq()}@example.com`;
+    await accounts(editor);
     await publishHtml(OWNER, ns, "log", PAGE("v1"), { title: "Logged app" });
     await publishHtml(OWNER, ns, "log", PAGE("v2"));
     const url = await activityUrl(OWNER, ns, "log");

@@ -4,7 +4,7 @@
 import type { SiteView } from "../sites";
 import { escapeHtml as e } from "../util";
 
-export type BrowserApp = SiteView & { canManage: boolean };
+export type BrowserApp = SiteView & { canManage: boolean; starred?: boolean };
 
 export const fmtBytes = (n: number) => (n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`);
 
@@ -90,7 +90,7 @@ function card(s: BrowserApp, shared: boolean, now: number): string {
   <span class="ac-art ${hueClass(s.id)}" aria-hidden="true">${s.iconUrl ? `<img src="${e(s.iconUrl)}" alt="" loading="lazy" decoding="async">` : e(initial(s))}</span>
   <a class="ac-open" href="${e(s.url)}" target="_blank" rel="noopener"><span class="sr">Open ${e(name)}</span></a>
   <div class="ac-top">${thumb(s)}
-    <button type="button" class="ac-btn star" data-star="${e(s.id)}" aria-pressed="false" aria-label="Star ${e(name)}" title="Star">${ICON.star()}</button>
+    <button type="button" class="ac-btn star${s.starred ? " on" : ""}" data-star="${e(s.id)}" aria-pressed="${!!s.starred}" aria-label="Star ${e(name)}" title="${s.starred ? "Unstar" : "Star"}">${ICON.star()}</button>
     ${gear}
   </div>
   <div class="ac-name${s.title ? "" : " untitled"}">${e(name)}</div>

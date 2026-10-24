@@ -3,7 +3,9 @@ import { listTokens, mintToken, revokeToken, TOKEN_DEFAULT_TTL_HOURS } from "./a
 import type { AppEnv } from "./env";
 import { ApiError, badRequest, err, errorBody, jsonError, onError } from "./errors";
 import { adminOrigin, hostKind } from "./hosts";
+import { sendRoleInvites, setStar, transferOwnership, withoutAccounts } from "./sharing";
 import {
+  copySite,
   createNamespace,
   deleteNamespace,
   deleteSite,
@@ -141,6 +143,18 @@ export function managementApi(kind: "admin" | "deploy") {
 
   api.patch("/sites/:id", async (c) => c.json(await updateSite(ctxOf(c), c.req.param("id"), await jsonBody(c))));
   api.delete("/sites/:id", async (c) => c.json(await deleteSite(ctxOf(c), c.req.param("id"))));
+  api.put("/sites/:id/star", async (c) => c.json(await setStar(ctxOf(c), c.req.param("id"), (await jsonBody(c)).starred)));
+  api.post("/sites/:id/copy", async (c) => c.json(await copySite(ctxOf(c), c.req.param("id")), 201));
+  // Editors and Admins need an account: which of these don't have one, and sign-up invites for them.
+  api.post("/sites/:id/people/check", async (c) => c.json(await withoutAccounts(ctxOf(c), c.req.param("id"), (await jsonBody(c)).emails)));
+  api.post("/sites/:id/invites", async (c) => {
+    const body = await jsonBody(c);
+    return c.json(await sendRoleInvites(ctxOf(c), c.req.param("id"), body.emails, body.role));
+  });
+  api.post("/sites/:id/transfer", async (c) => {
+    const body = await jsonBody(c);
+    return c.json(await transferOwnership(ctxOf(c), c.req.param("id"), body.to, body.confirm));
+  });
 
   if (kind === "admin") {
     // Admin-only actions answer only on the admin host, behind its own shorter sign-in: the web

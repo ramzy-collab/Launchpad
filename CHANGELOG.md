@@ -2,6 +2,15 @@
 
 Everything that has changed in Formelab, newest first. Shown in the admin panel under Changelog.
 
+## 2026-10-24
+
+- **Stars follow you.** Starred apps are saved to your account, so they're at the top of My apps and Shared with me on every device. Stars are yours alone: nobody else sees them. Apps you starred in this browser before today move over the first time you open My apps.
+- **Editors and Admins need a Formelab account.** They sign in to make changes, so inviting someone without an account as an Editor or Admin now offers a **sign-up invite**: they get an email to join, can open the app as a Viewer right away, and become an Editor or Admin as soon as they sign up. Or add them as a Viewer instead. People without an account show "Invited, no Formelab account yet" on the People list. Editors added before today keep their access. Claude and other AI apps get the same rule when they change an app's editors.
+- **Hand an app to someone else.** The owner can make one of the app's Admins its owner from their role picker under People (**Make owner**), after confirming that only the new owner can transfer it back. The old owner stays on as an Admin, the app moves to their Shared with me, and they can no longer delete it, even when it's in their own space. A space holding apps you gave away can't be deleted until their new owners delete them.
+- **Make a copy.** The **...** menu on an app's page makes a copy in the same space, named "(copy)": the same files, open only to you, with none of the original's data, keys, people or public link.
+- **Answers page.** Apps that collect answers with `formelab.responses` get a page at `/answers` on their own address, for their owner and editors only: every answer in a table, who sent it and when, and a spreadsheet download. Formelab adds a small **Answers** link to the app for them; it isn't linked from the app's settings. The one-line download on the Activity tab is gone.
+- **Test plan:** [Settings redesign, phase 2](/test-plans/2026-10-24-settings-redesign-phase-2), 58 browser test cases to hand to Claude Cowork.
+
 ## 2026-10-23
 
 - **A simpler My apps.** Apps are cards now: the app's icon, its name, its space and when it last changed, plus a chip that says who can open it (Only you, Shared with 3, or Public). Click a card to open the app; the gear opens its settings, the star keeps it at the top under **Starred**, and the link button copies the link that works for how it's shared (the public link when it has one). Search, a space filter and three sorts (Recently changed, Newest first, Name A to Z) sit above. Stars are kept in your browser for now. Shared with me uses the same cards.

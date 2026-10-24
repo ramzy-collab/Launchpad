@@ -154,8 +154,8 @@ describe("responses", () => {
     expect((await call(`/app/apps/${site.id}/responses.csv`, { as: "viewer@example.com" })).status).toBe(404);
 
     const page = await (await call(`/app/apps/${site.id}`, { as: OWNER })).text();
-    expect(page).toContain("People sent this app 2 answers.");
-    expect(page).toContain("responses.csv");
+    // Answers are on the app's own Answers page now, never linked from its settings.
+    expect(page).not.toContain("responses.csv");
 
     await patch({ public_link: true });
     expect(await (await call(`/app/apps/${site.id}`, { as: OWNER })).text()).toContain('data-setting="guestResponses"');

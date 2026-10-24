@@ -112,7 +112,18 @@ let seq = 0;
 /** A unique, valid namespace label per call so tests don't collide. */
 export const uniq = (p = "ns") => `${p}${Date.now().toString(36)}${(seq++).toString(36)}`;
 
+/** Gives these people Formelab accounts (Editors and Admins need one). */
+export async function accounts(...emails: string[]) {
+  for (const email of emails.flatMap((x) => x.split(/[\s,]+/)).filter(Boolean)) {
+    await env.DB.prepare("INSERT INTO users (email, name, is_admin, created_at, status) VALUES (?, NULL, 0, ?, 'active') ON CONFLICT(email) DO NOTHING")
+      .bind(email.toLowerCase(), Date.now())
+      .run();
+  }
+}
+
+/** Publishes `html`. Editors named in `extra.editors` get accounts first, like real editors have. */
 export async function publishHtml(as: string, namespace: string, mountPath: string, html: string, extra: Record<string, string> = {}) {
+  if (extra.editors) await accounts(extra.editors);
   const fd = new FormData();
   fd.set("file", new File([html], "index.html", { type: "text/html" }));
   fd.set("namespace", namespace);
@@ -122,6 +133,7 @@ export async function publishHtml(as: string, namespace: string, mountPath: stri
 }
 
 export async function publishZip(as: string, namespace: string, mountPath: string, files: Record<string, string | Uint8Array>, extra: Record<string, string> = {}) {
+  if (extra.editors) await accounts(extra.editors);
   const fd = new FormData();
   fd.set("file", new File([makeZip(files)], "site.zip", { type: "application/zip" }));
   fd.set("namespace", namespace);

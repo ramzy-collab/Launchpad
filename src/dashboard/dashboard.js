@@ -326,6 +326,15 @@
     }, isError ? 6000 : message.length > 60 ? 4000 : 2200);
   }
 
+  // A message to show on the next page, after a reload or navigation.
+  var FLASH_KEY = "formelab:flash";
+  function flashNext(message) { try { sessionStorage.setItem(FLASH_KEY, message); } catch (e) {} }
+  (function () {
+    var m = null;
+    try { m = sessionStorage.getItem(FLASH_KEY); sessionStorage.removeItem(FLASH_KEY); } catch (e) {}
+    if (m) setTimeout(function () { toast(m); }, 300);
+  })();
+
   function copyText(text, message) {
     var done = function () { toast(message); };
     var fail = function () { toast("Couldn't copy the link. Copy it from the app's address bar instead.", true); };
@@ -341,16 +350,15 @@
     return "Link copied. Only you can open it right now.";
   }
 
-  // Stars are kept in this browser for now (they'll be saved per person later).
-  var STARS_KEY = "formelab:stars";
-  function getStars() {
-    try { return JSON.parse(localStorage.getItem(STARS_KEY) || "[]") || []; } catch (e) { return []; }
+  // Stars are saved per person. Stars kept in this browser before that are moved over once.
+  var OLD_STARS_KEY = "formelab:stars";
+  function saveStar(id, on) {
+    return api("PUT", "/sites/" + encodeURIComponent(id) + "/star", { starred: on });
   }
-  function isStarred(id) { return getStars().indexOf(id) !== -1; }
-  function setStarred(id, on) {
-    var list = getStars().filter(function (x) { return x !== id; });
-    if (on) list.push(id);
-    try { localStorage.setItem(STARS_KEY, JSON.stringify(list)); } catch (e) {}
+  function takeOldStars() {
+    var list = [];
+    try { list = JSON.parse(localStorage.getItem(OLD_STARS_KEY) || "[]") || []; localStorage.removeItem(OLD_STARS_KEY); } catch (e) {}
+    return Array.isArray(list) ? list : [];
   }
   function paintStar(btn, on) {
     btn.classList.toggle("on", on);
@@ -387,7 +395,6 @@
       var raw = q.value.trim();
       var text = raw.toLowerCase();
       var sp = space ? space.value : "";
-      var stars = getStars();
       var shown = cards.filter(function (el) {
         return (!sp || el.dataset.space === sp) && (!text || el.dataset.search.indexOf(text) !== -1);
       });
@@ -396,7 +403,7 @@
       var rest = [];
       cards.forEach(function (el) { el.hidden = true; });
       shown.forEach(function (el) {
-        var on = stars.indexOf(el.dataset.id) !== -1;
+        var on = !!stars[el.dataset.id];
         paintStar(el.querySelector("[data-star]"), on);
         el.hidden = false;
         (on ? starred : rest).push(el);
@@ -415,6 +422,13 @@
       noMatch.querySelector("[data-no-match-text]").textContent = raw ? "Nothing matches “" + raw + "”" : "No apps in this space yet";
     }
 
+    var stars = {};
+    cards.forEach(function (el) { if (el.querySelector('[data-star][aria-pressed="true"]')) stars[el.dataset.id] = true; });
+    takeOldStars().forEach(function (id) {
+      if (stars[id] || !cards.some(function (el) { return el.dataset.id === id; })) return;
+      stars[id] = true;
+      saveStar(id, true).catch(function () { delete stars[id]; apply(); });
+    });
     q.addEventListener("input", apply);
     if (space) space.addEventListener("change", apply);
     sortSel.addEventListener("change", apply);
@@ -433,11 +447,18 @@
       if (!card) return;
       var star = ev.target.closest("[data-star]");
       if (star) {
-        var on = !isStarred(card.dataset.id);
-        setStarred(card.dataset.id, on);
+        var id = card.dataset.id;
+        var on = !stars[id];
+        if (on) stars[id] = true; else delete stars[id];
         apply();
         star.focus();
-        toast(on ? card.querySelector(".ac-name").textContent + " starred" : "Removed from starred");
+        saveStar(id, on).then(function () {
+          toast(on ? card.querySelector(".ac-name").textContent + " starred" : "Removed from starred");
+        }, function (e) {
+          if (on) delete stars[id]; else stars[id] = true;
+          apply();
+          toast(e.message, true);
+        });
         return;
       }
       if (ev.target.closest("[data-copy-link]")) {
@@ -545,7 +566,8 @@
     if (refocus && btn.isConnected) btn.focus();
   }
 
-  function openRoles(btn, onPick, withRemove) {
+  // `makeOwner`: null, or whether this person can be made the owner (only Admins with an account).
+  function openRoles(btn, onPick, withRemove, makeOwner) {
     if (roleMenu && roleMenu.btn === btn) { closeRoles(true); return; }
     closeRoles(false);
     var allowed = (btn.dataset.roles || "viewer").split(",");
@@ -575,10 +597,12 @@
       var b = option(v, ROLES[v][0], off ? "Only the owner can give this role" : desc);
       if (off) b.disabled = true;
     });
-    if (withRemove) {
-      menu.appendChild(document.createElement("hr"));
-      option("remove", "Remove access", "", "red");
+    if (withRemove || makeOwner != null) menu.appendChild(document.createElement("hr"));
+    if (makeOwner != null) {
+      var mo = option("owner", "Make owner", makeOwner ? "Hand over the app. You stay an Admin." : "Only Admins can become the owner");
+      if (!makeOwner) mo.disabled = true;
     }
+    if (withRemove) option("remove", "Remove access", "", "red");
     document.body.appendChild(menu);
     btn.setAttribute("aria-expanded", "true");
     roleMenu = { el: menu, btn: btn };
@@ -716,9 +740,10 @@
       row(S.ownerEmail, "Owner", label("Owner"), true);
       sharedWith().forEach(function (email) {
         var role = roleOf(email);
+        var note = personNote(email);
         // The owner changes every role; Admins only Viewers (only the owner may choose editors).
         var roles = email === S.me ? "" : S.isOwner ? "viewer,editor,admin" : S.canShare && role === "viewer" ? "viewer" : "";
-        if (!roles) { row(email, "Invited", label(ROLES[role][0])); return; }
+        if (!roles) { row(email, note, label(ROLES[role][0])); return; }
         var b = document.createElement("button");
         b.type = "button";
         b.className = "rp-btn";
@@ -730,8 +755,20 @@
         b.setAttribute("aria-label", "Role for " + email);
         b.innerHTML = "<span></span>" + CHEVRON;
         b.querySelector("span").textContent = ROLES[role][0];
-        row(email, "Invited", b);
+        row(email, note, b);
+        if (pendingRole(email)) list.lastChild.querySelector(".ps").classList.add("pending");
       });
+    }
+
+    var hasAccount = function (email) { return S.accounts.indexOf(email) !== -1; };
+    var pendingRole = function (email) {
+      var p = S.pending.filter(function (x) { return x.email === email; })[0];
+      return p ? p.role : null;
+    };
+    function personNote(email) {
+      var p = pendingRole(email);
+      if (p) return "Sign-up invite sent. Becomes " + aRole(p) + " once they join Formelab.";
+      return hasAccount(email) ? "Invited" : "Invited, no Formelab account yet";
     }
 
     // The lists that give `email` a role ("remove" takes them off all of them). Only the owner
@@ -749,12 +786,64 @@
     }
     var aRole = function (role) { return role === "viewer" ? "a Viewer" : role === "editor" ? "an Editor" : "an Admin"; };
 
+    var refocus = function (email) {
+      var again = document.querySelector('[data-person="' + CSS.escape(email) + '"]');
+      if (again) again.focus();
+    };
+    var dropPending = function (emails) { S.pending = S.pending.filter(function (p) { return emails.indexOf(p.email) === -1; }); };
     function setRole(email, role) {
+      if (role === "owner") { askTransfer(email); return; }
+      // Editors and Admins sign in to make changes: someone without an account gets a sign-up invite.
+      if ((role === "editor" || role === "admin") && !hasAccount(email)) { askSignup(email, role); return; }
       patch(listsFor(email, role)).then(function () {
+        if (role !== "viewer") dropPending([email]);
+        renderPeople();
         toast(role === "remove" ? email + " no longer has access" : email + " is now " + aRole(role));
-        var again = document.querySelector('[data-person="' + CSS.escape(email) + '"]');
-        if (again) again.focus();
+        refocus(email);
       }, failed);
+    }
+
+    // Sign-up invites: they stay (or become) a Viewer now, and take the role when they join.
+    function sendInvites(emails, role) {
+      return api("POST", "/sites/" + encodeURIComponent(S.id) + "/invites", { emails: emails, role: role }).then(function (r) {
+        ["allowedEmails", "editors", "sharers", "publicUrl", "visibility"].forEach(function (k) { S[k] = r.site[k]; });
+        dropPending(emails);
+        emails.forEach(function (x) { S.pending.push({ email: x, role: role }); });
+        render();
+        toast(r.note || (emails.length === 1 ? "Sign-up invite sent to " + emails[0] : "Sign-up invites sent to " + emails.length + " people"));
+      });
+    }
+    function askSignup(email, role) {
+      var d = $("#dlg-signup");
+      d.querySelector("[data-signup-email]").textContent = email;
+      d.querySelector("[data-signup-role]").textContent = ROLES[role][0];
+      d.querySelector("[data-signup-a-role]").textContent = aRole(role);
+      var go = d.querySelector("[data-signup-go]");
+      go.onclick = function () {
+        go.disabled = true;
+        sendInvites([email], role).then(function () { d.close(); refocus(email); }, function (e) { toast(e.message, true); }).then(function () { go.disabled = false; });
+      };
+      d.showModal();
+    }
+
+    // Transfer ownership: only to an Admin with an account, after ticking the box.
+    function askTransfer(email) {
+      var d = $("#dlg-transfer");
+      var ok = d.querySelector("[data-transfer-ok]");
+      var go = d.querySelector("[data-transfer-go]");
+      d.querySelector("[data-transfer-to]").textContent = email;
+      ok.checked = false;
+      go.disabled = true;
+      ok.onchange = function () { go.disabled = !ok.checked; };
+      go.onclick = function () {
+        go.disabled = true;
+        api("POST", "/sites/" + encodeURIComponent(S.id) + "/transfer", { to: email, confirm: true }).then(function () {
+          d.close();
+          flashNext(email + " now owns " + name() + ". It's under Shared with me.");
+          location.reload();
+        }, function (e) { go.disabled = !ok.checked; toast(e.message, true); });
+      };
+      d.showModal();
     }
 
     // Header: the name saves when you leave the field or press Enter; Esc puts it back.
@@ -770,12 +859,18 @@
     });
 
     var star = $(".star-btn");
-    paintStar(star, isStarred(S.id));
+    paintStar(star, !!S.starred);
     star.addEventListener("click", function () {
-      var on = !isStarred(S.id);
-      setStarred(S.id, on);
+      var on = !S.starred;
+      S.starred = on;
       paintStar(star, on);
-      toast(on ? "Starred. It shows at the top of your apps." : "Removed from starred");
+      saveStar(S.id, on).then(function () {
+        toast(on ? "Starred. It shows at the top of your apps." : "Removed from starred");
+      }, function (e) {
+        S.starred = !on;
+        paintStar(star, !on);
+        toast(e.message, true);
+      });
     });
 
     // Tabs: Sharing, Update, Activity. Arrow keys move between them; the address keeps the open one.
@@ -853,6 +948,18 @@
       patch({ public_link: "new" }).then(function () { toast("New link ready. The old one no longer works."); }, failed);
     });
 
+    var copyBtn = $("[data-copy-app]");
+    if (copyBtn) {
+      copyBtn.addEventListener("click", function () {
+        copyBtn.disabled = true;
+        toast("Making a copy…");
+        api("POST", "/sites/" + encodeURIComponent(S.id) + "/copy").then(function (r) {
+          flashNext("Made a copy: " + (r.site.title || r.site.mountPath) + ". Only you can open it.");
+          location.href = "/apps/" + encodeURIComponent(r.site.id);
+        }, function (e) { copyBtn.disabled = false; toast(e.message, true); });
+      });
+    }
+
     page.addEventListener("click", function (ev) {
       var t = ev.target;
       if (t.closest("[data-goto-tab]")) {
@@ -882,7 +989,9 @@
       }
       var person = t.closest("[data-person]");
       if (person) {
-        openRoles(person, function (role) { setRole(person.dataset.person, role); }, true);
+        var email = person.dataset.person;
+        var canOwn = roleOf(email) === "admin" && hasAccount(email) && !pendingRole(email);
+        openRoles(person, function (role) { setRole(email, role); }, true, S.isOwner ? canOwn : null);
         return;
       }
       var inviteRole = t.closest("[data-invite-role]");
@@ -911,6 +1020,31 @@
       }, failed);
     });
 
+    // The note under the invite row for people who need an account to become an Editor or Admin.
+    var acctNote = $("[data-acct-note]");
+    function hideAcctNote() { acctNote.hidden = true; acctNote.textContent = ""; }
+    function showAcctNote(emails, role) {
+      var one = emails.length === 1;
+      acctNote.innerHTML = '<p><strong></strong> <span></span></p><div class="acct-actions"><button type="button" data-an="signup"></button><button type="button" class="secondary" data-an="viewer">Add as Viewer instead</button><button type="button" class="secondary" data-an="cancel">Cancel</button></div>';
+      acctNote.querySelector("strong").textContent = emails.join(", ");
+      acctNote.querySelector("span").textContent = (one ? "doesn't" : "don't") + " have a Formelab account yet. " + ROLES[role][0] + "s need one, since they sign in to make changes.";
+      acctNote.querySelector('[data-an="signup"]').textContent = one ? "Send a sign-up invite" : "Send sign-up invites";
+      acctNote.hidden = false;
+      var input = invite.elements.emails;
+      acctNote.onclick = function (ev) {
+        var b = ev.target.closest("[data-an]");
+        if (!b) return;
+        var which = b.dataset.an;
+        if (which === "cancel") { hideAcctNote(); input.value = ""; input.focus(); return; }
+        b.disabled = true;
+        var done = which === "signup"
+          ? sendInvites(emails, role)
+          : patch({ allowed_emails: unique(S.allowedEmails.concat(emails)) }).then(function () { toast(one ? emails[0] + " added as a Viewer" : "Added " + emails.length + " people as Viewers"); });
+        done.then(function () { hideAcctNote(); input.value = ""; }, function (e) { b.disabled = false; toast(e.message, true); });
+      };
+      acctNote.querySelector('[data-an="signup"]').focus();
+    }
+
     var invite = $("[data-invite]");
     if (invite) {
       invite.addEventListener("submit", function (ev) {
@@ -924,18 +1058,29 @@
         var fresh = unique(raw).filter(function (x) { return current.indexOf(x) === -1; });
         if (!fresh.length) { toast(raw.length === 1 ? raw[0] + " already has access" : "They all have access already", true); return; }
         var role = invite.querySelector("[data-invite-role]").dataset.role;
-        var body = {};
-        if (role === "viewer") body.allowed_emails = unique(S.allowedEmails.concat(fresh));
-        else {
-          body.editors = unique(S.editors.concat(fresh));
-          body.sharers = role === "admin" ? unique(S.sharers.concat(fresh)) : S.sharers;
-        }
+        hideAcctNote();
         busy(invite, true);
-        patch(body).then(function (r) {
-          input.value = "";
-          // Over the daily share email limit: say who wasn't emailed.
-          toast(r && r.note ? r.note : fresh.length === 1 ? "Invited " + fresh[0] + " as " + aRole(role) : "Invited " + fresh.length + " people as " + ROLES[role][0] + "s");
-        }, failed).then(function () { busy(invite, false); });
+        api("POST", "/sites/" + encodeURIComponent(S.id) + "/people/check", { emails: fresh }).then(function (r) {
+          var without = r.withoutAccount;
+          fresh.forEach(function (x) { if (without.indexOf(x) === -1 && !hasAccount(x)) S.accounts.push(x); });
+          // Viewers don't need an account. Editors and Admins do: the rest get the note below.
+          var now = role === "viewer" ? fresh : fresh.filter(function (x) { return without.indexOf(x) === -1; });
+          var later = role === "viewer" ? [] : without;
+          var body = {};
+          if (role === "viewer") body.allowed_emails = unique(S.allowedEmails.concat(now));
+          else {
+            body.editors = unique(S.editors.concat(now));
+            body.sharers = role === "admin" ? unique(S.sharers.concat(now)) : S.sharers;
+            body.allowed_emails = S.allowedEmails.filter(function (x) { return now.indexOf(x) === -1; });
+          }
+          var saved = now.length ? patch(body) : Promise.resolve(null);
+          return saved.then(function (res) {
+            input.value = later.join(", ");
+            if (later.length) showAcctNote(later, role);
+            // Over the daily share email limit: say who wasn't emailed.
+            if (now.length) toast(res && res.note ? res.note : now.length === 1 ? "Invited " + now[0] + " as " + aRole(role) : "Invited " + now.length + " people as " + ROLES[role][0] + "s");
+          });
+        }).catch(failed).then(function () { busy(invite, false); });
       });
     }
 
