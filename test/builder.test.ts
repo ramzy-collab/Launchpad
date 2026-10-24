@@ -205,7 +205,7 @@ describe("building apps with the person's own API key", () => {
     // Saved on New app, it shows as connected under Connected apps.
     expect(await (await connect(me, "gemini", GEMINI_KEY)).json()).toEqual({ connected: true, hint: "GEMI" });
     expect(await (await call("/_api/admin/services/gemini", { as: me })).json()).toMatchObject({ connected: true, hint: "GEMI" });
-    expect(await (await call("/app/connected", { as: me })).text()).toContain("Make it with Gemini");
+    expect(await (await call("/app/connected/gemini", { as: me })).text()).toContain("Make it with Gemini");
 
     const last = await build(me, "gemini", "A habit tracker");
     expect(last.done).toMatchObject({ title: "Lunch Sign-up", model: "gemini-3.5-flash" });

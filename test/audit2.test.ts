@@ -68,6 +68,8 @@ describe("second audit pass", () => {
     const ns = uniq();
     await publishHtml(OWNER, ns, "g", PAGE("x"));
     await call("/_api/admin/features/connected_apps", { as: OWNER, method: "PUT", json: { state: "on" } });
+    const id = (await E.DB.prepare("SELECT id FROM sites WHERE namespace = ?").bind(ns).first<{ id: string }>())!.id;
+    await call(`/_api/admin/sites/${id}`, { as: OWNER, method: "PATCH", json: { connectors: ["gemini"] } });
     let sent: { generationConfig?: { maxOutputTokens?: number } } | null = null;
     onOutbound(async (req) => {
       if (req.method === "GET") return Response.json({ name: "models/x" });

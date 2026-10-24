@@ -1,6 +1,6 @@
 # Settings redesign, phase 3: test plan
 
-Hands-on browser test plan for phase 3 of the app settings redesign: the Connected apps tab on each app's page (Google Gemini, Google Sheets and saved keys), "Used by" on the Connected apps page, and hiding all of it while the `connected_apps` feature is off. Written to hand to Claude Cowork.
+Hands-on browser test plan for phase 3 of the app settings redesign: the Connected apps tab on each app's page (Google Gemini, Google Sheets and saved keys), and hiding all of it while the `connected_apps` feature is off. Written to hand to Claude Cowork.
 
 ## 1. Instructions for the tester
 
@@ -61,7 +61,7 @@ Ramzy (or whoever hands this off) prepares these before Cowork starts.
 
 | ID | Steps | Expected |
 |---|---|---|
-| `GM-01` | Open AI notes' tab. | A Google Gemini row with "Connected", "AI that writes, sorts and summarizes inside this app, with your Gemini key. Last used …", and "Every one of your apps can use it. Disconnect it on Connected apps." No Remove button. |
+| `GM-01` | Open AI notes' tab. | A Google Gemini row with "Connected" and "AI that writes, sorts and summarizes inside this app, with your Gemini key. Last used …". Since the connectors change, it also has Open and Remove for the owner (see the [connectors plan](/test-plans/2026-10-24-connectors)). |
 | `GM-02` | Open Inbox's tab (never called Gemini). | No Gemini row. |
 | `GM-03` | As Editor, open AI notes' tab. | The row names the owner's key ("… with owner's Gemini key"). |
 | `GM-04` | Disconnect Gemini on the Connected apps page, then reopen AI notes' tab. Reconnect afterwards. | The row says "Not connected" and that the app can't use Gemini until it's connected again. |
@@ -98,13 +98,7 @@ Ramzy (or whoever hands this off) prepares these before Cowork starts.
 
 ## 8. The Connected apps page
 
-| ID | Steps | Expected |
-|---|---|---|
-| `UB-01` | Open Connected apps. | Under the service tiles, "Where they're used" lists Google Gemini, Google Sheets and each saved key by name. |
-| `UB-02` | Read each row. | Gemini: "Used by AI notes". Sheets: "Used by Tracker". quo: "Used by Inbox". Each app name links to its settings page. A service nothing uses says "Not used by any of your apps yet". |
-| `UB-03` | Click an app name. | Opens that app's settings. |
-| `UB-04` | Save a key named `quo` on a second test app too, then reload. | The quo row lists both apps. |
-| `UB-05` | As Editor (who owns none of the apps), open Connected apps. | Only Editor's own apps are listed; the owner's apps never appear here. |
+"Where they're used" was replaced by a page for each connector. Test it with the [connectors plan](/test-plans/2026-10-24-connectors) instead (cases `CP-01` to `CP-06`, `PG-01` and `AP-04`).
 
 ## 9. Keyboard, phone and themes
 

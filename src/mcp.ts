@@ -1,6 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { geminiStatus } from "./gemini";
 import { sheetsStatus } from "./sheets";
+import { authSentence, listConnectors } from "./connectors";
 import { enabledFlags, flagOn, withFlags } from "./flags";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { CfWorkerJsonSchemaValidator } from "@modelcontextprotocol/sdk/validation/cfworker";
@@ -81,7 +82,7 @@ export function buildServer(ctx: Ctx, beforeTools?: (server: McpServer) => void,
 
   server.registerTool(
     "whoami",
-    { description: "Show the account this token acts as, and which connected apps (like Google Gemini) its apps can use.", annotations: { readOnlyHint: true } },
+    { description: "Show the account this token acts as, which connected apps (like Google Gemini) its apps can use, and its custom connectors.", annotations: { readOnlyHint: true } },
     () =>
       run(async () => ({
         email: ctx.user.email,
@@ -93,6 +94,8 @@ export function buildServer(ctx: Ctx, beforeTools?: (server: McpServer) => void,
                 gemini: (await geminiStatus(ctx.env, ctx.user.email)).connected,
                 googleSheets: (await sheetsStatus(ctx.env, ctx.user.email)).connected,
               },
+              // Their custom connectors, by the name apps use. Keys are never shown.
+              connectors: (await listConnectors(ctx.env, ctx.user.email)).map((k) => ({ name: k.name, label: k.label, description: k.description, hosts: k.hosts, sends: authSentence(k) })),
             } : {}),
       })),
   );
@@ -216,6 +219,18 @@ export function buildServer(ctx: Ctx, beforeTools?: (server: McpServer) => void,
           .array(z.string())
           .optional()
           .describe("Owner only: the Google spreadsheets (ids or links) this app may use through formelab.sheets. Replaces the list."),
+        // Behind the connected_apps flag.
+        ...(features.has("connected_apps")
+          ? {
+              connectors: z
+                .array(z.string())
+                .optional()
+                .describe(
+                  "Owner only: the connectors this app is built to use. Replaces the list. \"gemini\" for Google Gemini (formelab.gemini), and the names of the owner's custom connectors (whoami lists them) for formelab.connectors.fetch. " +
+                    "An app can't use a connector that isn't listed: set this right after publishing an app that uses one.",
+                ),
+            }
+          : {}),
         public_link: z
           .union([z.boolean(), z.literal("new")])
           .optional()

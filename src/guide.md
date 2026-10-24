@@ -71,14 +71,21 @@ Apps get platform features through a small browser SDK, `window.formelab`:
 <!-- flag:connected_apps -->
 9. **For AI features, use `formelab.gemini`** (Google Gemini 3.5 Flash-Lite through the owner's
    connected key). Don't ask the user for an AI API key or put one in a secret: they connect
-   Gemini once in Formelab (Connected apps → Google Gemini), and every app they own can use it.
-   The `whoami` tool says whether it's connected (`connectedApps.gemini`); if it isn't, tell the
-   user to connect it, and build the app to say so too (see `formelab.gemini.available()`).
+   Gemini once in Formelab (Connected apps → Google Gemini). **An app can only use it once it's
+   built to:** after publishing, set `update_site`'s `connectors` to include `"gemini"` (the
+   owner only). The `whoami` tool says whether it's connected (`connectedApps.gemini`); if it
+   isn't, tell the user to connect it, and build the app to say so too (see
+   `formelab.gemini.available()`).
 10. **To read or write a spreadsheet, use `formelab.sheets`** (Google Sheets through the owner's
    connected Google account). Never ask for Google credentials. `whoami` says whether it's
    connected (`connectedApps.googleSheets`); if not, tell the user to connect it in Formelab
    (Connected apps → Google Sheets). An app can only use the spreadsheets listed for it: after
    publishing, pass the spreadsheet ids or links the user gave you to `update_site`'s `sheets`.
+11. **For any other service with an API key, use the owner's custom connectors**
+   (`formelab.connectors.fetch`). `whoami` lists them (`connectors`: name, hosts, how the key is
+   sent). Use one by adding its name to `update_site`'s `connectors` after publishing (the owner
+   only), then call it by name. Never ask the user to paste a key into chat or into the app: if the
+   service isn't there, ask them to add it in Formelab (Connected apps → + Custom connector).
 <!-- /flag:connected_apps -->
 
 ## 3. SDK reference
@@ -296,7 +303,7 @@ and the owner's daily limit for all their apps together (1,000 unless they chang
 asking again.
 
 ```js
-const { connected } = await formelab.gemini.available();   // false: the owner hasn't connected Gemini
+const { connected, inApp } = await formelab.gemini.available();   // connected: false when the owner hasn't connected Gemini, or the app isn't built to use it (inApp: false)
 const r = await formelab.gemini.generate("Summarize this in one sentence: " + text);
 r.text;            // the answer
 r.usage;           // { inputTokens, outputTokens, totalTokens }
@@ -313,9 +320,36 @@ tags.json();       // ["work", "ideas", "q3"]
 await formelab.gemini.generate({ contents: [{ role: "user", parts: [{ text: "Hi" }] }] });
 ```
 
-Errors: `gemini_not_connected` (409: show "Connect Google Gemini in Formelab to use this"),
+Errors: `connector_not_in_app` (403: the app isn't built to use Gemini; add `"gemini"` to
+`update_site`'s `connectors`), `gemini_not_connected` (409: show "Connect Google Gemini in Formelab to use this"),
 `gemini_key_rejected`, `gemini_quota` (429 from Google), `rate_limited`, `gemini_unreachable`.
 Show `e.message` and `e.hint`. Temperature and top-P/K aren't supported by this model.
+
+### `formelab.connectors`: the owner's custom connectors
+
+A custom connector is a service's API key the owner saved once in Formelab, with the hosts it may
+be sent to and how the service expects it (an `Authorization: Bearer` header, a header of its own,
+a query parameter, or a `{{value}}` placeholder the app puts in). Formelab adds the key on the way
+out, so it never reaches the browser, and scrubs it from the answer. **An app can only use the
+connectors listed for it**: add their names to `update_site`'s `connectors` (the owner only;
+`whoami` lists the names). Anyone who can open the app can use them, on the owner's key; calls
+are limited like `formelab.secrets.proxy` and show up in the app's activity log.
+
+```js
+await formelab.connectors.list();                       // ["quo"]: the connectors this app uses
+const res = await formelab.connectors.fetch("quo", "/v1/messages", {   // a path goes to its first host
+  method: "POST",
+  body: { to: "+16175550123", content: "See you at 4" },  // objects are sent as JSON
+});
+res.status;   // 200
+res.json();   // the service's answer
+await formelab.connectors.fetch("quo", "https://api.quo.com/v1/contacts?limit=10");
+```
+
+`formelab.secrets.proxy(name, { url, headers })` reaches a connector by the same name too, with
+`{{value}}` placeholders, so apps written for saved keys keep working when the owner moves them
+into connectors. Errors: `connector_not_in_app` (403: add it to `connectors`), `connector_missing`
+(409: the owner deleted it), `host_not_allowed` (403), `rate_limited`, `upstream_timeout`.
 
 ### `formelab.sheets`: Google Sheets in your app
 

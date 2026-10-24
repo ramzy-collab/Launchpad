@@ -4,11 +4,13 @@ import type { AppEnv } from "./env";
 import { badRequest, err, forbidden, jsonError, onError } from "./errors";
 import { kvDelete, kvGet, kvList, kvSet, type KvScope } from "./kv";
 import { proxy, secretDelete, secretList, secretSet } from "./secrets";
+import { connectorFetch } from "./connectors";
 import { geminiAvailable, geminiGenerate } from "./gemini";
 import { flagOnForOwner } from "./flags";
 import { sheetsAvailable, sheetsCall } from "./sheets";
 import { getNamespace } from "./sites";
 import { deleteResponse, listResponses, submitResponse } from "./responses";
+import { parseJsonArray } from "./util";
 
 /**
  * The per-app runtime API on an app's own host, <host_label>.APP_DOMAIN/_api/*. The parent sets
@@ -162,7 +164,7 @@ export function runtimeApi() {
     return c.json(await deleteResponse(c.env, c.get("site").id, c.req.param("id")));
   });
 
-  api.get("/secrets", async (c) => c.json(await secretList(c.env, c.get("site").id)));
+  api.get("/secrets", async (c) => c.json(await secretList(c.env, c.get("site"))));
   api.put("/secrets/:name", async (c) => {
     await requireManage(c);
     let body: unknown;
@@ -212,6 +214,23 @@ export function runtimeApi() {
     }
     if (!body || typeof body !== "object") throw badRequest("The body must be a JSON object.", 'Use formelab.gemini.generate("your prompt").');
     return c.json(await geminiGenerate(c.env, c.get("site"), c.get("user"), body as Record<string, unknown>));
+  });
+
+  // Custom connectors the app was built to use, with the owner's keys (see connectors.ts).
+  api.use("/connectors", connectedAppsGate);
+  api.use("/connectors/*", connectedAppsGate);
+  api.get("/connectors", (c) => c.json(parseJsonArray(c.get("site").connectors ?? "[]").filter((n) => n !== "gemini")));
+  api.post("/connectors/:name/fetch", async (c) => {
+    const len = Number(c.req.header("content-length") ?? 0);
+    if (len > 2 * 1024 * 1024) throw err(413, "body_too_large", "The request body is larger than 1 MB.", "Send less data.");
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      throw badRequest("The body must be JSON like { \"url\": \"/v1/...\" }.", 'Use formelab.connectors.fetch("name", "/path").');
+    }
+    if (!body || typeof body !== "object") throw badRequest("The body must be a JSON object.", 'Use formelab.connectors.fetch("name", "/path").');
+    return c.json(await connectorFetch(c.env, c.get("site"), c.get("user"), c.req.param("name"), body as Record<string, unknown>));
   });
 
   // Google Sheets through the app owner's connected Google account (see sheets.ts).

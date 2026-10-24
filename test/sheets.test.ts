@@ -74,19 +74,19 @@ describe("Google Sheets as a connected app (OAuth)", () => {
     expect(google.searchParams.get("scope")).toContain("https://www.googleapis.com/auth/spreadsheets");
     expect(google.searchParams.get("access_type")).toBe("offline");
     expect(google.searchParams.get("code_challenge_method")).toBe("S256");
-    expect(cb.headers.get("location")).toBe("/connected?sheets=connected#google-sheets");
+    expect(cb.headers.get("location")).toBe("/connected/google-sheets?sheets=connected");
 
     const row = await env.DB.prepare("SELECT * FROM service_keys WHERE owner_email = ? AND service = 'google_sheets'").bind(me).first<{ hint: string }>();
     expect(row!.hint).toBe("me@gmail.com");
     expect(JSON.stringify(row)).not.toContain("rt-1");
-    const page = await (await call("/app/connected?sheets=connected", { as: me })).text();
-    expect(page).toContain("Connected</strong> as me@gmail.com");
+    const page = await (await call("/app/connected/google-sheets?sheets=connected", { as: me })).text();
+    expect(page).toContain("Connected</span> as me@gmail.com.");
     expect(page).toContain("Connected. Your apps can use your Google Sheets now.");
 
     // A bad code or a missing cookie connects nothing.
     const other = `s2-${uniq()}@example.com`;
-    expect((await connectSheets(other, "bad-code")).cb.headers.get("location")).toBe("/connected?sheets=failed#google-sheets");
-    expect((await call(`/app/services/google-sheets/callback?code=good-code&state=x`, { as: other })).headers.get("location")).toBe("/connected?sheets=expired#google-sheets");
+    expect((await connectSheets(other, "bad-code")).cb.headers.get("location")).toBe("/connected/google-sheets?sheets=failed");
+    expect((await call(`/app/services/google-sheets/callback?code=good-code&state=x`, { as: other })).headers.get("location")).toBe("/connected/google-sheets?sheets=expired");
     expect(await env.DB.prepare("SELECT 1 FROM service_keys WHERE owner_email = ?").bind(other).first()).toBeNull();
   });
 
@@ -222,7 +222,7 @@ describe("Google Sheets as a connected app (OAuth)", () => {
     mockGoogle();
     expect((await setFlag("off")).status).toBe(200);
     expect((await call("/app/services/google-sheets/connect", { as: OWNER })).status).toBe(404);
-    expect(await (await call("/app/connected", { as: OWNER })).text()).not.toContain("dlg-google-sheets");
+    expect(await (await call("/app/connected", { as: OWNER })).text()).not.toContain('href="/connected/google-sheets"');
     const ns = uniq();
     await publishHtml(OWNER, ns, "s", PAGE("x"));
     expect((await sheets(OWNER, ns, { method: "GET", path: "spreadsheets/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/values/Sheet1!A1:B2" })).status).toBe(403);

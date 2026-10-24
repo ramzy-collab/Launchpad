@@ -5,6 +5,7 @@ import { ApiError, badRequest, err, errorBody, jsonError, onError } from "./erro
 import { adminOrigin, hostKind } from "./hosts";
 import { sendRoleInvites, setStar, transferOwnership, withoutAccounts } from "./sharing";
 import { removeSavedKey, replaceSavedKey } from "./connections";
+import { createConnector, deleteConnector, detachConnector, listConnectors, moveSavedKeys, planKeyMove, updateConnector } from "./connectors";
 import {
   copySite,
   createNamespace,
@@ -258,6 +259,17 @@ export function managementApi(kind: "admin" | "deploy") {
     api.use("/sites/:id/keys/*", connectedAppsFlag);
     api.put("/sites/:id/keys/:name", async (c) => c.json(await replaceSavedKey(ctxOf(c), c.req.param("id"), c.req.param("name"), (await jsonBody(c)).value)));
     api.delete("/sites/:id/keys/:name", async (c) => c.json(await removeSavedKey(ctxOf(c), c.req.param("id"), c.req.param("name"))));
+    // Custom connectors: each person's own (see connectors.ts).
+    api.use("/connectors", connectedAppsFlag);
+    api.use("/connectors/*", connectedAppsFlag);
+    api.use("/sites/:id/connectors/*", connectedAppsFlag);
+    api.get("/connectors", async (c) => c.json(await listConnectors(c.env, c.get("user").email)));
+    api.post("/connectors", async (c) => c.json(await createConnector(ctxOf(c), await jsonBody(c)), 201));
+    api.get("/connectors/saved-keys", async (c) => c.json(await planKeyMove(ctxOf(c))));
+    api.post("/connectors/saved-keys", async (c) => c.json(await moveSavedKeys(ctxOf(c))));
+    api.patch("/connectors/:name", async (c) => c.json(await updateConnector(ctxOf(c), c.req.param("name"), await jsonBody(c))));
+    api.delete("/connectors/:name", async (c) => c.json(await deleteConnector(ctxOf(c), c.req.param("name"))));
+    api.delete("/sites/:id/connectors/:name", async (c) => c.json(await detachConnector(ctxOf(c), c.req.param("id"), c.req.param("name"))));
     api.get("/services/gemini", async (c) => c.json(await geminiStatus(c.env, c.get("user").email)));
     api.put("/services/gemini", async (c) => c.json(await connectGemini(c.env, c.get("user"), (await jsonBody(c)).apiKey)));
     api.delete("/services/gemini", async (c) => c.json(await disconnectGemini(c.env, c.get("user"))));
