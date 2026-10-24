@@ -219,10 +219,11 @@ describe("accounts and the waitlist", () => {
     const { cookie } = await signIn(email);
     const html = await (await onApp("/", cookie)).text();
     expect(html).toContain("You're on the waitlist");
-    // Their menu only has Shared with me and Connect your AI.
+    // Their menu only has My apps (what's shared with them) and Connect your AI.
     expect(html).not.toContain('href="/new"');
     expect(html).not.toContain('href="/spaces"');
-    expect(html).toContain('href="/shared"');
+    expect(html).toContain('<a href="/" aria-current="page">My apps</a>');
+    expect(html).not.toContain("<legend>Owner</legend>");
     expect(html).toContain('href="/connect"');
     expect((await onApp("/new", cookie)).status).toBe(200);
     expect(await (await onApp("/new", cookie)).text()).not.toContain('data-action="upload"');
@@ -381,27 +382,36 @@ describe("accounts and the waitlist, continued", () => {
   });
 });
 
-describe("my apps and shared with me", () => {
-  it("apps are private by default and appear under Shared with me only for people named", async () => {
+describe("my apps", () => {
+  it("lists apps shared with you next to your own, each marked as yours or someone else's", async () => {
     const ns = uniq();
     const friend = `friend-${uniq()}@example.com`;
     await publishHtml(OWNER, ns, "private", PAGE("p"), { title: "Private app" });
     await publishHtml(OWNER, ns, "shared", PAGE("s"), { title: "Shared app", allowed_emails: friend });
 
     const { cookie } = await signIn(friend);
-    const shared = await (await onApp("/shared", cookie)).text();
-    expect(shared).toContain("Shared app");
-    expect(shared).not.toContain("Private app");
-    expect(shared).toContain("Can open");
+    const theirs = await (await onApp("/", cookie)).text();
+    expect(theirs).toContain("Shared app");
+    expect(theirs).not.toContain("Private app");
+    expect(theirs).toContain('data-owner="shared"');
+    expect(theirs).toContain(`From ${OWNER}`);
+    expect(theirs).toContain("Viewer");
 
     const stranger = await signIn(`stranger-${uniq()}@example.com`);
-    expect(await (await onApp("/shared", stranger.cookie)).text()).not.toContain("Shared app");
+    expect(await (await onApp("/", stranger.cookie)).text()).not.toContain("Shared app");
 
-    // The owner sees both under My apps, not under Shared with me.
+    // The owner sees both as their own, in Made by you.
     const mine = await (await call("/app", { as: OWNER })).text();
-    expect(mine).toContain("Private app");
-    expect(mine).toContain("Shared app");
-    expect(await (await call("/app/shared", { as: OWNER })).text()).not.toContain("Private app");
+    expect(mine).toContain("Made by you");
+    expect(mine).toMatch(/data-owner="mine" data-name="private app"/);
+    expect(mine).toMatch(/data-owner="mine" data-name="shared app"/);
+  });
+
+  it("sends the old Shared with me address to My apps, filtered to other people's apps", async () => {
+    const { cookie } = await signIn(`old-link-${uniq()}@example.com`);
+    const res = await onApp("/shared", cookie);
+    expect(res.status).toBe(301);
+    expect(res.headers.get("location")).toBe("/?owner=others");
   });
 });
 

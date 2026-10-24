@@ -1,7 +1,7 @@
 // The hosts Formelab answers on.
 //
 //   DOMAIN (formelab.ai)             home page, sign-in, waitlist, the MCP connector and OAuth
-//   app.DOMAIN                       the web app: My apps, Shared with me, Connect your AI
+//   app.DOMAIN                       the web app: My apps, Connect your AI
 //   admin.DOMAIN                     the admin panel (its own, shorter session)
 //   <host_label>.APP_DOMAIN          one published app each, e.g. hoops-7kq2.formelab.app
 //   APP_DOMAIN                       the web app's old address, redirected to app.DOMAIN

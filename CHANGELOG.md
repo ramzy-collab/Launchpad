@@ -4,6 +4,8 @@ Everything that has changed in Formelab, newest first. Shown in the admin panel 
 
 ## 2026-10-24
 
+- **One My apps page.** Shared with me is part of My apps now. Your own apps sit under **Made by you** and the apps other people shared with you under **Shared with you**, with starred apps of both kinds on top. A shared app's card shows its owner's initial on the icon, "From" and their email, and what you can do (Viewer, Editor or Admin). Search sits next to one filter button that holds every filter and the sort: **Owner** (Anyone, Me, Other people), **Space** and **Sort**. It turns purple with a dot when anything is set, and the choices stay in the address, so a reload or a link keeps them. On a phone the button opens a sheet from the bottom. Old Shared with me links, in emails, bookmarks and the phone shortcut, open My apps filtered to other people's apps.
+- **Test plan:** [One My apps page](/test-plans/2026-10-24-one-my-apps-page), 71 browser test cases to hand to Claude Cowork.
 - **Connected apps on each app's page** (behind the Connected apps feature). A new **Connected apps** tab shows what the app is connected to: **Google Gemini** once the app has used it, the **Google Sheets** spreadsheets it can read and add rows to (add one by pasting its link, or remove one), and its **saved keys** by name with where each may be sent, **Replace key** and **Remove**. The keys themselves are never shown. With nothing connected, it points to the Connected apps page.
 - **Where they're used.** The Connected apps page now lists which of your apps use Gemini, Google Sheets and each saved key, with links to them.
 - While the Connected apps feature is off, its menu link is hidden instead of showing "Soon", and apps have no Connected apps tab.

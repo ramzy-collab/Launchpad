@@ -8,7 +8,7 @@ import { SERVICES_SPRITE } from "./dashboard/services";
 import { appIcon } from "./icons";
 import { sheetsCallback, sheetsConnect } from "./sheets";
 import { enabledFlags, withFlags } from "./flags";
-import { accountPage, appActivityPage, appResponsesCsv, appSettingsPage, connectedPage, dashboardPage, installPage, keysPage, newAppPage, sharedPage, spacesPage } from "./dashboard/page";
+import { accountPage, appActivityPage, appResponsesCsv, appSettingsPage, connectedPage, dashboardPage, installPage, keysPage, newAppPage, spacesPage } from "./dashboard/page";
 import { homePage } from "./dashboard/home";
 import { forgotGet, forgotPost, resetGet, resetPost, signInCode, signInGet, signInPost } from "./signin";
 import type { AppEnv, Env } from "./env";
@@ -200,7 +200,7 @@ function signedInHost(requireSignIn: MiddlewareHandler<AppEnv>, routes: (app: Ho
   return app;
 }
 
-// The web app: My apps, New app, Shared with me, Spaces, Connect your AI, Connected apps, Access keys.
+// The web app: My apps, New app, Spaces, Connect your AI, Connected apps, Access keys.
 // Its manifest, icons and service worker (pwa.ts) are public, since browsers fetch them without cookies.
 const webApp = signedInHost(requireSignIn, (app) => {
   app.get("/_auth/callback", appCallback);
@@ -208,7 +208,8 @@ const webApp = signedInHost(requireSignIn, (app) => {
   app.get("/_assets/share.png", formelabShareImage);
 });
 webApp.get("/", async (c) => dashboardPage(c));
-webApp.get("/shared", async (c) => sharedPage(c));
+// Shared with me is part of My apps now: old links (emails, bookmarks, home screen shortcuts) open it filtered.
+webApp.get("/shared", (c) => c.redirect("/?owner=others", 301));
 webApp.get("/new", (c) => newAppPage(c));
 webApp.get("/spaces", (c) => spacesPage(c));
 webApp.get("/connect", (c) => connectPage(c));

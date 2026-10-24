@@ -487,7 +487,7 @@ export async function updateNamespaceEditors(ctx: Ctx, rawLabel: string, rawEdit
     held = allowance.held;
     const origin = appOrigin(ctx.env, ctx.requestUrl);
     const by = ctx.user.email;
-    const url = `${origin}/shared`;
+    const url = `${origin}/?space=${encodeURIComponent(ns.label)}`;
     ctx.waitUntil(sendEach(ctx.env, allowance.send, ctx.user.email, (to) => namespaceSharedEmail(origin, to, { by, namespace: ns.label, url })));
   }
   const note = heldNote(held);

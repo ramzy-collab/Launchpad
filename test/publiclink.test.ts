@@ -106,7 +106,7 @@ describe("public links: anyone with the link", () => {
     await patch({ public_link: true });
     expect((await patch({ public_link: true }, "viewer@example.com")).status).toBe(403);
 
-    const shared = await (await call("/app/shared", { as: "viewer@example.com" })).text();
+    const shared = await (await call("/app", { as: "viewer@example.com" })).text();
     expect(shared).toContain(ns);
     expect(shared).not.toContain("/_platform/link/");
 

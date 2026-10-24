@@ -29,10 +29,10 @@ describe("stars", () => {
     const mine = await (await call("/app", { as: OWNER })).text();
     expect(mine).toContain(`class="ac-btn star on" data-star="${site.id}" aria-pressed="true"`);
     // The viewer hasn't starred it.
-    const theirs = await (await call("/app/shared", { as: viewer })).text();
+    const theirs = await (await call("/app", { as: viewer })).text();
     expect(theirs).toContain(`class="ac-btn star" data-star="${site.id}" aria-pressed="false"`);
     expect((await api("/star", { starred: true }, viewer, "PUT")).status).toBe(200);
-    expect(await (await call("/app/shared", { as: viewer })).text()).toContain(`data-star="${site.id}" aria-pressed="true"`);
+    expect(await (await call("/app", { as: viewer })).text()).toContain(`data-star="${site.id}" aria-pressed="true"`);
     // Unstar, bad input, and apps you can't open.
     expect((await api("/star", { starred: false }, OWNER, "PUT")).status).toBe(200);
     expect(await (await call("/app", { as: OWNER })).text()).toContain(`data-star="${site.id}" aria-pressed="false"`);
@@ -136,9 +136,10 @@ describe("transferring ownership", () => {
     expect(JSON.parse(r.editors as string)).not.toContain(admin);
     expect(JSON.parse(r.sharers as string)).toEqual([OWNER]);
 
-    // The old owner (who still owns the space) now finds it under Shared with me, and can't delete it.
-    expect(await (await call("/app", { as: OWNER })).text()).not.toContain(`data-id="${site.id}"`);
-    expect(await (await call("/app/shared", { as: OWNER })).text()).toContain(`data-id="${site.id}"`);
+    // The old owner (who still owns the space) now finds it under Shared with you, as an Admin, and can't delete it.
+    const mine = await (await call("/app", { as: OWNER })).text();
+    expect(mine).toContain(`data-id="${site.id}" data-owner="shared"`);
+    expect(mine).toContain(`From ${admin}`);
     const page = await (await call(`/app/apps/${site.id}`, { as: OWNER })).text();
     expect(page).toContain(`<strong>${admin}</strong> owns this app. You're an Admin.`);
     expect(page).not.toContain('id="dlg-delete"');
