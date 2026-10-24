@@ -1009,6 +1009,12 @@
         if (rmSheet) {
           var id = rmSheet.dataset.sheetRemove;
           patch({ sheets: S.sheets.filter(function (x) { return x !== id; }) }).then(function () {
+            // Its last spreadsheet: the app isn't connected to Google Sheets any more.
+            if (!S.sheets.length) {
+              flashNext("Spreadsheet removed. This app doesn't use Google Sheets any more.");
+              location.reload();
+              return;
+            }
             renderSheets();
             toast("Spreadsheet removed. This app can't reach it any more.");
           }, failed);

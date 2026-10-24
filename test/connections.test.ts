@@ -41,6 +41,24 @@ describe("the Connected apps tab", () => {
     expect(html).toContain('<a href="/connected">Connected apps</a>'); // the menu links Connected apps again
   });
 
+  it("doesn't list Google Sheets for apps without spreadsheets, even with Sheets connected", async () => {
+    // The owner's Google Sheets connection (a row is enough for the page; it's never used here).
+    await env.DB.prepare(
+      "INSERT OR REPLACE INTO service_keys (owner_email, service, iv, ciphertext, hint, created_at, updated_at) VALUES (?, 'google_sheets', 'x', 'x', 'me@gmail.com', 0, 0)",
+    ).bind(OWNER).run();
+    try {
+      const html = await (await newApp()).settings();
+      expect(html).not.toContain('data-conn="sheets"');
+      expect(html).toContain('<span class="tab-badge" data-conn-count>0</span>');
+      expect(html).toContain('<div class="conn-empty" data-conn-empty>');
+      // No Google Sheets button of any kind on an app that doesn't use it.
+      expect(html).not.toContain("data-sheet-add-open");
+      expect(html).not.toContain("spreadsheet</button>");
+    } finally {
+      await env.DB.prepare("DELETE FROM service_keys WHERE owner_email = ? AND service = 'google_sheets'").bind(OWNER).run();
+    }
+  });
+
   it("lists Gemini once the app used it, its spreadsheets and its saved keys", async () => {
     const { site, settings, saveSecret } = await newApp();
     expect((await saveSecret("quo", "k1", ["api.quo.com"])).status).toBe(200);

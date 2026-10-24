@@ -222,7 +222,14 @@ function connectionsPanel(site: SiteView, conns: AppConnections, opts: { isSiteO
   </div>
 </div>`);
   }
-  if (conns.sheets.ids.length || (opts.isSiteOwner && conns.sheets.connected)) {
+  // Adding a spreadsheet, in the Google Sheets row (owner only). An app gets its first one from the
+  // AI that builds it (update_site's sheets), so apps that don't use Sheets never show it here.
+  const sheetAdd = (label: string) => `<button type="button" class="linkish" data-sheet-add-open aria-expanded="false" aria-controls="sheet-add">${label}</button>
+    <form class="sheet-add" id="sheet-add" data-sheet-add hidden>
+      <input name="sheet" autocomplete="off" spellcheck="false" placeholder="https://docs.google.com/spreadsheets/d/..." aria-label="Google Sheets link">
+      <button>Add it</button>
+    </form>`;
+  if (conns.sheets.ids.length) {
     rows.push(`<div class="conn" data-conn="sheets">
   <span class="conn-ic">${SHEETS_LOGO()}</span>
   <div class="conn-txt">
@@ -231,15 +238,7 @@ function connectionsPanel(site: SiteView, conns: AppConnections, opts: { isSiteO
     ${conns.sheets.connected ? "" : `<span class="conn-note">Google Sheets isn't connected, so this app can't reach these spreadsheets. ${opts.isSiteOwner ? `Connect it on <a href="/connected">Connected apps</a>.` : `Ask ${e(site.ownerEmail)} to connect it.`}</span>`}
     <ul class="sheet-list" data-sheet-list>${conns.sheets.ids.map((id) => sheetItem(id, opts.isSiteOwner)).join("")}</ul>
     <p class="muted sheet-empty" data-sheet-empty${conns.sheets.ids.length ? " hidden" : ""}>No spreadsheets yet.</p>
-    ${
-      opts.isSiteOwner
-        ? `<button type="button" class="linkish" data-sheet-add-open aria-expanded="false" aria-controls="sheet-add">+ Add a spreadsheet</button>
-    <form class="sheet-add" id="sheet-add" data-sheet-add hidden>
-      <input name="sheet" autocomplete="off" spellcheck="false" placeholder="https://docs.google.com/spreadsheets/d/..." aria-label="Google Sheets link">
-      <button>Add it</button>
-    </form>`
-        : ""
-    }
+    ${opts.isSiteOwner ? sheetAdd("+ Add a spreadsheet") : ""}
   </div>
 </div>`);
   }
