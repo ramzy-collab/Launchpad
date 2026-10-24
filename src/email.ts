@@ -181,6 +181,45 @@ export function appSharedEmail(origin: string, to: string, opts: { by: string; t
   };
 }
 
+/** To someone invited as an Editor or Admin who has no account yet: join with this address. */
+export function roleInviteEmail(origin: string, to: string, opts: { by: string; title: string; role: "Editor" | "Admin"; url: string }): Email {
+  const join = `${origin}/login`;
+  return {
+    to,
+    // The title is the inviter's own text, so it stays out of the subject and heading (audit N7).
+    subject: `${opts.by} invited you to edit an app on Formelab`,
+    html: layout(
+      "You're invited to edit an app",
+      [
+        `<strong>${e(opts.by)}</strong> wants you as an ${opts.role} of <strong>${e(opts.title)}</strong> on Formelab. ${opts.role}s sign in to make changes, so join Formelab with <strong>${e(to)}</strong>.`,
+        `You can already open the app. You become an ${opts.role} as soon as your account is set up. Formelab lets new people in a few at a time, so you may be on the waitlist for a little while before you can publish changes.`,
+      ],
+      { label: "Join Formelab", url: join },
+    ),
+    text: plain([
+      `${opts.by} wants you as an ${opts.role} of "${opts.title}" on Formelab. Join with ${to} to make changes: ${join}`,
+      `You can already open the app: ${opts.url}`,
+    ]),
+  };
+}
+
+/** To an app's new owner, after someone handed it to them. */
+export function ownershipEmail(origin: string, to: string, opts: { by: string; title: string; settingsUrl: string }): Email {
+  return {
+    to,
+    subject: `${opts.by} made you the owner of an app on Formelab`,
+    html: layout(
+      "You own an app now",
+      [
+        `<strong>${e(opts.by)}</strong> made you the owner of <strong>${e(opts.title)}</strong>. You control who can open it, and only you can delete it or hand it to someone else. ${e(opts.by)} stays on as an Admin.`,
+        "It's under <strong>My apps</strong>.",
+      ],
+      { label: "Open its settings", url: opts.settingsUrl },
+    ),
+    text: plain([`${opts.by} made you the owner of "${opts.title}" on Formelab. ${opts.by} stays on as an Admin.`, `Its settings: ${opts.settingsUrl}`, `Your apps: ${origin}/`]),
+  };
+}
+
 export function namespaceSharedEmail(origin: string, to: string, opts: { by: string; namespace: string; url: string }): Email {
   return {
     to,

@@ -2,6 +2,7 @@ import { Hono, type Context, type MiddlewareHandler } from "hono";
 import { ctxOf, managementApi } from "./api";
 import { identifyBearer, identifyBrowser } from "./auth";
 import { adminPage, testPlanPage } from "./dashboard/admin";
+import { ANSWERS_PATH, answersRoute, showAnswersLink } from "./answers";
 import { connectPage } from "./dashboard/connect";
 import { SERVICES_SPRITE } from "./dashboard/services";
 import { appIcon } from "./icons";
@@ -341,7 +342,14 @@ siteApp.get("/_platform/manifest.webmanifest", appManifest);
 siteApp.all("/_platform/*", () => plainPage(404, "Not found", "There is nothing here."));
 siteApp.route("/_api", runtimeApi());
 siteApp.all("/_api", () => jsonError(forbidden("Not an API endpoint.")));
-siteApp.all("*", (c) => serveAppFile(c.req.raw, c.env, c.get("site")));
+// Apps that collect answers get a page listing them, for their owner and editors (answers.ts).
+siteApp.get(ANSWERS_PATH, (c, next) => answersRoute(c, next));
+siteApp.get(`${ANSWERS_PATH}.csv`, (c, next) => answersRoute(c, next, true));
+siteApp.all("*", (c) =>
+  serveAppFile(c.req.raw, c.env, c.get("site"), {
+    answersLink: c.get("guest") ? undefined : (html) => showAnswersLink(c.env, c.get("site"), c.get("user"), html),
+  }),
+);
 
 /** <label>.APP_DOMAIN: the app with that host label, or else an old namespace address to redirect. */
 async function appsHost(req: Request, env: Env, ctx: ExecutionContext, label: string): Promise<Response> {

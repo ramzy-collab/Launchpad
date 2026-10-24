@@ -153,11 +153,14 @@ await formelab.responses.delete(responses[0].id);
 **Collecting answers from people without a Formelab account.** People who open the app through its
 public link are guests (`formelab.me()` is `null`). They can send responses only when the owner
 allows it: `update_site` with `guest_responses: true` (and `public_link: true` for the link), or
-"Let people with the link send responses" on the app's page. Otherwise `submit` fails with
+"Anyone with the link can send answers" on the app's Sharing tab. Otherwise `submit` fails with
 `sign_in_required`. Guests can send at most 5 a minute each, and an app takes at most 60 a minute;
 guests together can send at most 500 a day unless the owner changes it (`update_site`'s
-`guest_responses_per_day`). Too many fails with `rate_limited` (429). The owner reads responses on the app's page in Formelab
-(with a CSV download) or by asking their AI (the `get_responses` tool).
+`guest_responses_per_day`). Too many fails with `rate_limited` (429). The owner and editors read
+the answers on the app's **Answers** page, `/answers` on the app's own address (with a
+spreadsheet download); Formelab adds a small "Answers" link to the app for them. They can also ask
+their AI (the `get_responses` tool). `/answers` and `/answers.csv` are taken by that page, so don't
+give the app its own pages at those addresses.
 
 <!-- /flag:responses -->
 

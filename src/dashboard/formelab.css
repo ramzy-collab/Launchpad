@@ -830,6 +830,19 @@ table.data .tag { margin: 1px 0; }
   .viz-section .chart { padding: 12px 8px 8px; }
 }
 
+/* ---------- App page: account notes, owner note, transfer ---------- */
+.acct-note { margin-top: 12px; border: 1px solid var(--fl-warn-line); background: var(--fl-warn-bg); border-radius: var(--fl-radius-md); padding: 12px 14px; font-size: .9rem; }
+.acct-note[hidden], .owner-note[hidden] { display: none; }
+.dash section .acct-note p { margin: 0; color: var(--fl-ink); }
+.acct-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.dash main .acct-actions button { min-height: 34px; padding: 4px 14px; font-size: .875rem; }
+.owner-note { display: flex; gap: 8px; align-items: center; font-size: .875rem; color: var(--fl-ink-soft); background: var(--fl-surface-2); border-radius: var(--fl-radius-sm); padding: 8px 12px; margin: 14px 0 0; }
+.dash section p.owner-note strong { color: var(--fl-ink); }
+.owner-note svg { flex: none; }
+.ps.pending { color: var(--fl-warn-ink); }
+.check-row { display: flex; gap: 10px; align-items: flex-start; font-size: .9rem; color: var(--fl-ink-soft); margin: 4px 0 4px; cursor: pointer; }
+.dash main .check-row input { margin-top: 3px; }
+
 /* ---------- Admin panel: feature test plans ---------- */
 :root { --tp-pass: #1F9E6E; --tp-fail: #E5484D; --tp-blocked: #D99A00; --tp-todo: #D9D5CC; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --tp-pass: #4FD9A1; --tp-fail: #FF6369; --tp-blocked: #FFD666; --tp-todo: #3A3835; } }

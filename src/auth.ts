@@ -5,6 +5,7 @@ import { badRequest, err, notFound, unauthorized } from "./errors";
 import { sessionFromRequest } from "./session";
 import type { NamespaceRow, SiteRow } from "./sites";
 import { base32, normEmail, parseJsonArray, randomBytes, randomId, sha256Hex } from "./util";
+import { audit } from "./audit";
 
 // ---------------------------------------------------------------------------
 // Human identity: Cloudflare Access JWT
@@ -85,7 +86,51 @@ export async function upsertUser(
   )
     .bind(email, name, isAdmin, now(), status, opts.workosId ?? null)
     .first<UserRow>();
+  await applyPendingInvites(env, email);
   return userOf(row!);
+}
+
+/** Which of `emails` have a Formelab account. Editors and Admins need one (see sharing.ts). */
+export async function accountsAmong(env: Env, emails: string[]): Promise<Set<string>> {
+  const list = [...new Set(emails.map(normEmail))].filter(Boolean);
+  const found = new Set<string>();
+  // D1 binds at most 100 parameters per statement.
+  for (let i = 0; i < list.length; i += 90) {
+    const chunk = list.slice(i, i + 90);
+    const { results } = await env.DB.prepare(`SELECT email FROM users WHERE email IN (${chunk.map(() => "?").join(",")})`)
+      .bind(...chunk)
+      .all<{ email: string }>();
+    for (const r of results) found.add(r.email);
+  }
+  return found;
+}
+
+/**
+ * Someone invited as an Editor or Admin before they had an account becomes one once they have it:
+ * moved from the app's viewers to its editors (and sharers, for Admin), and the invite removed.
+ */
+export async function applyPendingInvites(env: Env, email: string): Promise<void> {
+  const { results } = await env.DB.prepare(
+    `SELECT p.site_id, p.role, s.namespace, s.mount_path, s.allowed_emails, s.editors, s.sharers
+       FROM pending_role_invites p JOIN sites s ON s.id = p.site_id WHERE p.email = ?`,
+  )
+    .bind(email)
+    .all<{ site_id: string; role: "editor" | "admin"; namespace: string; mount_path: string; allowed_emails: string; editors: string; sharers: string | null }>();
+  for (const r of results) {
+    const without = (list: string) => parseJsonArray(list).map(normEmail).filter((x) => x !== email);
+    const editors = [...without(r.editors), email];
+    const sharers = r.role === "admin" ? [...without(r.sharers ?? "[]"), email] : without(r.sharers ?? "[]");
+    await env.DB.batch([
+      env.DB.prepare("UPDATE sites SET allowed_emails = ?, editors = ?, sharers = ? WHERE id = ?").bind(
+        JSON.stringify(without(r.allowed_emails)),
+        JSON.stringify(editors),
+        JSON.stringify(sharers),
+        r.site_id,
+      ),
+      env.DB.prepare("DELETE FROM pending_role_invites WHERE site_id = ? AND email = ?").bind(r.site_id, email),
+    ]);
+    await audit(env, email, "role_invite_joined", `${r.namespace}/${r.mount_path}`, { siteId: r.site_id, role: r.role });
+  }
 }
 
 type UserRow = { email: string; name: string | null; is_admin: number; status: string };
@@ -217,8 +262,12 @@ export const canManageSite = (u: User, site: SiteRow, ns: NamespaceRow) =>
 export const canViewSite = (u: User, site: SiteRow, ns: NamespaceRow) =>
   (site.visibility !== "restricted" && u.active) || canManageSite(u, site, ns) || has(site.allowed_emails, u.email);
 
-/** The app's owner, or the owner of its namespace: the people who may delete it and choose its editors. */
-export const isAppOwner = (u: User, site: SiteRow, ns: NamespaceRow) => site.owner_email === u.email || isNamespaceOwner(u, ns);
+/**
+ * The app's owner, or the owner of its namespace: the people who may delete it and choose its
+ * editors. An app handed to someone else (transfer ownership) drops the namespace owner's claim.
+ */
+export const isAppOwner = (u: User, site: SiteRow, ns: NamespaceRow) =>
+  site.owner_email === u.email || (site.space_owner_powers !== 0 && isNamespaceOwner(u, ns));
 
 /**
  * Changing who can open an app (visibility, share list, public link, link previews): its owners,

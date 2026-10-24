@@ -3,7 +3,7 @@ import { env } from "cloudflare:workers";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import worker from "../src/index";
 import type { Env } from "../src/env";
-import { accessJwt, onOutbound, OWNER, PAGE, resolvePath, uniq, appAt } from "./helpers";
+import { accessJwt, accounts, onOutbound, OWNER, PAGE, resolvePath, uniq, appAt } from "./helpers";
 
 type Sent = { from: string | { name: string; email: string }; to: string; subject: string; text: string; html: string };
 let sent: Sent[] = [];
@@ -80,6 +80,7 @@ describe("notification emails", () => {
     const ns = uniq();
     const viewer = `v-${uniq()}@example.com`;
     const editor = `e-${uniq()}@example.com`;
+    await accounts(editor); // Editors need an account.
     const fd = new FormData();
     fd.set("file", new File([PAGE("x")], "index.html", { type: "text/html" }));
     fd.set("namespace", ns);

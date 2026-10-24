@@ -2,7 +2,8 @@ import type { Context } from "hono";
 import { describeActivity, HIGH_VOLUME_ACTIONS, siteActivity, type AuditRow } from "../audit";
 import { listTokens } from "../auth";
 import type { AppEnv, User } from "../env";
-import { getManageableSite, getSiteById, listNamespaces, listOwnSites, listSharedSites, type SiteView } from "../sites";
+import { getManageableSite, getNamespace, getSiteById, listNamespaces, listOwnSites, listSharedSites, type SiteView } from "../sites";
+import { canPublishTo } from "../auth";
 import { escapeHtml as e } from "../util";
 import { ApiError } from "../errors";
 import { plainPage } from "../serve";
@@ -18,9 +19,10 @@ import { connectedAiApps, type AiApp } from "./aiapps";
 import { AI_LOGOS } from "./logos";
 import { BUILDER_LABEL, BUILDERS, builderKeys, type Builder } from "../builder";
 import { PWA_HEAD } from "../pwa";
-import { countResponses, responsesCsv } from "../responses";
+import { responsesCsv } from "../responses";
 import { flagOnForOwner } from "../flags";
 import { appPreviewText } from "../share";
+import { peopleWithAccounts, pendingInvites, starredIds } from "../sharing";
 
 export const fmtTime = (ms: number | null) => (ms ? new Date(ms).toISOString().replace("T", " ").slice(0, 16) + " UTC" : "never");
 
@@ -130,11 +132,11 @@ const waitlistedNotice = `<section class="notice">
 /** "Shared with me": apps other people own that they shared with this person by name. */
 export async function sharedPage(c: Context<AppEnv>): Promise<Response> {
   const ctx = ctxOf(c);
-  const sites = await listSharedSites(ctx);
+  const [sites, stars] = await Promise.all([listSharedSites(ctx), starredIds(ctx)]);
   const body = `${ctx.user.active ? "" : waitlistedNotice}
 ${
   sites.length
-    ? appBrowser(sites, { shared: true })
+    ? appBrowser(sites.map((s) => ({ ...s, starred: stars.has(s.id) })), { shared: true })
     : `<section>
   <p class="muted">Nothing yet. When someone adds your email to one of their apps, it shows up here.</p>
 </section>`
@@ -197,7 +199,15 @@ function roleOf(s: SiteView, email: string): Role {
 }
 
 /** The People list: the owner first, then everyone the app is shared with by name. */
-function peopleRows(s: SiteView, me: string, isOwner: boolean, canShare: boolean): string {
+/** The line under a person on the People list: their invite and account state. */
+export function personNote(role: Role, opts: { pending?: Role; hasAccount: boolean }): string {
+  if (opts.pending) return `Sign-up invite sent. Becomes ${aRole(opts.pending)} once they join Formelab.`;
+  if (!opts.hasAccount) return "Invited, no Formelab account yet";
+  return "Invited";
+}
+const aRole = (r: Role) => (r === "viewer" ? "a Viewer" : r === "editor" ? "an Editor" : "an Admin");
+
+function peopleRows(s: SiteView, me: string, isOwner: boolean, canShare: boolean, accounts: Set<string>, pending: Map<string, Role>): string {
   const owner = `<li class="person"><span class="avatar" aria-hidden="true">${e(s.ownerEmail.slice(0, 1).toUpperCase())}</span><span class="pi"><span class="pe">${e(s.ownerEmail)}${s.ownerEmail === me ? " (you)" : ""}</span><span class="ps">Owner</span></span><span class="role-label">Owner</span></li>`;
   const rows = sharedWith(s).map((email) => {
     const role = roleOf(s, email);
@@ -206,7 +216,8 @@ function peopleRows(s: SiteView, me: string, isOwner: boolean, canShare: boolean
     const control = roles
       ? `<button type="button" class="rp-btn" data-person="${e(email)}" data-role="${role}" data-roles="${roles}" aria-haspopup="listbox" aria-expanded="false" aria-label="Role for ${e(email)}"><span>${ROLE_NAME[role]}</span>${ICON.chevron()}</button>`
       : `<span class="role-label">${ROLE_NAME[role]}</span>`;
-    return `<li class="person"><span class="avatar soft" aria-hidden="true">${e(email.slice(0, 1).toUpperCase())}</span><span class="pi"><span class="pe">${e(email)}${email === me ? " (you)" : ""}</span><span class="ps">Invited</span></span>${control}</li>`;
+    const note = personNote(role, { pending: pending.get(email), hasAccount: accounts.has(email) });
+    return `<li class="person"><span class="avatar soft" aria-hidden="true">${e(email.slice(0, 1).toUpperCase())}</span><span class="pi"><span class="pe">${e(email)}${email === me ? " (you)" : ""}</span><span class="ps${pending.has(email) ? " pending" : ""}">${e(note)}</span></span>${control}</li>`;
   });
   return owner + rows.join("");
 }
@@ -246,7 +257,6 @@ export async function appSettingsPage(c: Context<AppEnv>, id: string): Promise<R
     flagOnForOwner(c.env, "responses", site.ownerEmail),
     row ? appPreviewText(c.env, row) : Promise.resolve({ title: name, description: "" }),
   ]);
-  const responseCount = responsesOn ? await countResponses(c.env, site.id) : 0;
   // Update with AI: the person's own key rewrites the app (app_builder flag).
   const builderOn = !!c.get("features")?.has("app_builder");
   const keys = builderOn ? await builderKeys(c.env, user.email) : {};
@@ -255,7 +265,21 @@ export async function appSettingsPage(c: Context<AppEnv>, id: string): Promise<R
   const isPublic = !!site.publicUrl;
   const lock = site.canShare ? "" : " disabled";
   const appHost = new URL(site.url).host;
+  const ctx = ctxOf(c);
+  const [starred, accounts, pending, ns] = await Promise.all([
+    starredIds(ctx).then((s) => s.has(site.id)),
+    peopleWithAccounts(ctx, site),
+    pendingInvites(ctx, site.id),
+    getNamespace(c.env, site.namespace),
+  ]);
+  const canCopy = user.active && !!ns && canPublishTo(user, ns);
+  const pendingRoles = new Map(pending.map((p) => [p.email, p.role] as [string, Role]));
+  const myRole = site.editors.includes(user.email) ? roleOf(site, user.email) : null;
   const state = {
+    starred,
+    accounts,
+    pending: pending.map((p) => ({ email: p.email, role: p.role })),
+    canCopy,
     id: site.id,
     url: site.url,
     publicUrl: site.publicUrl,
@@ -313,7 +337,7 @@ export async function appSettingsPage(c: Context<AppEnv>, id: string): Promise<R
   <div class="titlewrap">
     <div class="titlerow">
       <input class="title-input" data-title value="${e(site.title ?? "")}" placeholder="${e(state.fallbackName)}" maxlength="200" aria-label="App name">
-      <button type="button" class="star-btn" data-star="${e(site.id)}" aria-pressed="false" aria-label="Star this app" title="Star">${ICON.star(24)}</button>
+      <button type="button" class="star-btn${starred ? " on" : ""}" data-star="${e(site.id)}" aria-pressed="${starred}" aria-label="Star this app" title="${starred ? "Unstar" : "Star"}">${ICON.star(24)}</button>
     </div>
     <div class="iconrow">
       <span class="sharepill ${access.kind}" data-pill>
@@ -329,6 +353,7 @@ export async function appSettingsPage(c: Context<AppEnv>, id: string): Promise<R
       <button type="button" class="icon-btn" data-menu-btn aria-haspopup="menu" aria-expanded="false" aria-controls="app-menu" aria-label="More">${ICON.more()}</button>
       <div class="menu" id="app-menu" role="menu" hidden>
         <button type="button" role="menuitem" data-dialog="dlg-install">Add to your phone or computer</button>
+        ${canCopy ? `<button type="button" role="menuitem" data-copy-app>Make a copy</button>` : ""}
         ${isOwner ? `<hr><button type="button" role="menuitem" class="red" data-dialog="dlg-delete">Delete app</button>` : ""}
       </div>
     </div>
@@ -389,7 +414,13 @@ export async function appSettingsPage(c: Context<AppEnv>, id: string): Promise<R
     </form>`
         : ""
     }
-    <ul class="people" data-people>${peopleRows(site, user.email, isOwner, site.canShare)}</ul>
+    <div class="acct-note" data-acct-note role="status" hidden></div>
+    ${
+      isOwner
+        ? ""
+        : `<p class="owner-note" data-owner-note>${ICON.people(16)}<span><strong>${e(site.ownerEmail)}</strong> owns this app.${myRole ? ` You're ${aRole(myRole)}.` : ""}</span></p>`
+    }
+    <ul class="people" data-people>${peopleRows(site, user.email, isOwner, site.canShare, new Set(accounts), pendingRoles)}</ul>
   </div>
 </section>
 
@@ -400,11 +431,6 @@ export async function appSettingsPage(c: Context<AppEnv>, id: string): Promise<R
 <section class="panel" id="panel-activity" role="tabpanel" aria-labelledby="tab-activity" hidden>
   <h2>Recent activity</h2>
   ${acts ? `<ol class="acts">${acts}</ol>` : `<p class="muted">Nothing yet.</p>`}
-  ${
-    responseCount
-      ? `<p class="muted">People sent this app ${responseCount} answer${responseCount === 1 ? "" : "s"}. <a href="/apps/${e(encodeURIComponent(site.id))}/responses.csv" download>Download them as a spreadsheet</a></p>`
-      : ""
-  }
   <p><a href="/apps/${e(encodeURIComponent(site.id))}/activity">See all activity</a></p>
 </section>
 </div>
@@ -414,6 +440,23 @@ export async function appSettingsPage(c: Context<AppEnv>, id: string): Promise<R
     <h2 id="dlg-reset-title">Reset the link?</h2>
     <p>You'll get a new link. The current one stops working right away, including for people who already opened it.</p>
     <div class="dialog-actions"><button type="button" class="secondary" data-close>Cancel</button><button type="button" data-reset-go>Reset link</button></div>
+  </div>
+</dialog>
+
+<dialog id="dlg-transfer" class="howto-dialog confirm" aria-labelledby="dlg-transfer-title">
+  <div class="howto">
+    <h2 id="dlg-transfer-title">Make <span data-transfer-to></span> the owner?</h2>
+    <p>They'll control <span data-name-text>${e(name)}</span>, including deleting it and transferring it again. You'll stay on as an Admin.</p>
+    <label class="check-row"><input type="checkbox" data-transfer-ok> <span>I understand only the new owner can transfer it back.</span></label>
+    <div class="dialog-actions"><button type="button" class="secondary" data-close>Cancel</button><button type="button" data-transfer-go disabled>Make owner</button></div>
+  </div>
+</dialog>
+
+<dialog id="dlg-signup" class="howto-dialog confirm" aria-labelledby="dlg-signup-title">
+  <div class="howto">
+    <h2 id="dlg-signup-title"><span data-signup-email></span> needs a Formelab account</h2>
+    <p><span data-signup-role></span>s sign in to make changes, so they need an account. We'll email them a link to join. They stay a Viewer until they sign up, then become <span data-signup-a-role></span> automatically.</p>
+    <div class="dialog-actions"><button type="button" class="secondary" data-close>Cancel</button><button type="button" data-signup-go>Send sign-up invite</button></div>
   </div>
 </dialog>
 
@@ -446,9 +489,9 @@ ${
 export async function dashboardPage(c: Context<AppEnv>): Promise<Response> {
   const ctx = ctxOf(c);
   if (!ctx.user.active) return sharedPage(c);
-  const sites = await listOwnSites(ctx);
+  const [sites, stars] = await Promise.all([listOwnSites(ctx), starredIds(ctx)]);
   const body = sites.length
-    ? appBrowser(sites.map((s) => ({ ...s, canManage: true })), { shared: false })
+    ? appBrowser(sites.map((s) => ({ ...s, canManage: true, starred: stars.has(s.id) })), { shared: false })
     : `<section class="empty">
   <h2>What do you want to make?</h2>
   <p>A budget tracker, a sign-up sheet for your team, a tiny game. Describe it to your AI and it lands here, live.</p>

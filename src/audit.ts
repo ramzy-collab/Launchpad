@@ -153,6 +153,16 @@ export function describeActivity(row: AuditRow): string {
       const s = parts.join("; ") || "Changed the app's settings";
       return s[0]!.toUpperCase() + s.slice(1);
     }
+    case "role_invite": {
+      const who = list(d.emails);
+      return `Sent ${who || "someone"} a sign-up invite to become ${d.role === "admin" ? "an Admin" : "an Editor"}`;
+    }
+    case "role_invite_joined":
+      return `Joined Formelab and became ${d.role === "admin" ? "an Admin" : "an Editor"}`;
+    case "transfer_owner":
+      return `Made ${d.to} the owner${d.from ? ` (${d.from} stays on as an Admin)` : ""}`;
+    case "copy_site":
+      return `Made a copy of ${d.from ?? "an app"}`;
     case "secret_set":
       return `Saved the secret ${d.name}`;
     case "secret_delete":
