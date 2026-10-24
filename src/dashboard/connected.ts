@@ -7,10 +7,10 @@ import { ctxOf } from "../api";
 import { appsUsing, connectorActivity, getConnector, listConnectors, planKeyMove, useCounts, type AppUse, type ConnectorView } from "../connectors";
 import type { AppEnv } from "../env";
 import { GEMINI_DAILY_DEFAULT, GEMINI_DAILY_MAX, GEMINI_MODEL_NAME, GEMINI_VIEWER_PER_DAY, geminiStatus } from "../gemini";
-import { plainPage } from "../serve";
+import { notFoundPage, plainPage } from "../serve";
+import { siteName } from "../sites";
 import { sheetsConfigured, sheetsStatus } from "../sheets";
-import { escapeHtml as e, parseJsonArray } from "../util";
-import { ago } from "./apps";
+import { ago, escapeHtml as e, parseJsonArray } from "../util";
 import { AI_LOGOS } from "./logos";
 import { connectorLogo, fmtTime, SHEETS_LOGO, shell } from "./page";
 import { SERVICE_ICONS, SPRITE_URL } from "./services";
@@ -157,7 +157,7 @@ const ACTIVITY: Record<string, (d: Record<string, unknown>) => string> = {
 /** /connected/<name>: one connector's page. */
 export async function connectorPage(c: Context<AppEnv>): Promise<Response> {
   const user = c.get("user");
-  if (!on(c)) return plainPage(404, "Not found", "There is nothing here.");
+  if (!on(c)) return notFoundPage();
   const name = c.req.param("name") ?? "";
   if (name === "gemini") return geminiPage(c);
   if (name === "google-sheets") return sheetsPage(c);
@@ -321,7 +321,7 @@ async function sheetsPage(c: Context<AppEnv>): Promise<Response> {
   const rows = results
     .map((s) => {
       const n = parseJsonArray(s.sheets).length;
-      const name = s.title || s.mount_path || s.namespace;
+      const name = siteName(s);
       return `<li><span class="cx-app">${e((name[0] ?? "?").toUpperCase())}</span><span class="cx-app-txt"><a href="/apps/${e(encodeURIComponent(s.id))}#connected">${e(name)}</a><span>Its spreadsheets are listed on its Connected apps tab</span></span><span class="cx-num">${n} spreadsheet${n === 1 ? "" : "s"}</span></li>`;
     })
     .join("");

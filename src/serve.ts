@@ -1,6 +1,6 @@
 import type { Env, User } from "./env";
 import { extOf, contentTypeFor, isHtmlPath } from "./mime";
-import { resolveSiteForPath, siteUrl, type SiteRow } from "./sites";
+import { resolveSiteForPath, siteUrl, versionPrefix, type SiteRow } from "./sites";
 import { appPwaTags } from "./pwa";
 import { escapeHtml } from "./util";
 
@@ -27,18 +27,21 @@ export function plainPage(status: number, title: string, message: string): Respo
   });
 }
 
+/** The page for any address with nothing behind it. */
+export const notFoundPage = () => plainPage(404, "Not found", "There is nothing here.");
+
 /**
  * Inserts <base href="/"> as the first child of <head> (or synthesizes one), followed by
  * the tags that let the app be installed on a device (see pwa.ts).
  */
-async function injectHead(res: Response, env: Env, site: SiteRow, baseHref: string, opts: ServeOptions = {}): Promise<Response> {
+async function injectHead(res: Response, env: Env, site: SiteRow, opts: ServeOptions): Promise<Response> {
   let text = await res.text();
   // The Answers link for the app's owner and editors, at the end of the page (see answers.ts).
   if (opts.answersLink && (await opts.answersLink(text))) {
     const end = text.search(/<\/body>(?![\s\S]*<\/body>)/i);
     text = end === -1 ? text + ANSWERS_LINK : text.slice(0, end) + ANSWERS_LINK + text.slice(end);
   }
-  const tag = `<base href="${escapeHtml(baseHref)}">` + (await appPwaTags(env, site, text));
+  const tag = `<base href="/">` + (await appPwaTags(env, site, text));
   if (/<head[\s>]/i.test(text)) {
     return new HTMLRewriter()
       .on("head", {
@@ -85,7 +88,7 @@ export async function serveAppFile(req: Request, env: Env, site: SiteRow, opts: 
     return plainPage(400, "Bad request", "The address is not valid.");
   }
   if (path.includes("\0") || path.split("/").includes("..")) return plainPage(400, "Bad request", "The address is not valid.");
-  return serveFromSite(req, env, site, path.slice(1), "/", opts);
+  return serveFromSite(req, env, site, path.slice(1), opts);
 }
 
 /**
@@ -112,14 +115,12 @@ export async function legacyAppRedirect(req: Request, env: Env, ns: string): Pro
   });
 }
 
-async function serveFromSite(req: Request, env: Env, site: SiteRow, rel: string, baseHref: string, opts: ServeOptions = {}): Promise<Response> {
-  const prefix = `sites/${site.id}/${site.current_version}/`;
+async function serveFromSite(req: Request, env: Env, site: SiteRow, rel: string, opts: ServeOptions): Promise<Response> {
+  const prefix = versionPrefix(site);
   for (const candidate of candidatesFor(rel, !!site.spa)) {
-    const obj = await env.BUCKET.get(prefix + candidate, {
-      onlyIf: isHtmlPath(candidate) ? undefined : req.headers,
-    });
-    if (!obj) continue;
     const html = isHtmlPath(candidate);
+    const obj = await env.BUCKET.get(prefix + candidate, { onlyIf: html ? undefined : req.headers });
+    if (!obj) continue;
     const headers = new Headers(BASE_HEADERS);
     headers.set("content-type", contentTypeFor(candidate));
     if (html) {
@@ -138,7 +139,7 @@ async function serveFromSite(req: Request, env: Env, site: SiteRow, rel: string,
       return new Response(null, { status: 200, headers });
     }
     const res = new Response(obj.body, { status: 200, headers });
-    return html ? injectHead(res, env, site, baseHref, opts) : res;
+    return html ? injectHead(res, env, site, opts) : res;
   }
   return plainPage(404, "Not found", "This app has no file at this address.");
 }

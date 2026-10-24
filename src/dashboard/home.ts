@@ -1,7 +1,6 @@
 // Public pages on the apex: the home page with the waitlist, and the login screen. They follow the
 // "wall" prototype (fl.formelab.ai/wall) and use home.css; every style lives in that file so the
 // pages keep a strict CSP.
-import { escapeHtml as e } from "../util";
 import { HOME_FONTS, head, htmlResponse } from "./layout";
 
 export const homeHead = (title: string, scripts: string[] = []) => head(title, scripts, { css: "home.css", fonts: HOME_FONTS });
@@ -207,10 +206,10 @@ ${topNav()}
 
 /**
  * The login screen without WorkOS: its button leads to Cloudflare Access. With WorkOS configured,
- * /login goes straight to WorkOS's sign-in page instead (see loginStartPath).
+ * /login is Formelab's own sign-in page instead (see signin.ts).
  * `admin` is the admin panel's own, separate sign-in on admin.DOMAIN.
  */
-export function loginPage(opts: { returnTo: string; admin?: boolean; share?: string }): Response {
+export function loginPage(opts: { admin?: boolean; share?: string }): Response {
   const options = `<a class="btn w100" href="/app">Log in</a>
       <p class="hint">You'll confirm it's you with a one-time code sent to your email, or with your work account.</p>`;
   return htmlResponse(`<!doctype html>

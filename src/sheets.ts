@@ -11,13 +11,11 @@ import type { AppEnv, Env, User } from "./env";
 import { now } from "./env";
 import { badRequest, err } from "./errors";
 import { appOrigin } from "./hosts";
-import { decryptSecret, encryptSecret, rateLimit } from "./secrets";
+import { markServiceKeyUsed, rateLimit, readServiceKey, saveServiceKey } from "./secrets";
 import { viewerLimits } from "./gemini";
 import { cookieHeader, readCookie } from "./session";
 import { addSiteSheet, type SiteRow } from "./sites";
-import { b64encode, base32, parseJsonArray, randomBytes } from "./util";
-
-const b64url = (bytes: Uint8Array) => b64encode(bytes).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+import { b64url, base32, parseJsonArray, randomBytes } from "./util";
 
 const SERVICE = "google_sheets";
 const AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
@@ -31,7 +29,6 @@ const MAX_BODY = 1024 * 1024;
 const TIMEOUT_MS = 30_000;
 
 export const sheetsConfigured = (env: Env) => !!(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET);
-const scope = (email: string) => `user:${email}`;
 const redirectUri = (env: Env, requestUrl: string) => `${appOrigin(env, requestUrl)}/services/google-sheets/callback`;
 
 interface Tokens {
@@ -47,24 +44,8 @@ const loadRow = (env: Env, email: string) =>
     .bind(email, SERVICE)
     .first<Row>();
 
-async function saveTokens(env: Env, email: string, tokens: Tokens, googleEmail?: string) {
-  const { iv, ciphertext } = await encryptSecret(env, scope(email), SERVICE, JSON.stringify(tokens));
-  const t = now();
-  if (googleEmail !== undefined) {
-    await env.DB.prepare(
-      `INSERT INTO service_keys (owner_email, service, iv, ciphertext, hint, created_at, updated_at)
-       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)
-       ON CONFLICT(owner_email, service) DO UPDATE SET iv = excluded.iv, ciphertext = excluded.ciphertext,
-         hint = excluded.hint, updated_at = excluded.updated_at`,
-    )
-      .bind(email, SERVICE, iv, ciphertext, googleEmail, t)
-      .run();
-  } else {
-    await env.DB.prepare("UPDATE service_keys SET iv = ?, ciphertext = ?, updated_at = ? WHERE owner_email = ? AND service = ?")
-      .bind(iv, ciphertext, t, email, SERVICE)
-      .run();
-  }
-}
+/** Saves the tokens; `googleEmail` (shown as the connection's account) only when connecting. */
+const saveTokens = (env: Env, email: string, tokens: Tokens, googleEmail?: string) => saveServiceKey(env, email, SERVICE, JSON.stringify(tokens), googleEmail);
 
 export async function sheetsStatus(env: Env, email: string): Promise<{ connected: boolean; account?: string; createdAt?: number; lastUsedAt?: number | null }> {
   const row = await loadRow(env, email);
@@ -148,7 +129,7 @@ export async function sheetsDisconnect(env: Env, user: User): Promise<{ ok: true
   const row = await loadRow(env, user.email);
   if (!row) return { ok: true };
   try {
-    const tokens = JSON.parse(await decryptSecret(env, scope(user.email), SERVICE, row.iv, row.ciphertext)) as Tokens;
+    const tokens = JSON.parse(await readServiceKey(env, user.email, SERVICE, row)) as Tokens;
     await fetch(REVOKE_URL, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ token: tokens.refresh_token }) });
   } catch {
     /* revoking at Google is best effort; the tokens are deleted either way */
@@ -169,7 +150,7 @@ const notConnected = () =>
 async function accessToken(env: Env, email: string): Promise<string> {
   const row = await loadRow(env, email);
   if (!row) throw notConnected();
-  const tokens = JSON.parse(await decryptSecret(env, scope(email), SERVICE, row.iv, row.ciphertext)) as Tokens;
+  const tokens = JSON.parse(await readServiceKey(env, email, SERVICE, row)) as Tokens;
   if (tokens.access_token && (tokens.expires_at ?? 0) > now() + 60_000) return tokens.access_token;
   const res = await fetch(TOKEN_URL, {
     method: "POST",
@@ -243,7 +224,7 @@ export async function sheetsCall(env: Env, site: SiteRow, viewer: User, req: She
   const done = (status: number | string) =>
     Promise.all([
       audit(env, viewer.email, "sheets", target, { siteId: site.id, method, op: path.replace(/^spreadsheets\/[^/:]+/, "spreadsheets/…").slice(0, 80), status }),
-      env.DB.prepare("UPDATE service_keys SET last_used_at = ? WHERE owner_email = ? AND service = ?").bind(now(), site.owner_email, SERVICE).run(),
+      markServiceKeyUsed(env, site.owner_email, SERVICE),
     ]);
   let res: Response;
   try {

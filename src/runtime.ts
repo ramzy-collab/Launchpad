@@ -82,7 +82,7 @@ export function runtimeApi() {
       throw badRequest("The key is not correctly URL-encoded.", "Use the SDK, which encodes keys for you.");
     }
   };
-  type Ctx = { env: AppEnv["Bindings"]; get: <K extends keyof AppEnv["Variables"]>(k: K) => AppEnv["Variables"][K]; req: { url: string; text(): Promise<string> } };
+  type Ctx = Context<AppEnv>;
   const sharedKey = (c: Ctx) => keyFrom(new URL(c.req.url).pathname, "/_api/kv/");
   const myKey = (c: Ctx) => keyFrom(new URL(c.req.url).pathname, "/_api/me/kv/");
   const readValue = async (c: Ctx) => {
@@ -93,12 +93,16 @@ export function runtimeApi() {
   const shared = (c: Ctx) => ({ siteId: c.get("site").id });
   const mine = (c: Ctx) => ({ siteId: c.get("site").id, email: c.get("user").email });
 
+  /** Whether the signed-in person is one of the app's owners or editors. */
+  const manages = async (c: Ctx) => {
+    const ns = await getNamespace(c.env, c.get("namespace"));
+    return !!ns && canManageSite(c.get("user"), c.get("site"), ns);
+  };
+
   /** Shared data: everyone who can open the app reads it; who may change it is the app's kv_writes setting. */
   const requireDataWrite = async (c: Ctx) => {
-    const site = c.get("site");
-    if (site.kv_writes !== "editors") return;
-    const nsRow = await getNamespace(c.env, c.get("namespace"));
-    if (!nsRow || !canManageSite(c.get("user"), site, nsRow)) {
+    if (c.get("site").kv_writes !== "editors") return;
+    if (!(await manages(c))) {
       throw err(
         403,
         "read_only_data",
@@ -109,7 +113,7 @@ export function runtimeApi() {
   };
 
   // A list too large for one response comes in pages: x-formelab-next names the key to continue after.
-  const listKv = async (c: Context<AppEnv>, scope: KvScope) => {
+  const listKv = async (c: Ctx, scope: KvScope) => {
     const { rows, next } = await kvList(c.env, scope, c.req.query("prefix") ?? "", c.req.query("after") ?? "");
     if (next !== null) c.header("x-formelab-next", encodeURIComponent(next));
     return c.json(rows);
@@ -131,16 +135,29 @@ export function runtimeApi() {
   api.put("/me/kv/*", async (c) => c.json(await kvSet(c.env, mine(c), myKey(c), await readValue(c))));
   api.delete("/me/kv/*", async (c) => c.json(await kvDelete(c.env, mine(c), myKey(c))));
 
-  const requireManage = async (c: { env: AppEnv["Bindings"]; get: <K extends keyof AppEnv["Variables"]>(k: K) => AppEnv["Variables"][K] }, what = "manage its secrets") => {
-    const nsRow = await getNamespace(c.env, c.get("namespace"));
-    if (!nsRow || !canManageSite(c.get("user"), c.get("site"), nsRow)) {
-      throw forbidden(`Only the app's owner or editors can ${what}.`);
+  const requireManage = async (c: Ctx, what = "manage its secrets") => {
+    if (!(await manages(c))) throw forbidden(`Only the app's owner or editors can ${what}.`);
+  };
+
+  /**
+   * A JSON object body. Requests above `maxBytes` (counting the JSON's overhead, so twice the
+   * service's own 1 MB limit) are turned away before reading; `example` and `how` go in the errors.
+   */
+  const objectBody = async (c: Ctx, example: string, how: string, tooLarge?: [message: string, hint: string]): Promise<Record<string, unknown>> => {
+    if (tooLarge && Number(c.req.header("content-length") ?? 0) > 2 * 1024 * 1024) throw err(413, "body_too_large", ...tooLarge);
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      throw badRequest(`The body must be JSON like ${example}.`, how);
     }
+    if (!body || typeof body !== "object") throw badRequest("The body must be a JSON object.", how);
+    return body as Record<string, unknown>;
   };
 
   // Responses (see responses.ts): anyone who can open the app sends them; only managers read them.
   // Behind the responses flag, which follows the app's owner.
-  const responsesGate = async (c: import("hono").Context<AppEnv>, next: () => Promise<void>) => {
+  const responsesGate = async (c: Ctx, next: () => Promise<void>) => {
     if (!(await flagOnForOwner(c.env, "responses", c.get("site").owner_email))) {
       throw err(403, "not_available", "Responses aren't available on Formelab yet.", "Check back soon; the app can't collect responses until then.");
     }
@@ -167,12 +184,7 @@ export function runtimeApi() {
   api.get("/secrets", async (c) => c.json(await secretList(c.env, c.get("site"))));
   api.put("/secrets/:name", async (c) => {
     await requireManage(c);
-    let body: unknown;
-    try {
-      body = await c.req.json();
-    } catch {
-      throw badRequest("The body must be JSON like { \"value\": \"...\" }.", "Use formelab.secrets.set(name, value).");
-    }
+    const body = await objectBody(c, '{ "value": "..." }', "Use formelab.secrets.set(name, value).");
     return c.json(await secretSet(c.env, c.get("site"), c.get("user"), c.req.param("name"), body));
   });
   api.delete("/secrets/:name", async (c) => {
@@ -180,21 +192,13 @@ export function runtimeApi() {
     return c.json(await secretDelete(c.env, c.get("site"), c.get("user"), c.req.param("name")));
   });
   api.post("/secrets/:name/proxy", async (c) => {
-    const len = Number(c.req.header("content-length") ?? 0);
-    if (len > 2 * 1024 * 1024) throw err(413, "body_too_large", "The proxy request body is larger than 1 MB.", "Send less data.");
-    let body: unknown;
-    try {
-      body = await c.req.json();
-    } catch {
-      throw badRequest("The body must be JSON like { \"url\": \"https://...\" }.", "Use formelab.secrets.proxy(name, { url }).");
-    }
-    if (!body || typeof body !== "object") throw badRequest("The body must be a JSON object.", "Use formelab.secrets.proxy(name, { url }).");
-    return c.json(await proxy(c.env, c.get("site"), c.get("user"), c.req.param("name"), body as Record<string, unknown>));
+    const body = await objectBody(c, '{ "url": "https://..." }', "Use formelab.secrets.proxy(name, { url }).", ["The proxy request body is larger than 1 MB.", "Send less data."]);
+    return c.json(await proxy(c.env, c.get("site"), c.get("user"), c.req.param("name"), body));
   });
 
   // Gemini through the app owner's connected key (see gemini.ts). Anyone who can open the app can use it.
   // Behind the connected_apps flag, which follows the app's owner (it's their key).
-  const connectedAppsGate = async (c: import("hono").Context<AppEnv>, next: () => Promise<void>) => {
+  const connectedAppsGate = async (c: Ctx, next: () => Promise<void>) => {
     if (!(await flagOnForOwner(c.env, "connected_apps", c.get("site").owner_email))) {
       if (c.req.method === "GET") return c.json({ connected: false, available: false });
       throw err(403, "not_available", "Connected apps like Google Gemini and Google Sheets aren't available on Formelab yet.", "Check back soon; the app can't use AI until then.");
@@ -205,15 +209,8 @@ export function runtimeApi() {
   api.use("/sheets", connectedAppsGate);
   api.get("/ai/gemini", async (c) => c.json({ ...(await geminiAvailable(c.env, c.get("site"))), available: true }));
   api.post("/ai/gemini", async (c) => {
-    if (Number(c.req.header("content-length") ?? 0) > 2 * 1024 * 1024) throw err(413, "body_too_large", "The request to Gemini is larger than 1 MB.", "Send a shorter prompt or smaller images.");
-    let body: unknown;
-    try {
-      body = await c.req.json();
-    } catch {
-      throw badRequest("The body must be JSON like { \"prompt\": \"...\" }.", 'Use formelab.gemini.generate("your prompt").');
-    }
-    if (!body || typeof body !== "object") throw badRequest("The body must be a JSON object.", 'Use formelab.gemini.generate("your prompt").');
-    return c.json(await geminiGenerate(c.env, c.get("site"), c.get("user"), body as Record<string, unknown>));
+    const body = await objectBody(c, '{ "prompt": "..." }', 'Use formelab.gemini.generate("your prompt").', ["The request to Gemini is larger than 1 MB.", "Send a shorter prompt or smaller images."]);
+    return c.json(await geminiGenerate(c.env, c.get("site"), c.get("user"), body));
   });
 
   // Custom connectors the app was built to use, with the owner's keys (see connectors.ts).
@@ -221,30 +218,15 @@ export function runtimeApi() {
   api.use("/connectors/*", connectedAppsGate);
   api.get("/connectors", (c) => c.json(parseJsonArray(c.get("site").connectors ?? "[]").filter((n) => n !== "gemini")));
   api.post("/connectors/:name/fetch", async (c) => {
-    const len = Number(c.req.header("content-length") ?? 0);
-    if (len > 2 * 1024 * 1024) throw err(413, "body_too_large", "The request body is larger than 1 MB.", "Send less data.");
-    let body: unknown;
-    try {
-      body = await c.req.json();
-    } catch {
-      throw badRequest("The body must be JSON like { \"url\": \"/v1/...\" }.", 'Use formelab.connectors.fetch("name", "/path").');
-    }
-    if (!body || typeof body !== "object") throw badRequest("The body must be a JSON object.", 'Use formelab.connectors.fetch("name", "/path").');
-    return c.json(await connectorFetch(c.env, c.get("site"), c.get("user"), c.req.param("name"), body as Record<string, unknown>));
+    const body = await objectBody(c, '{ "url": "/v1/..." }', 'Use formelab.connectors.fetch("name", "/path").', ["The request body is larger than 1 MB.", "Send less data."]);
+    return c.json(await connectorFetch(c.env, c.get("site"), c.get("user"), c.req.param("name"), body));
   });
 
   // Google Sheets through the app owner's connected Google account (see sheets.ts).
   api.get("/sheets", async (c) => c.json(await sheetsAvailable(c.env, c.get("site"))));
   api.post("/sheets", async (c) => {
-    if (Number(c.req.header("content-length") ?? 0) > 2 * 1024 * 1024) throw err(413, "body_too_large", "The request to Google Sheets is larger than 1 MB.", "Send fewer rows at a time.");
-    let body: unknown;
-    try {
-      body = await c.req.json();
-    } catch {
-      throw badRequest("The body must be JSON like { \"method\": \"GET\", \"path\": \"spreadsheets/...\" }.", "Use formelab.sheets.read/append/update/create.");
-    }
-    if (!body || typeof body !== "object") throw badRequest("The body must be a JSON object.", "Use formelab.sheets.read/append/update/create.");
-    return c.json(await sheetsCall(c.env, c.get("site"), c.get("user"), body as Record<string, unknown>));
+    const body = await objectBody(c, '{ "method": "GET", "path": "spreadsheets/..." }', "Use formelab.sheets.read/append/update/create.", ["The request to Google Sheets is larger than 1 MB.", "Send fewer rows at a time."]);
+    return c.json(await sheetsCall(c.env, c.get("site"), c.get("user"), body));
   });
 
   api.notFound(() => jsonError(err(404, "not_found", "No such API endpoint.", "Check the SDK reference in /_platform/guide.md.")));

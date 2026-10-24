@@ -1,18 +1,18 @@
 // Google Gemini as a connected app: a person saves their Gemini API key once, and the apps built to
-// use it (their connectors list "gemini", see connectors.ts) can call Gemini through Formelab (formelab.gemini.generate in the SDK). The key is
-// encrypted at rest, never sent to a browser, and only used for apps that person owns, so people
-// they share an app with use the owner's key.
+// use it (their connectors list "gemini", see connectors.ts) can call Gemini through Formelab
+// (formelab.gemini.generate in the SDK). The key is encrypted at rest, never sent to a browser, and
+// only used for apps that person owns, so people they share an app with use the owner's key.
 import { audit } from "./audit";
 import type { Env, User } from "./env";
-import { now } from "./env";
-import { badRequest, err } from "./errors";
-import { dailyLimit, decryptSecret, encryptSecret, rateLimit, usedToday } from "./secrets";
+import { badRequest, err, upstreamMessage } from "./errors";
+import { dailyLimit, markServiceKeyUsed, rateLimit, readServiceKey, saveServiceKey, usedToday } from "./secrets";
 import { siteUses } from "./connectors";
 import type { SiteRow } from "./sites";
+import { isTimeout, wholeNumber } from "./util";
 
 export const GEMINI_MODEL = "gemini-3.5-flash-lite";
 export const GEMINI_MODEL_NAME = "Gemini 3.5 Flash-Lite";
-const API = "https://generativelanguage.googleapis.com/v1beta";
+export const GEMINI_API = "https://generativelanguage.googleapis.com/v1beta";
 const SERVICE = "gemini";
 export const GEMINI_RATE_PER_MINUTE = 60; // the same limit as the PROXY_LIMITER binding, which enforces it in production
 const MAX_BODY = 1024 * 1024;
@@ -26,9 +26,6 @@ export const GEMINI_VIEWER_PER_DAY = 100;
 export const GEMINI_DAILY_DEFAULT = 1000;
 export const GEMINI_DAILY_MAX = 100_000;
 const ownerDayKey = (owner: string) => `gemini-owner:${owner}`;
-
-// The key is encrypted like app secrets, bound to the person: AAD "user:<email>:gemini".
-const scope = (email: string) => `user:${email}`;
 
 export interface ServiceStatus {
   connected: boolean;
@@ -62,7 +59,7 @@ export async function geminiStatus(env: Env, email: string): Promise<ServiceStat
 
 /** Sets the most Gemini calls the person's apps may make a day (all apps and people together). */
 export async function setGeminiDailyLimit(env: Env, user: User, raw: unknown): Promise<ServiceStatus> {
-  const n = typeof raw === "number" ? raw : typeof raw === "string" && /^\s*\d+\s*$/.test(raw) ? Number(raw) : NaN;
+  const n = wholeNumber(raw);
   if (!Number.isInteger(n) || n < 0 || n > GEMINI_DAILY_MAX) {
     throw badRequest(`dailyLimit must be a whole number from 0 to ${GEMINI_DAILY_MAX}.`, `The most Gemini calls your apps may make in a day (the default is ${GEMINI_DAILY_DEFAULT}).`);
   }
@@ -71,15 +68,6 @@ export async function setGeminiDailyLimit(env: Env, user: User, raw: unknown): P
   await audit(env, user.email, "service_limit", null, { service: "Google Gemini", dailyLimit: n });
   return geminiStatus(env, user.email);
 }
-
-const googleError = async (res: Response) => {
-  try {
-    const body = await res.json<{ error?: { message?: string } }>();
-    return body.error?.message?.slice(0, 300) ?? `HTTP ${res.status}`;
-  } catch {
-    return `HTTP ${res.status}`;
-  }
-};
 
 /** Checks the key with Google (a free model lookup), then saves it encrypted. */
 export async function connectGemini(env: Env, user: User, rawKey: unknown): Promise<ServiceStatus> {
@@ -91,27 +79,18 @@ export async function connectGemini(env: Env, user: User, rawKey: unknown): Prom
   }
   let res: Response;
   try {
-    res = await fetch(`${API}/models/${GEMINI_MODEL}`, { headers: { "x-goog-api-key": key } });
+    res = await fetch(`${GEMINI_API}/models/${GEMINI_MODEL}`, { headers: { "x-goog-api-key": key } });
   } catch {
     throw err(502, "gemini_unreachable", "Couldn't reach Google to check the key.", "Try again in a minute.");
   }
   if (!res.ok) {
-    const why = await googleError(res);
+    const why = await upstreamMessage(res);
     if (res.status === 400 || res.status === 401 || res.status === 403) {
       throw badRequest(`Google didn't accept this key: ${why}`, "Check the key in Google AI Studio, or create a new one, then paste it again.");
     }
     throw err(502, "gemini_error", `Google couldn't check the key right now: ${why}`, "Try again in a minute.");
   }
-  const { iv, ciphertext } = await encryptSecret(env, scope(user.email), SERVICE, key);
-  const t = now();
-  await env.DB.prepare(
-    `INSERT INTO service_keys (owner_email, service, iv, ciphertext, hint, created_at, updated_at)
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)
-     ON CONFLICT(owner_email, service) DO UPDATE SET iv = excluded.iv, ciphertext = excluded.ciphertext,
-       hint = excluded.hint, updated_at = excluded.updated_at`,
-  )
-    .bind(user.email, SERVICE, iv, ciphertext, key.slice(-4), t)
-    .run();
+  await saveServiceKey(env, user.email, SERVICE, key, key.slice(-4));
   await audit(env, user.email, "service_connect", null, { service: "Google Gemini" });
   return geminiStatus(env, user.email);
 }
@@ -220,17 +199,14 @@ export async function geminiGenerate(env: Env, site: SiteRow, viewer: User, req:
     `This app's owner allows ${ownerCap} Gemini calls a day across their apps, and today's are used up.`,
     "Try again tomorrow. The owner can raise the limit in Formelab under Connected apps → Google Gemini.",
   );
-  const key = await decryptSecret(env, scope(site.owner_email), SERVICE, row.iv, row.ciphertext);
+  const key = await readServiceKey(env, site.owner_email, SERVICE, row);
   const target = `${site.namespace}/${site.mount_path}`;
   const done = (detail: Record<string, unknown>) =>
-    Promise.all([
-      audit(env, viewer.email, "gemini", target, { siteId: site.id, ...detail }),
-      env.DB.prepare("UPDATE service_keys SET last_used_at = ? WHERE owner_email = ? AND service = ?").bind(now(), site.owner_email, SERVICE).run(),
-    ]);
+    Promise.all([audit(env, viewer.email, "gemini", target, { siteId: site.id, ...detail }), markServiceKeyUsed(env, site.owner_email, SERVICE)]);
 
   let res: Response;
   try {
-    res = await fetch(`${API}/models/${GEMINI_MODEL}:generateContent`, {
+    res = await fetch(`${GEMINI_API}/models/${GEMINI_MODEL}:generateContent`, {
       method: "POST",
       headers: { "content-type": "application/json", "x-goog-api-key": key },
       body: payload,
@@ -238,11 +214,10 @@ export async function geminiGenerate(env: Env, site: SiteRow, viewer: User, req:
     });
   } catch (e) {
     await done({ status: "timeout" });
-    const timedOut = e instanceof Error && (e.name === "TimeoutError" || e.name === "AbortError");
-    throw err(504, "gemini_unreachable", timedOut ? "Gemini took too long to answer." : "Couldn't reach Gemini.", "Try again, or ask for a shorter answer.");
+    throw err(504, "gemini_unreachable", isTimeout(e) ? "Gemini took too long to answer." : "Couldn't reach Gemini.", "Try again, or ask for a shorter answer.");
   }
   if (!res.ok) {
-    const why = await googleError(res);
+    const why = await upstreamMessage(res);
     await done({ status: res.status });
     if (res.status === 400) throw badRequest(`Gemini rejected the request: ${why}`, "Check the prompt or options you sent.");
     if (res.status === 401 || res.status === 403) {

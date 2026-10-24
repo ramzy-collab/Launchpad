@@ -62,12 +62,6 @@ async function initializeClientName(req: Request): Promise<string | null> {
   return null;
 }
 
-/** The apex origin: https://DOMAIN in production, the request's own origin in dev (http://localhost:8787). */
-/** The origin of DOMAIN, where the connector, OAuth and sign-in live. */
-export function apexOrigin(env: Env, requestUrl: string): string {
-  return aiOrigin(env, requestUrl);
-}
-
 const mcpApiHandler = {
   async fetch(req: Request, env: Env, ctx: ExecutionContext & { props?: McpProps }): Promise<Response> {
     const email = ctx.props?.email;
@@ -152,8 +146,6 @@ const notServed = { fetch: () => new Response(null, { status: 404 }) } as unknow
 export function oauthHelpers(env: Env): OAuthHelpers {
   return env.OAUTH_PROVIDER ?? getOAuthApi(providerOptions(aiOrigin(env), notServed), env);
 }
-
-const helpers = oauthHelpers;
 
 // ---------------------------------------------------------------------------
 // /authorize: consent page (behind Cloudflare Access)
@@ -243,7 +235,7 @@ function authorizationFailure(err: unknown): Response {
 }
 
 export async function authorizeGet(c: Context<AppEnv>): Promise<Response> {
-  const oauth = helpers(c.env);
+  const oauth = oauthHelpers(c.env);
   try {
     const request = await oauth.parseAuthRequest(c.req.raw);
     const details = await oauth.describeConsent(request);
@@ -260,7 +252,7 @@ export async function authorizeGet(c: Context<AppEnv>): Promise<Response> {
 }
 
 export async function authorizePost(c: Context<AppEnv>): Promise<Response> {
-  const oauth = helpers(c.env);
+  const oauth = oauthHelpers(c.env);
   const user = c.get("user");
   try {
     const form = await c.req.formData();
@@ -305,14 +297,17 @@ export interface ConnectionView {
   readOnly: boolean;
 }
 
+/** Grant times come in seconds; anything already past 1e12 is milliseconds. */
+const toMs = (t: number) => (t < 1e12 ? t * 1000 : t);
+
 export async function listConnections(env: Env, email: string): Promise<ConnectionView[]> {
   const { items } = await oauthHelpers(env).listUserGrants(email, { limit: 100 });
   return items
     .map((g) => ({
       id: g.id,
       clientName: typeof g.metadata?.clientName === "string" ? g.metadata.clientName : g.clientId,
-      createdAt: g.createdAt * (g.createdAt < 1e12 ? 1000 : 1),
-      expiresAt: g.expiresAt ? g.expiresAt * (g.expiresAt < 1e12 ? 1000 : 1) : null,
+      createdAt: toMs(g.createdAt),
+      expiresAt: g.expiresAt ? toMs(g.expiresAt) : null,
       readOnly: g.metadata?.access === "read",
     }))
     .sort((a, b) => b.createdAt - a.createdAt);
@@ -321,6 +316,6 @@ export async function listConnections(env: Env, email: string): Promise<Connecti
 export async function revokeConnection(env: Env, email: string, grantId: string): Promise<void> {
   const mine = await listConnections(env, email);
   if (!mine.some((g) => g.id === grantId)) throw notFound("Connection");
-  await helpers(env).revokeGrant(grantId, email);
+  await oauthHelpers(env).revokeGrant(grantId, email);
   await audit(env, email, "oauth_disconnect", null, { grantId });
 }

@@ -9,10 +9,10 @@ import { z } from "zod";
 import { filesForPublish } from "./changes";
 import { recordMcpCall } from "./usage";
 import type { Env, User } from "./env";
-import { ApiError, notFound } from "./errors";
+import { ApiError, errorBody, notFound } from "./errors";
 import { GUIDE_MD } from "./generated/assets";
 import { canManageSite, canViewSite } from "./auth";
-import { apexOrigin } from "./oauth";
+import { aiOrigin } from "./hosts";
 import { listResponses } from "./responses";
 import {
   deleteSite,
@@ -29,6 +29,7 @@ import {
   validateMountPath,
   siteView,
   updateSite,
+  versionPrefix,
   type Ctx,
 } from "./sites";
 
@@ -41,7 +42,7 @@ async function run(fn: () => Promise<unknown>): Promise<ToolResult> {
     return { content: [{ type: "text", text: typeof value === "string" ? value : JSON.stringify(value, null, 2) }] };
   } catch (e) {
     if (e instanceof ApiError) {
-      return { isError: true, content: [{ type: "text", text: JSON.stringify({ error: { code: e.code, message: e.message, hint: e.hint } }, null, 2) }] };
+      return { isError: true, content: [{ type: "text", text: JSON.stringify(errorBody(e), null, 2) }] };
     }
     console.error("mcp tool error", e instanceof Error ? e.message : "unknown");
     return { isError: true, content: [{ type: "text", text: "Internal error. Try again." }] };
@@ -49,6 +50,10 @@ async function run(fn: () => Promise<unknown>): Promise<ToolResult> {
 }
 
 const emails = z.array(z.string()).optional();
+const dataWrites = z
+  .enum(["editors", "everyone"])
+  .optional()
+  .describe("Who can change the app's shared data (formelab.kv): \"editors\" (owner and editors; the default for a new app) or \"everyone\" who can open it (polls, sign-ups, shared counters). Each person's own data goes in formelab.kv.mine either way.");
 
 /**
  * Text written by other people (an app's files, responses people sent) can carry instructions
@@ -153,10 +158,7 @@ export function buildServer(ctx: Ctx, beforeTools?: (server: McpServer) => void,
         spa: z.boolean().optional().describe("Serve index.html for unknown extensionless paths (client-side routing)"),
         visibility: z.enum(["all", "restricted"]).optional().describe("Default \"restricted\": only the owner, editors and allowed_emails can open it. \"all\": every Formelab member (people let in, not those still on the waitlist)"),
         allowed_emails: emails,
-        data_writes: z
-          .enum(["editors", "everyone"])
-          .optional()
-          .describe("Who can change the app's shared data (formelab.kv): \"editors\" (owner and editors; the default for a new app) or \"everyone\" who can open it (polls, sign-ups, shared counters). Each person's own data goes in formelab.kv.mine either way."),
+        data_writes: dataWrites,
       },
     },
     (args) =>
@@ -211,10 +213,7 @@ export function buildServer(ctx: Ctx, beforeTools?: (server: McpServer) => void,
         allowed_emails: emails,
         editors: emails.describe("Owner only: who can update the app. Replaces the list. Each new editor needs a Formelab account (needs_account otherwise); share with people who don't have one as viewers in allowed_emails, and the owner can send them a sign-up invite from the app's People list."),
         sharers: emails.describe("Owner only: which editors may also change who can open the app. Must be editors. Replaces the list."),
-        data_writes: z
-          .enum(["editors", "everyone"])
-          .optional()
-          .describe("Who can change the app's shared data (formelab.kv): \"editors\" (owner and editors; the default for a new app) or \"everyone\" who can open it (polls, sign-ups, shared counters). Each person's own data goes in formelab.kv.mine either way."),
+        data_writes: dataWrites,
         sheets: z
           .array(z.string())
           .optional()
@@ -342,6 +341,7 @@ export function buildServer(ctx: Ctx, beforeTools?: (server: McpServer) => void,
 }
 
 const GUIDE_TITLE = "Formelab app-building guide";
+const guideUrl = (ctx: Ctx) => `${aiOrigin(ctx.env, ctx.requestUrl)}/_platform/guide.md`;
 const SOURCE_LIMIT = 200 * 1024;
 const READ_LIMIT = 512 * 1024;
 
@@ -355,7 +355,7 @@ async function readFile(ctx: Ctx, rawNs: string, rawMount: string, rawPath = "in
   const { files } = await siteManifest(ctx.env, site);
   const path = rawPath.replace(/^\/+/, "") || "index.html";
   const listing = files.length > 200 ? `${files.slice(0, 200).map((f) => f.path).join(", ")}, … (${files.length} files)` : files.map((f) => `${f.path} (${f.bytes} bytes)`).join(", ");
-  const obj = files.some((f) => f.path === path) ? await ctx.env.BUCKET.get(`sites/${site.id}/${site.current_version}/${path}`) : null;
+  const obj = files.some((f) => f.path === path) ? await ctx.env.BUCKET.get(versionPrefix(site) + path) : null;
   if (!obj) throw new ApiError(404, "not_found", `"${path}" is not in this app.`, `The app's files: ${listing}`);
   const bytes = new Uint8Array(await obj.arrayBuffer());
   let text: string;
@@ -386,7 +386,7 @@ async function searchItems(ctx: Ctx, query: string) {
     .map((s) => ({ id: `site:${s.id}`, title: s.title || `${s.namespace}/${s.mountPath || "(root)"}`, url: s.url }));
   const guideHay = `${GUIDE_TITLE} sdk guide help how build publish ${GUIDE_MD}`.toLowerCase();
   if (matches(guideHay)) {
-    results.push({ id: "guide", title: GUIDE_TITLE, url: `${apexOrigin(ctx.env, ctx.requestUrl ?? "https://" + ctx.env.DOMAIN)}/_platform/guide.md` });
+    results.push({ id: "guide", title: GUIDE_TITLE, url: guideUrl(ctx) });
   }
   return { results };
 }
@@ -397,7 +397,7 @@ async function fetchItem(ctx: Ctx, id: string) {
       id,
       title: GUIDE_TITLE,
       text: withFlags(GUIDE_MD, await enabledFlags(ctx.env, ctx.user)),
-      url: `${apexOrigin(ctx.env, ctx.requestUrl ?? "https://" + ctx.env.DOMAIN)}/_platform/guide.md`,
+      url: guideUrl(ctx),
       metadata: { type: "guide" },
     };
   }
@@ -408,7 +408,7 @@ async function fetchItem(ctx: Ctx, id: string) {
   const view = siteView(ctx.env, site, ctx.requestUrl);
   // The source only of apps the person owns or edits (see readFile).
   const manages = canManageSite(ctx.user, site, ns);
-  const obj = manages ? await ctx.env.BUCKET.get(`sites/${site.id}/${site.current_version}/index.html`) : null;
+  const obj = manages ? await ctx.env.BUCKET.get(versionPrefix(site) + "index.html") : null;
   let source = obj ? await obj.text() : "";
   const truncated = source.length > SOURCE_LIMIT;
   if (truncated) source = source.slice(0, SOURCE_LIMIT);

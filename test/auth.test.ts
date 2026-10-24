@@ -1,7 +1,7 @@
 import { env } from "cloudflare:workers";
 import { generateKeyPair } from "jose";
 import { describe, expect, it } from "vitest";
-import { identifyHuman, mintToken, upsertUser } from "../src/auth";
+import { identifyBrowser, mintToken, upsertUser } from "../src/auth";
 import type { Env } from "../src/env";
 import { accessJwt, call, OWNER, publishHtml, PAGE, uniq, appAt } from "./helpers";
 
@@ -80,10 +80,10 @@ describe("security 2: dev auth bypass", () => {
 
   it("uses DEV_USER only when ENVIRONMENT is exactly 'dev'", async () => {
     const dev = { ...base, ENVIRONMENT: "dev", DEV_USER: "dev@example.com" };
-    expect((await identifyHuman(req(), dev))?.email).toBe("dev@example.com");
+    expect((await identifyBrowser(req(), dev))?.user.email).toBe("dev@example.com");
     for (const environment of ["production", "test", "Dev", "DEV", "development", "", "dev "]) {
       const e = { ...base, ENVIRONMENT: environment, DEV_USER: "dev@example.com" };
-      expect(await identifyHuman(req(), e), environment).toBeNull();
+      expect(await identifyBrowser(req(), e), environment).toBeNull();
     }
   });
 

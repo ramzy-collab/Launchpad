@@ -2,7 +2,7 @@
 //
 // Flow: /login → /auth/login (sets a state cookie, redirects to WorkOS) → WorkOS → /auth/callback
 // (exchanges the code server side, creates or updates the user, starts a session) → the page the
-// person wanted. The web app and namespace hosts get their session from the apex through
+// person wanted. The web app and each app's host get their session from the apex through
 // /auth/app. The admin panel (admin.DOMAIN) runs the same flow on its own host instead, so it
 // has a separate, shorter sign-in that only admins can complete.
 import type { Context } from "hono";
@@ -12,8 +12,9 @@ import { isOwnerEmail, upsertUser } from "./auth";
 import type { AppEnv, Env, User } from "./env";
 import { err } from "./errors";
 import { now } from "./env";
-import { acceptedEmail, notifyAdminOfSignup, publicOrigin, sendEmail, waitlistJoinedEmail } from "./email";
-import { plainPage } from "./serve";
+import { acceptedEmail, sendEmail } from "./email";
+import { addToWaitlist } from "./waitlist";
+import { notFoundPage, plainPage } from "./serve";
 import { adminOrigin, aiOrigin, hostKind } from "./hosts";
 import {
   cookieHeader,
@@ -191,14 +192,7 @@ export async function completeSignIn(
   const user = await upsertUser(env, email, name, { status, workosId: wu.id });
   await remember();
   // Someone who signs in before being let in lands on the waitlist, so an admin can approve them.
-  if (!user.active) {
-    const added = await env.DB.prepare("INSERT INTO waitlist (email, created_at) VALUES (?, ?) ON CONFLICT(email) DO NOTHING").bind(email, now()).run();
-    if (added.meta.changes) {
-      const origin = publicOrigin(env, c.req.url);
-      c.executionCtx.waitUntil(sendEmail(env, waitlistJoinedEmail(origin, email)));
-      c.executionCtx.waitUntil(notifyAdminOfSignup(env, c.req.url, email, "login"));
-    }
-  }
+  if (!user.active) await addToWaitlist(env, email, c.req.url, "login", (p) => c.executionCtx.waitUntil(p));
 
   headers.append("set-cookie", await createSession(env, email, new URL(c.req.url).hostname, { workosSid }));
   return respond(headers);
@@ -324,7 +318,7 @@ export function handoffStart(c: Context<AppEnv>, returnUrl: string): Response {
 export async function appCallback(c: Context<AppEnv>): Promise<Response> {
   const url = new URL(c.req.url);
   const kind = hostKind(url.hostname, c.env);
-  if (kind !== "app" && kind !== "apps") return plainPage(404, "Not found", "There is nothing here.");
+  if (kind !== "app" && kind !== "apps") return notFoundPage();
   const ttl = kind === "app" ? APEX_SESSION_TTL_MS : APP_SESSION_TTL_MS;
   const returnTo = safeReturn(c.req.query("return"), "/");
   const result = await redeemAppCode(c.env, c.req.query("code") ?? "", url.hostname, readCookie(c.req.raw, HANDOFF_COOKIE), ttl);
@@ -361,7 +355,7 @@ export async function approveWaitlist(
   ]);
   if (!before?.approved_at) {
     if (opts.actor) await audit(env, opts.actor, "waitlist_approve", email, { invited: !before });
-    const send = sendEmail(env, acceptedEmail(publicOrigin(env, opts.requestUrl), email));
+    const send = sendEmail(env, acceptedEmail(aiOrigin(env, opts.requestUrl), email));
     if (opts.waitUntil) opts.waitUntil(send);
     else await send;
   }
@@ -373,8 +367,8 @@ export async function approveWaitlist(
 
 /** Setting a password needs a sign-in this recent, so a stolen or forgotten session can't do it. */
 export const PASSWORD_REAUTH_MS = 15 * 60_000;
-const MIN_PASSWORD_LENGTH = 10;
-const MAX_PASSWORD_LENGTH = 256;
+export const MIN_PASSWORD_LENGTH = 10;
+export const MAX_PASSWORD_LENGTH = 256;
 
 /** Whether the person behind this session signed in recently enough to set a password. */
 export async function canSetPassword(env: Env, sessionId: string | undefined): Promise<boolean> {

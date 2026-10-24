@@ -2,8 +2,8 @@
 // Without the binding or EMAIL_FROM nothing is sent; each skipped message is logged instead.
 // Sending never fails the request that triggered it: callers hand the promise to waitUntil.
 import type { Env } from "./env";
-import { now } from "./env";
-import { adminOrigin, aiOrigin } from "./hosts";
+import { adminOrigin } from "./hosts";
+import { bumpToday } from "./secrets";
 import { escapeHtml as e, normEmail } from "./util";
 
 export interface Email {
@@ -20,9 +20,6 @@ export function parseSender(from: string): string | { name: string; email: strin
   const m = /^\s*(.*?)\s*<([^<>\s]+@[^<>\s]+)>\s*$/.exec(from);
   return m ? { name: m[1]!.replace(/^"|"$/g, ""), email: m[2]! } : from.trim();
 }
-
-/** The home page / sign-in origin (DOMAIN), for links in emails. */
-export const publicOrigin = (env: Env, requestUrl?: string) => aiOrigin(env, requestUrl);
 
 export async function sendEmail(env: Env, msg: Email): Promise<void> {
   if (!emailEnabled(env)) {
@@ -73,14 +70,7 @@ async function knownAddresses(env: Env, emails: string[]): Promise<Set<string>> 
  */
 async function takeToday(env: Env, key: string, cap: number, want: number): Promise<number> {
   if (want <= 0) return 0;
-  const day = Math.floor(now() / 86_400_000);
-  const row = await env.DB.prepare(
-    `INSERT INTO rate_counters (bucket, count, expires_at) VALUES (?1, ?2, ?3)
-     ON CONFLICT(bucket) DO UPDATE SET count = count + ?2 RETURNING count`,
-  )
-    .bind(`${key}:day${day}`, want, (day + 2) * 86_400_000)
-    .first<{ count: number }>();
-  const before = (row?.count ?? want) - want;
+  const before = (await bumpToday(env, key, want)) - want;
   return Math.max(0, Math.min(want, cap - before));
 }
 

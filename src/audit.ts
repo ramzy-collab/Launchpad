@@ -4,11 +4,11 @@
 import type { Env } from "./env";
 import { now } from "./env";
 
-/** Records an action. `detail` must never contain secret values; `detail.siteId` ties it to an app. */
 /** The activity rows written on every call apps make (not by people changing things), kept for a year. */
 export const HIGH_VOLUME_ACTIONS = ["proxy", "gemini", "sheets"] as const;
-export const HIGH_VOLUME_KEEP_MS = 365 * 86_400_000;
+const HIGH_VOLUME_KEEP_MS = 365 * 86_400_000;
 
+/** Records an action. `detail` must never contain secret values; `detail.siteId` ties it to an app. */
 export async function audit(env: Env, actor: string, action: string, target: string | null, detail?: Record<string, unknown>) {
   const siteId = typeof detail?.siteId === "string" ? detail.siteId : null;
   await env.DB.prepare("INSERT INTO audit (at, actor, action, target, detail, site_id) VALUES (?, ?, ?, ?, ?, ?)")
@@ -71,6 +71,8 @@ const FIELD_LABEL: Record<string, string> = {
   sharers: "editors who can share it",
 };
 
+/** How an outside call ended, for a sentence: "HTTP 404", "timed out" or "failed". */
+const outcome = (status: unknown, timeout = "timed out") => (status === "timeout" ? timeout : status === "error" ? "failed" : `HTTP ${status}`);
 const list = (v: unknown) => (Array.isArray(v) ? v.map(String).join(", ") : "");
 const plural = (n: unknown, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;
 const size = (n: unknown) => {
@@ -174,10 +176,9 @@ export function describeActivity(row: AuditRow): string {
     case "secret_delete":
       return `Removed the secret ${d.name}`;
     case "proxy":
-      if (d.connector) return `Called ${d.host} with the connector ${d.connector} (${d.status === "timeout" ? "timed out" : d.status === "error" ? "failed" : `HTTP ${d.status}`})`;
-      return `Called ${d.host} with the secret ${d.secret} (${d.status === "timeout" ? "timed out" : d.status === "error" ? "failed" : `HTTP ${d.status}`})`;
+      return `Called ${d.host} with ${d.connector ? `the connector ${d.connector}` : `the secret ${d.secret}`} (${outcome(d.status)})`;
     case "gemini":
-      return d.status === 200 ? `Asked Gemini${d.tokens ? ` (${d.tokens} tokens)` : ""}` : `Asked Gemini, which failed (${d.status === "timeout" ? "no answer" : `HTTP ${d.status}`})`;
+      return d.status === 200 ? `Asked Gemini${d.tokens ? ` (${d.tokens} tokens)` : ""}` : `Asked Gemini, which failed (${outcome(d.status, "no answer")})`;
     case "ai_build":
       return `Built it with ${d.builder ?? "AI"}${d.model ? ` (${d.model}` + (d.tokens ? `, ${d.tokens} tokens)` : ")") : ""}, using their own API key`;
     case "ai_edit":
@@ -190,7 +191,7 @@ export function describeActivity(row: AuditRow): string {
       return `Stopped turning ${d.feature ?? t} on for ${d.email} by name`;
     case "sheets": {
       const what = d.method === "GET" ? "Read from" : "Wrote to";
-      return typeof d.status === "number" && d.status < 300 ? `${what} Google Sheets` : `${what} Google Sheets, which failed (${d.status === "timeout" ? "no answer" : `HTTP ${d.status}`})`;
+      return typeof d.status === "number" && d.status < 300 ? `${what} Google Sheets` : `${what} Google Sheets, which failed (${outcome(d.status, "no answer")})`;
     }
     case "connector_create":
       return `Made the connector ${d.connector}`;

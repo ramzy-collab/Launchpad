@@ -1,8 +1,8 @@
 // Browser sessions for Formelab's own login (WorkOS AuthKit).
 //
-// The cookie is `__Host-` prefixed: host-only, Secure, Path=/. Apps on namespace hosts run their
-// owners' JavaScript, and the prefix stops them from setting or overwriting the dashboard's
-// cookie from a sibling subdomain. Each namespace host therefore gets its own session, handed
+// The cookie is `__Host-` prefixed: host-only, Secure, Path=/. Apps on their own hosts run their
+// owners' JavaScript, and the prefix stops them from setting or overwriting the web app's cookie
+// from a sibling subdomain. The web app and each app's host therefore get their own session, handed
 // over from the apex session through a single-use code (mintAppCode / redeemAppCode).
 import type { Env, User } from "./env";
 import { now } from "./env";
@@ -15,6 +15,8 @@ export const APP_SESSION_TTL_MS = 12 * 3600_000;
 /** The admin panel's session is shorter than the dashboard's. */
 export const ADMIN_SESSION_TTL_MS = 8 * 3600_000;
 const CODE_TTL_MS = 60_000;
+/** Session tokens, hand-off codes and nonces: base32 of 32 random bytes. */
+const TOKEN_RE = /^[a-z2-7]{20,100}$/;
 
 export function readCookie(req: Request, name: string): string | null {
   for (const part of (req.headers.get("cookie") ?? "").split(";")) {
@@ -23,6 +25,9 @@ export function readCookie(req: Request, name: string): string | null {
   }
   return null;
 }
+
+/** Whether the request carries any sign-in at all (a session cookie or an Access JWT), before checking it. */
+export const hasSignIn = (req: Request) => !!(readCookie(req, SESSION_COOKIE) || req.headers.get("cf-access-jwt-assertion"));
 
 export function cookieHeader(name: string, value: string, maxAgeSeconds: number): string {
   return `${name}=${value}; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=${maxAgeSeconds}`;
@@ -53,12 +58,12 @@ export async function createSession(
 }
 
 /**
- * The user behind a session cookie on this request's host, or null. A namespace-host session is
- * only valid while the apex session that created it is, so logging out ends both.
+ * The user behind a session cookie on this request's host, or null. A session handed over to another
+ * host is only valid while the apex session that created it is, so logging out ends both.
  */
 export async function sessionFromRequest(req: Request, env: Env): Promise<{ user: User; sessionId: string } | null> {
   const token = readCookie(req, SESSION_COOKIE);
-  if (!token || !/^[a-z2-7]{20,100}$/.test(token)) return null;
+  if (!token || !TOKEN_RE.test(token)) return null;
   const id = await sha256Hex(token);
   const row = await env.DB.prepare(
     `SELECT s.id, s.expires_at, s.host, s.parent_id, u.email, u.name, u.is_admin, u.status,
@@ -125,7 +130,6 @@ export async function signedInAt(env: Env, sessionId: string): Promise<number | 
 /** The cookie, on the host being signed in to, holding the nonce its hand-off code must carry. */
 export const HANDOFF_COOKIE = "__Host-fl_handoff";
 export const HANDOFF_TTL_S = 600;
-const NONCE_RE = /^[a-z2-7]{20,100}$/;
 export const newHandoffNonce = () => newToken();
 
 /**
@@ -135,7 +139,7 @@ export const newHandoffNonce = () => newToken();
  */
 export async function mintAppCode(env: Env, sessionId: string, host: string, nonce?: string | null): Promise<string> {
   const code = newToken();
-  const nonceHash = nonce && NONCE_RE.test(nonce) ? await sha256Hex(nonce) : null;
+  const nonceHash = nonce && TOKEN_RE.test(nonce) ? await sha256Hex(nonce) : null;
   await env.DB.prepare("INSERT INTO auth_codes (id, session_id, host, expires_at, nonce_hash) VALUES (?, ?, ?, ?, ?)")
     .bind(await sha256Hex(code), sessionId, host.toLowerCase(), now() + CODE_TTL_MS, nonceHash)
     .run();
@@ -156,13 +160,13 @@ export type RedeemResult =
  * `nonce`, the one in this browser's HANDOFF_COOKIE; the code is spent either way.
  */
 export async function redeemAppCode(env: Env, code: string, host: string, nonce: string | null, maxTtlMs = APP_SESSION_TTL_MS): Promise<RedeemResult> {
-  if (!/^[a-z2-7]{20,100}$/.test(code)) return { ok: false, reason: "invalid" };
+  if (!TOKEN_RE.test(code)) return { ok: false, reason: "invalid" };
   const row = await env.DB.prepare("DELETE FROM auth_codes WHERE id = ? RETURNING session_id, host, expires_at, nonce_hash")
     .bind(await sha256Hex(code))
     .first<{ session_id: string; host: string; expires_at: number; nonce_hash: string | null }>();
   if (!row || row.host !== host.toLowerCase() || row.expires_at <= now()) return { ok: false, reason: "invalid" };
   if (row.nonce_hash === null) return { ok: false, reason: "unbound" };
-  if (!nonce || !NONCE_RE.test(nonce) || (await sha256Hex(nonce)) !== row.nonce_hash) return { ok: false, reason: "other_browser" };
+  if (!nonce || !TOKEN_RE.test(nonce) || (await sha256Hex(nonce)) !== row.nonce_hash) return { ok: false, reason: "other_browser" };
   const parent = await env.DB.prepare("SELECT email, expires_at FROM sessions WHERE id = ? AND parent_id IS NULL")
     .bind(row.session_id)
     .first<{ email: string; expires_at: number }>();

@@ -6,10 +6,10 @@ import type { Context } from "hono";
 import { canManageSite } from "./auth";
 import type { AppEnv, Env, User } from "./env";
 import { flagOnForOwner } from "./flags";
-import { countResponses, listResponses, responsesCsv } from "./responses";
+import { countResponses, csvDownload, listResponses, responsesCsv } from "./responses";
 import { plainPage } from "./serve";
-import { getNamespace, siteUrl, type SiteRow } from "./sites";
-import { escapeHtml as e, parseJsonArray } from "./util";
+import { getNamespace, siteName, siteUrl, type SiteRow } from "./sites";
+import { ago, escapeHtml as e, parseJsonArray } from "./util";
 
 export const ANSWERS_PATH = "/answers";
 
@@ -37,16 +37,6 @@ export async function showAnswersLink(env: Env, site: SiteRow, user: User | unde
 
 const notForYou = () => plainPage(403, "Only for the app's team", "Only the app's owner and editors can see what people sent it.");
 
-function ago(ms: number, now = Date.now()): string {
-  const s = Math.max(0, Math.round((now - ms) / 1000));
-  const unit = (n: number, u: string) => `${n} ${u}${n === 1 ? "" : "s"} ago`;
-  if (s < 60) return "just now";
-  if (s < 3600) return unit(Math.floor(s / 60), "minute");
-  if (s < 86400) return unit(Math.floor(s / 3600), "hour");
-  if (s < 30 * 86400) return unit(Math.floor(s / 86400), "day");
-  return new Date(ms).toISOString().slice(0, 10);
-}
-
 const cell = (v: unknown) => (v === undefined || v === null || v === "" ? `<span class="none">-</span>` : e(typeof v === "string" ? v : JSON.stringify(v)));
 
 /**
@@ -57,18 +47,8 @@ export async function answersRoute(c: Context<AppEnv>, next: () => Promise<void>
   const site = c.get("site");
   if (!(await answersOn(c.env, site))) return next();
   if (c.get("guest") || !(await canSeeAnswers(c.env, site, c.get("user")))) return notForYou();
-  const name = site.title || site.mount_path || site.namespace;
-  if (csv) {
-    const file = (name.replace(/[^A-Za-z0-9 _-]+/g, "").trim() || "app") + " answers.csv";
-    return new Response("﻿" + (await responsesCsv(c.env, site.id)), {
-      headers: {
-        "content-type": "text/csv; charset=utf-8",
-        "content-disposition": `attachment; filename="${file}"`,
-        "cache-control": "no-store",
-        "x-content-type-options": "nosniff",
-      },
-    });
-  }
+  const name = siteName(site);
+  if (csv) return csvDownload(name, "answers", await responsesCsv(c.env, site.id));
   const { total, responses } = await listResponses(c.env, site.id);
   // One column per field, in the order fields first appear (oldest answers first), then who sent it.
   const rows = responses.map((r) => ({

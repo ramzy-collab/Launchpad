@@ -7,7 +7,7 @@ import { VENDOR_GROUPS, VENDORS, type VendorGroup } from "../vendors";
 import { isOwnerEmail } from "../auth";
 import type { AppEnv } from "../env";
 import { aiOrigin } from "../hosts";
-import { plainPage } from "../serve";
+import { notFoundPage } from "../serve";
 import { adminStats, listUsers } from "../users";
 import { escapeHtml as e } from "../util";
 import { listWaitlist } from "../waitlist";
@@ -84,7 +84,7 @@ ${body}
 
 /** Admins only; everyone else gets the same "not found" as any unknown page. */
 export async function adminPage(c: Context<AppEnv>, tab: Tab): Promise<Response> {
-  if (!c.get("user").isAdmin) return plainPage(404, "Not found", "There is nothing here.");
+  if (!c.get("user").isAdmin) return notFoundPage();
   if (tab === "metrics") return adminShell(c, tab, await metricsBody(c), ["viz.js"]);
   if (tab === "users") return adminShell(c, tab, await usersBody(c));
   if (tab === "waitlist") return adminShell(c, tab, await waitlistBody(c));
@@ -326,9 +326,9 @@ async function testPlansBody(c: Context<AppEnv>): Promise<string> {
 
 /** One test plan: the plan itself, with a result for each case. */
 export async function testPlanPage(c: Context<AppEnv>, slug: string): Promise<Response> {
-  if (!c.get("user").isAdmin) return plainPage(404, "Not found", "There is nothing here.");
+  if (!c.get("user").isAdmin) return notFoundPage();
   const plan = getPlan(slug);
-  if (!plan) return plainPage(404, "Not found", "There is nothing here.");
+  if (!plan) return notFoundPage();
   const results = await planResults(c.env, slug);
   const n = { pass: 0, fail: 0, blocked: 0, todo: 0 };
   for (const tc of plan.cases) n[results[tc.id]?.status ?? "todo"]++;

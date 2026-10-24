@@ -15,6 +15,8 @@ import {
   homePath,
   LAST_USED_COOKIE,
   markHasPassword,
+  MAX_PASSWORD_LENGTH,
+  MIN_PASSWORD_LENGTH,
   onAdminHost,
   safeReturn,
   WORKOS_API,
@@ -27,14 +29,12 @@ import { htmlResponse, PAGE_CSP } from "./dashboard/layout";
 import { appOrigin, siteOrigin } from "./hosts";
 import { identifyBrowser } from "./auth";
 import { formelabShareTags } from "./share";
-import { cookieHeader, endOtherSessions, readCookie, SESSION_COOKIE } from "./session";
+import { cookieHeader, endOtherSessions, hasSignIn, readCookie } from "./session";
 import { escapeHtml as e, isEmail, normEmail } from "./util";
 
 /** A sign-in waiting for an emailed code: "m" (code to log in) or "v" (confirm the email address). */
 const PENDING_COOKIE = "__Host-fl_signin";
 const PENDING_TTL_S = 15 * 60;
-
-const hasSignIn = (req: Request) => !!(readCookie(req, SESSION_COOKIE) || req.headers.get("cf-access-jwt-assertion"));
 
 const GOOGLE_G = `<svg width="20" height="20" viewBox="0 0 48 48" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="m6.3 14.7 6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-7.9l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg>`;
 
@@ -89,6 +89,8 @@ const OTHER_STEPS = new Set(["mfa_enrollment", "mfa_challenge", "mfa_verificatio
 
 interface View {
   admin: boolean;
+  /** Where signing in leads when no other page asked for it (see homePath). */
+  home: string;
   returnTo: string;
   /** The sign-in method this browser used last, labelled "Last used". */
   last?: LastUsed | null;
@@ -106,7 +108,7 @@ function view(c: Context<AppEnv>, returnTo: string): View {
   const last = readCookie(c.req.raw, LAST_USED_COOKIE);
   const admin = onAdminHost(c);
   const share = admin ? "" : formelabShareTags(c.env, c.req.url, "Log in to Formelab");
-  return { admin, returnTo, last: last === "email" || last === "google" ? last : null, csp: signinCsp(c), share };
+  return { admin, home: homePath(c), returnTo, last: last === "email" || last === "google" ? last : null, csp: signinCsp(c), share };
 }
 
 /**
@@ -152,13 +154,15 @@ ${topNav(v.admin, false)}
 }
 
 const returnField = (v: View) => `<input type="hidden" name="return" value="${e(v.returnTo)}">`;
-const withReturn = (path: string, v: View) => (v.returnTo === (v.admin ? "/" : "/app") ? path : `${path}?return=${encodeURIComponent(v.returnTo)}`);
+/** "return=<page>" when signing in should lead somewhere other than home, else "". */
+const returnQuery = (v: View) => (v.returnTo === v.home ? "" : `return=${encodeURIComponent(v.returnTo)}`);
+const withReturn = (path: string, v: View) => (returnQuery(v) ? `${path}?${returnQuery(v)}` : path);
 
 const lastUsed = (v: View, method: LastUsed) => (v.last === method ? `<span class="last-used">Last used</span>` : "");
 
 /** Step one: an email address (then a password or a code), or Google. */
 function signInForm(v: View, status = 200): Response {
-  const google = withReturn("/auth/login", v).replace("/auth/login?", "/auth/login?provider=google&").replace(/^\/auth\/login$/, "/auth/login?provider=google");
+  const google = `/auth/login?provider=google${returnQuery(v) ? `&${returnQuery(v)}` : ""}`;
   const body = `<form method="post" action="/login" class="signin">
         ${returnField(v)}
         <label class="field">Email
@@ -229,7 +233,7 @@ function codeForm(v: View, email: string, verifying: boolean, status = 200): Res
 /** A sign-in page that only makes sense with WorkOS; without it, the Cloudflare Access login. */
 async function gate(c: Context<AppEnv>): Promise<{ v: View } | Response> {
   const returnTo = safeReturn(c.req.method === "GET" ? c.req.query("return") : String((await form(c)).get("return") ?? ""), homePath(c));
-  if (!workosEnabled(c.env)) return loginPage({ returnTo, admin: onAdminHost(c), share: onAdminHost(c) ? "" : formelabShareTags(c.env, c.req.url, "Log in to Formelab") });
+  if (!workosEnabled(c.env)) return loginPage({ admin: onAdminHost(c), share: onAdminHost(c) ? "" : formelabShareTags(c.env, c.req.url, "Log in to Formelab") });
   if (c.req.method === "GET" && hasSignIn(c.req.raw) && (await identifyBrowser(c.req.raw, c.env))) return c.redirect(returnTo, 302);
   if (c.req.method === "POST") {
     const origin = c.req.header("origin");
@@ -241,16 +245,15 @@ async function gate(c: Context<AppEnv>): Promise<{ v: View } | Response> {
   return { v: view(c, returnTo) };
 }
 
-async function form(c: Context<AppEnv>): Promise<FormData> {
-  const cached = (c as unknown as { _form?: FormData })._form;
-  if (cached) return cached;
-  let f: FormData;
-  try {
-    f = await c.req.raw.clone().formData();
-  } catch {
-    f = new FormData();
+const forms = new WeakMap<Request, Promise<FormData>>();
+
+/** The posted form, read once per request: gate() and the handler both need it. */
+function form(c: Context<AppEnv>): Promise<FormData> {
+  let f = forms.get(c.req.raw);
+  if (!f) {
+    f = c.req.raw.clone().formData().catch(() => new FormData());
+    forms.set(c.req.raw, f);
   }
-  (c as unknown as { _form?: FormData })._form = f;
   return f;
 }
 
@@ -374,14 +377,14 @@ function resetForm(v: View, token: string, status = 200): Response {
   const body = `<form method="post" action="/reset-password" class="signin">
         <input type="hidden" name="token" value="${e(token)}">
         <label class="field">New password
-          <input type="password" name="password" autocomplete="new-password" minlength="10" maxlength="256" required autofocus>
+          <input type="password" name="password" autocomplete="new-password" minlength="${MIN_PASSWORD_LENGTH}" maxlength="${MAX_PASSWORD_LENGTH}" required autofocus>
         </label>
         <label class="field">Confirm new password
-          <input type="password" name="confirm" autocomplete="new-password" minlength="10" maxlength="256" required>
+          <input type="password" name="confirm" autocomplete="new-password" minlength="${MIN_PASSWORD_LENGTH}" maxlength="${MAX_PASSWORD_LENGTH}" required>
         </label>
         <button class="btn w100">Save password</button>
       </form>`;
-  return frame(v, "Choose a new password", "Use at least 10 characters that are hard to guess: a few unrelated words works well.", body, status);
+  return frame(v, "Choose a new password", `Use at least ${MIN_PASSWORD_LENGTH} characters that are hard to guess: a few unrelated words works well.`, body, status);
 }
 
 /** POST /reset-password */
@@ -392,7 +395,9 @@ export async function resetPost(c: Context<AppEnv>): Promise<Response> {
   const token = String(f.get("token") ?? "");
   const password = String(f.get("password") ?? "");
   const v = g.v;
-  if (password.length < 10 || password.length > 256) return resetForm({ ...v, error: "Use 10 to 256 characters." }, token, 400);
+  if (password.length < MIN_PASSWORD_LENGTH || password.length > MAX_PASSWORD_LENGTH) {
+    return resetForm({ ...v, error: `Use ${MIN_PASSWORD_LENGTH} to ${MAX_PASSWORD_LENGTH} characters.` }, token, 400);
+  }
   if (password !== String(f.get("confirm") ?? "")) return resetForm({ ...v, error: "The two passwords don't match." }, token, 400);
   const res = await workos<{ user?: { email?: string } }>(c.env, "/user_management/password_reset/confirm", { token, new_password: password });
   if (!res.ok) {

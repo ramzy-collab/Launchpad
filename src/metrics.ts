@@ -287,21 +287,20 @@ export async function computeMetrics(env: Env, range: Range, includeTeam: boolea
   const building = new Map<number, Set<string>>(); // building apps (activity log or MCP)
   const using = new Map<number, Set<string>>(); // using apps they don't build
   const firstBuild = new Map<string, number>();
+  const built = (email: string, d: number) => {
+    mark(active, d, email);
+    mark(building, d, email);
+    if (!firstBuild.has(email) || firstBuild.get(email)! > d) firstBuild.set(email, d);
+  };
   for (const a of audit) {
     if (BUILD_ACTIONS.has(a.action)) {
-      mark(active, a.d, a.actor);
-      mark(building, a.d, a.actor);
-      if (!firstBuild.has(a.actor) || firstBuild.get(a.actor)! > a.d) firstBuild.set(a.actor, a.d);
+      built(a.actor, a.d);
     } else if (USE_ACTIONS.has(a.action)) {
       mark(active, a.d, a.actor);
       mark(using, a.d, a.actor);
     }
   }
-  for (const m of mcp) {
-    mark(active, m.d, m.email);
-    mark(building, m.d, m.email);
-    if (!firstBuild.has(m.email) || firstBuild.get(m.email)! > m.d) firstBuild.set(m.email, m.d);
-  }
+  for (const m of mcp) built(m.email, m.d);
   for (const v of visits) {
     mark(active, v.d, v.email);
     if (!v.own) mark(using, v.d, v.email);
@@ -409,9 +408,9 @@ export async function computeMetrics(env: Env, range: Range, includeTeam: boolea
   const builderPerBucket = buckets.map(() => new Set<string>());
   type Agg = { visitors: Set<string>; builders: Set<string>; views: number; last: number; everShared: boolean };
   const perApp = new Map<string, Agg>();
+  const aggOf = (id: string) => perApp.get(id) ?? perApp.set(id, { visitors: new Set(), builders: new Set(), views: 0, last: -1, everShared: false }).get(id)!;
   for (const v of visits) {
-    const a = perApp.get(v.site_id) ?? { visitors: new Set(), builders: new Set(), views: 0, last: -1, everShared: false };
-    perApp.set(v.site_id, a);
+    const a = aggOf(v.site_id);
     a.last = Math.max(a.last, v.d);
     if (!v.own) a.everShared = true;
     if (!inRange(v.d)) continue;
@@ -423,8 +422,7 @@ export async function computeMetrics(env: Env, range: Range, includeTeam: boolea
     (v.own ? builderPerBucket : sharedPerBucket)[i]!.add(v.email);
   }
   for (const v of guestVisits) {
-    const a = perApp.get(v.site_id) ?? { visitors: new Set(), builders: new Set(), views: 0, last: -1, everShared: false };
-    perApp.set(v.site_id, a);
+    const a = aggOf(v.site_id);
     a.last = Math.max(a.last, v.d);
     a.everShared = true;
     if (!inRange(v.d)) continue;

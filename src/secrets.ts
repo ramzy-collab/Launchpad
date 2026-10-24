@@ -3,11 +3,9 @@ import type { Env, User } from "./env";
 import { isDev, now } from "./env";
 import { ApiError, badRequest, err, notFound } from "./errors";
 import type { SiteRow } from "./sites";
-import { connectorKey } from "./connectors";
+import { connectorKey, siteUses } from "./connectors";
 import { checkProxyUrl } from "./ssrf";
-import { b64decode, b64encode, parseJsonArray } from "./util";
-
-export { checkProxyUrl };
+import { b64decode, b64encode, b64url, hex, isTimeout, parseJsonArray } from "./util";
 
 export const SECRET_NAME_RE = /^[a-z0-9_-]{1,64}$/;
 export const SECRET_MAX_BYTES = 8 * 1024;
@@ -64,6 +62,43 @@ export async function decryptSecret(env: Env, siteId: string, name: string, iv: 
 }
 
 // ---------------------------------------------------------------------------
+// A person's own keys and sign-ins (service_keys): Gemini, Google Sheets, the AI builders.
+// Encrypted like app secrets, bound to the person: AAD "user:<email>:<service>".
+// ---------------------------------------------------------------------------
+
+const personScope = (email: string) => `user:${email}`;
+
+/**
+ * Saves `plaintext` encrypted as the person's key for `service`, with `hint` (what the web app
+ * shows of it). Without a hint, only replaces a key that's already there, keeping its hint.
+ */
+export async function saveServiceKey(env: Env, email: string, service: string, plaintext: string, hint?: string): Promise<void> {
+  const { iv, ciphertext } = await encryptSecret(env, personScope(email), service, plaintext);
+  const t = now();
+  if (hint === undefined) {
+    await env.DB.prepare("UPDATE service_keys SET iv = ?, ciphertext = ?, updated_at = ? WHERE owner_email = ? AND service = ?")
+      .bind(iv, ciphertext, t, email, service)
+      .run();
+    return;
+  }
+  await env.DB.prepare(
+    `INSERT INTO service_keys (owner_email, service, iv, ciphertext, hint, created_at, updated_at)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)
+     ON CONFLICT(owner_email, service) DO UPDATE SET iv = excluded.iv, ciphertext = excluded.ciphertext,
+       hint = excluded.hint, updated_at = excluded.updated_at`,
+  )
+    .bind(email, service, iv, ciphertext, hint, t)
+    .run();
+}
+
+/** The plaintext of a service_keys row saved with saveServiceKey. */
+export const readServiceKey = (env: Env, email: string, service: string, row: { iv: string; ciphertext: string }) =>
+  decryptSecret(env, personScope(email), service, row.iv, row.ciphertext);
+
+export const markServiceKeyUsed = (env: Env, email: string, service: string) =>
+  env.DB.prepare("UPDATE service_keys SET last_used_at = ? WHERE owner_email = ? AND service = ?").bind(now(), email, service).run();
+
+// ---------------------------------------------------------------------------
 // CRUD
 // ---------------------------------------------------------------------------
 
@@ -77,9 +112,13 @@ export function validateSecretName(name: string) {
 export async function secretList(env: Env, site: Pick<SiteRow, "id" | "connectors">): Promise<string[]> {
   const { results } = await env.DB.prepare("SELECT name FROM secrets WHERE site_id = ? ORDER BY name").bind(site.id).all<{ name: string }>();
   const names = new Set(results.map((r) => r.name));
-  for (const n of parseJsonArray(site.connectors ?? "[]")) if (n !== "gemini") names.add(n);
+  for (const n of parseJsonArray(site.connectors)) if (n !== "gemini") names.add(n);
   return [...names].sort();
 }
+
+/** Why the proxy may not call `url` (see ssrf.ts), or null; Formelab's own domains count as blocked. */
+const blockedUrl = (env: Env, url: string, allowHttp: boolean) =>
+  checkProxyUrl(url, { domain: env.DOMAIN, allowHttp }) ?? checkProxyUrl(url, { domain: env.APP_DOMAIN, allowHttp });
 
 const HOST_RE = /^(\*\.)?[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/;
 
@@ -97,8 +136,7 @@ export function parseSecretHosts(raw: unknown, env: Env): string[] {
   for (const h of raw) {
     const host = typeof h === "string" ? h.trim().toLowerCase().replace(/\.$/, "") : "";
     const bare = host.startsWith("*.") ? host.slice(2) : host;
-    const probe = `https://${bare}/`;
-    const blocked = checkProxyUrl(probe, { domain: env.DOMAIN, allowHttp: false }) ?? checkProxyUrl(probe, { domain: env.APP_DOMAIN, allowHttp: false });
+    const blocked = blockedUrl(env, `https://${bare}/`, false);
     if (!HOST_RE.test(host) || blocked) {
       throw badRequest(`"${String(h).slice(0, 80)}" is not an allowed host.`, "List public host names only, without a scheme or path. " + hint);
     }
@@ -115,7 +153,7 @@ export function hostAllowed(hostname: string, hosts: string[]): boolean {
 
 export async function secretSet(env: Env, site: SiteRow, actor: User, name: string, body: unknown) {
   validateSecretName(name);
-  if (parseJsonArray(site.connectors ?? "[]").includes(name)) {
+  if (siteUses(site, name)) {
     throw err(
       409,
       "is_connector",
@@ -221,21 +259,20 @@ export function substitute(template: string, values: Map<string, string>, where:
 }
 
 /**
- * Some APIs echo request headers back (httpbin does). Scrub the secret's values from
- * anything returned to the browser so the key never reaches client code.
- */
-/**
  * A value as an API might echo it back: as is, and base64 (standard and URL-safe, unpadded),
  * URL-encoded and hex. Best effort (audit finding #7): a value split, reversed or re-encoded
  * some other way still gets through, which is why secrets can only reach their own hosts.
  */
 function encodings(v: string): string[] {
   const bytes = new TextEncoder().encode(v);
-  const b64 = b64encode(bytes).replace(/=+$/, "");
-  const hex = [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
-  return [v, b64, b64.replace(/\+/g, "-").replace(/\//g, "_"), encodeURIComponent(v), hex, hex.toUpperCase()];
+  const h = hex(bytes);
+  return [v, b64encode(bytes).replace(/=+$/, ""), b64url(bytes), encodeURIComponent(v), h, h.toUpperCase()];
 }
 
+/**
+ * Some APIs echo request headers back (httpbin does). Scrub the secret's values from
+ * anything returned to the browser so the key never reaches client code.
+ */
 export function redact(text: string, values: Map<string, string>): string {
   const needles = [...new Set([...values.values()].filter((v) => v.length >= 6).flatMap(encodings))].sort((a, b) => b.length - a.length);
   for (const n of needles) text = text.split(n).join("[redacted]");
@@ -266,28 +303,45 @@ export async function checkRate(env: Env, site: SiteRow, viewer: User) {
   await rateLimit(env, site.id, PROXY_RATE_PER_MINUTE, `This app made more than ${PROXY_RATE_PER_MINUTE} proxy calls in a minute.`);
 }
 
+const DAY_MS = 86_400_000;
+const dayBucket = (key: string) => `${key}:day${Math.floor(now() / DAY_MS)}`;
+
+/** Adds `by` to a D1 rate counter (made if new, expiring at `expiresAt`) and returns its new count. */
+export async function bumpCounter(env: Env, bucket: string, expiresAt: number, by = 1): Promise<number> {
+  const row = await env.DB.prepare(
+    `INSERT INTO rate_counters (bucket, count, expires_at) VALUES (?1, ?2, ?3)
+     ON CONFLICT(bucket) DO UPDATE SET count = count + ?2 RETURNING count`,
+  )
+    .bind(bucket, by, expiresAt)
+    .first<{ count: number }>();
+  return row?.count ?? by;
+}
+
+/** Adds `by` to today's (UTC) counter for `key` and returns its new count. */
+export const bumpToday = (env: Env, key: string, by = 1) =>
+  bumpCounter(env, dayBucket(key), (Math.floor(now() / DAY_MS) + 2) * DAY_MS, by);
+
 /**
  * At most `perMinute` calls a minute for `key`. When the limiter binding (PROXY_LIMITER unless
  * another is given) is configured, its own limit applies instead, so it must match `perMinute`.
  */
-export async function rateLimit(env: Env, key: string, perMinute: number, message: string, limiter: RateLimit | undefined = env.PROXY_LIMITER) {
+export async function rateLimit(
+  env: Env,
+  key: string,
+  perMinute: number,
+  message: string,
+  limiter: RateLimit | undefined = env.PROXY_LIMITER,
+  hint = "Wait a minute, and cache results in KV or localStorage instead of refetching.",
+) {
   let ok: boolean;
   if (limiter) {
     ok = (await limiter.limit({ key })).success;
   } else {
     const minute = Math.floor(now() / 60_000);
-    const row = await env.DB.prepare(
-      `INSERT INTO rate_counters (bucket, count, expires_at) VALUES (?1, 1, ?2)
-       ON CONFLICT(bucket) DO UPDATE SET count = count + 1 RETURNING count`,
-    )
-      .bind(`${key}:${minute}`, (minute + 2) * 60_000)
-      .first<{ count: number }>();
-    ok = (row?.count ?? 0) <= perMinute;
+    ok = (await bumpCounter(env, `${key}:${minute}`, (minute + 2) * 60_000)) <= perMinute;
     if (Math.random() < 0.02) await env.DB.prepare("DELETE FROM rate_counters WHERE expires_at < ?").bind(now()).run();
   }
-  if (!ok) {
-    throw err(429, "rate_limited", message, "Wait a minute, and cache results in KV or localStorage instead of refetching.");
-  }
+  if (!ok) throw err(429, "rate_limited", message, hint);
 }
 
 /**
@@ -295,20 +349,12 @@ export async function rateLimit(env: Env, key: string, perMinute: number, messag
  * the minute). Every call counts, including ones turned away, so a caller can't keep retrying.
  */
 export async function dailyLimit(env: Env, key: string, perDay: number, message: string, hint: string) {
-  const day = Math.floor(now() / 86_400_000);
-  const row = await env.DB.prepare(
-    `INSERT INTO rate_counters (bucket, count, expires_at) VALUES (?1, 1, ?2)
-     ON CONFLICT(bucket) DO UPDATE SET count = count + 1 RETURNING count`,
-  )
-    .bind(`${key}:day${day}`, (day + 2) * 86_400_000)
-    .first<{ count: number }>();
-  if ((row?.count ?? 0) > perDay) throw err(429, "rate_limited", message, hint);
+  if ((await bumpToday(env, key)) > perDay) throw err(429, "rate_limited", message, hint);
 }
 
 /** How many calls `key` has made today (see dailyLimit). */
 export async function usedToday(env: Env, key: string): Promise<number> {
-  const day = Math.floor(now() / 86_400_000);
-  return (await env.DB.prepare("SELECT count FROM rate_counters WHERE bucket = ?").bind(`${key}:day${day}`).first<{ count: number }>())?.count ?? 0;
+  return (await env.DB.prepare("SELECT count FROM rate_counters WHERE bucket = ?").bind(dayBucket(key)).first<{ count: number }>())?.count ?? 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -396,7 +442,7 @@ export async function proxy(env: Env, site: SiteRow, viewer: User, name: string,
   await checkRate(env, site, viewer);
   const saved = await env.DB.prepare("SELECT 1 FROM secrets WHERE site_id = ? AND name = ?").bind(site.id, name).first();
   // No saved key by that name: one of the connectors the app was built to use, if it has that one.
-  if (!saved && parseJsonArray(site.connectors ?? "[]").includes(name)) {
+  if (!saved && siteUses(site, name)) {
     return sendProxied(env, site, viewer, parsed, await connectorKey(env, site, name));
   }
   const { secret, hosts } = await loadSecret(env, site.id, name);
@@ -417,8 +463,7 @@ export async function sendProxied(env: Env, site: SiteRow, viewer: User, req: Pa
   const values = placeholderValues(secret);
 
   let url = substitute(req.url, values, "url");
-  const reason =
-    checkProxyUrl(url, { domain: env.DOMAIN, allowHttp: isDev(env) }) ?? checkProxyUrl(url, { domain: env.APP_DOMAIN, allowHttp: isDev(env) });
+  const reason = blockedUrl(env, url, isDev(env));
   if (reason) throw err(400, "url_blocked", `That URL is not allowed: ${reason}.`, "The proxy only calls public https APIs.");
   // The URL's host is never echoed: a placeholder may have put the secret into it.
   if (!hostAllowed(new URL(url).hostname, hosts)) {
@@ -449,7 +494,7 @@ export async function sendProxied(env: Env, site: SiteRow, viewer: User, req: Pa
   try {
     upstream = await fetch(url, { method, headers, body, redirect: "manual", signal: AbortSignal.timeout(PROXY_TIMEOUT_MS) });
   } catch (e) {
-    const timedOut = e instanceof Error && (e.name === "TimeoutError" || e.name === "AbortError");
+    const timedOut = isTimeout(e);
     await audit(env, viewer.email, "proxy", `${site.namespace}/${site.mount_path}`, { siteId: site.id, ...key.audit, host, status: timedOut ? "timeout" : "error" });
     throw err(502, timedOut ? "upstream_timeout" : "upstream_error", timedOut ? "The API did not answer within 20 seconds." : "Could not reach the API.", "Check the URL and try again later.");
   }

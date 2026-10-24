@@ -1,13 +1,13 @@
 import { audit } from "./audit";
 import { findIcon, iconPathFor } from "./icons";
 import { findShareImage, linkPreviewOf } from "./share";
-import { accountsAmong, canManageSite, canPublishTo, canShareSite, canViewSite, isAppOwner, isNamespaceEditor, isNamespaceOwner, ownerOnly } from "./auth";
+import { accountsAmong, canManageSite, canPublishTo, canShareSite, canViewSite, isAppOwner, isListed, isNamespaceEditor, isNamespaceOwner, ownerOnly } from "./auth";
 import type { Env, User } from "./env";
 import { now } from "./env";
 import { badRequest, err, forbidden, notFound } from "./errors";
 import { contentTypeFor } from "./mime";
 import type { FileMap } from "./upload";
-import { base32, isEmail, normEmail, parseJsonArray, randomBytes, randomId, sortableId } from "./util";
+import { base32, isEmail, normEmail, parseJsonArray, randomBytes, randomId, sha256Hex, sortableId } from "./util";
 import { appSharedEmail, namespaceSharedEmail, sendEach, shareEmailAllowance } from "./email";
 import { appOrigin, siteOrigin } from "./hosts";
 import { flagOnForOwner } from "./flags";
@@ -19,7 +19,6 @@ const added = (next: string[], prev: string[]) => {
   return next.map(normEmail).filter((e) => !before.has(e));
 };
 
-/** Emails the people newly given access to an app. */
 /**
  * Emails the people an app was just shared with, within the sharer's daily share email limits
  * (see shareEmailAllowance). Returns the ones who weren't emailed, so the sharer can be told.
@@ -133,7 +132,7 @@ export function validateLabel(raw: unknown): string {
     );
   }
   if (RESERVED_LABELS.has(label)) {
-    throw badRequest(`"${label}" is a reserved name.`, "Pick another namespace name; www, api, admin, mcp, static and platform are reserved.");
+    throw badRequest(`"${label}" is a reserved name.`, `Pick another namespace name; ${[...RESERVED_LABELS].join(", ")} are reserved.`);
   }
   return label;
 }
@@ -289,7 +288,7 @@ export const siteView = (env: Env, s: SiteRow, requestUrl?: string): SiteView =>
   title: s.title,
   ownerEmail: s.owner_email,
   editors: parseJsonArray(s.editors),
-  sharers: parseJsonArray(s.sharers ?? "[]"),
+  sharers: parseJsonArray(s.sharers),
   visibility: s.visibility,
   allowedEmails: parseJsonArray(s.allowed_emails),
   hidden: !!s.hidden,
@@ -300,7 +299,7 @@ export const siteView = (env: Env, s: SiteRow, requestUrl?: string): SiteView =>
   updatedAt: s.updated_at,
   iconUrl: s.icon_path ? `/apps/${encodeURIComponent(s.id)}/icon?v=${s.current_version}` : null,
   sheets: parseJsonArray(s.sheets),
-  connectors: parseJsonArray(s.connectors ?? "[]"),
+  connectors: parseJsonArray(s.connectors),
   dataWrites: s.kv_writes === "editors" ? "editors" : "everyone",
   publicUrl: publicLinkUrl(env, s, requestUrl),
   guestResponses: !!s.guest_responses,
@@ -330,7 +329,6 @@ export function parseGuestResponsesPerDay(raw: unknown): number | undefined {
   return n;
 }
 
-/** siteView for a list that also holds apps the person can only open: the public link is for managers. */
 /**
  * siteView for a list that also holds apps the person can only open: who else it's shared with,
  * its editors and its spreadsheets are for the people who manage it (audit A4), like the public link.
@@ -397,6 +395,9 @@ export async function addSiteSheet(env: Env, siteId: string, sheetId: string): P
     .run();
 }
 
+/** What to call an app: its title, else its mount path, else its space. */
+export const siteName = (s: Pick<SiteRow, "title" | "mount_path" | "namespace">) => s.title || s.mount_path || s.namespace;
+
 export const namespaceView = (n: NamespaceRow, user: User, env: Env, requestUrl?: string) => ({
   label: n.label,
   /** Spaces have no address of their own: this is the web app's list of the apps in it. */
@@ -419,10 +420,10 @@ export const getSiteById = (env: Env, id: string) => env.DB.prepare("SELECT * FR
 export const getSiteByMount = (env: Env, ns: string, mount: string) =>
   env.DB.prepare("SELECT * FROM sites WHERE namespace = ? AND mount_path = ?").bind(ns, mount).first<SiteRow>();
 
-/** Finds the site whose mount path is the longest prefix of `path` (which starts with "/"). */
 export const getSiteByHostLabel = (env: Env, label: string) =>
   env.DB.prepare("SELECT * FROM sites WHERE host_label = ?").bind(label).first<SiteRow>();
 
+/** Finds the site whose mount path is the longest prefix of `path` (which starts with "/"). */
 export async function resolveSiteForPath(env: Env, ns: string, path: string): Promise<SiteRow | null> {
   const { results } = await env.DB.prepare("SELECT * FROM sites WHERE namespace = ?").bind(ns).all<SiteRow>();
   let best: SiteRow | null = null;
@@ -527,11 +528,6 @@ export async function deleteNamespace(ctx: Ctx, rawLabel: string) {
 export const waitlisted = () =>
   err(403, "waitlisted", "Your account is still on the waitlist.", "You can open apps people share with you. We'll email you when you can create your own.");
 
-const listed = (list: string, email: string) => parseJsonArray(list).map(normEmail).includes(email);
-
-/** Is this the person's own app: they own it, or own its namespace. */
-const ownsSite = (u: User, s: SiteRow, ns: NamespaceRow) => isAppOwner(u, s, ns);
-
 /**
  * Apps someone else owns that were shared with this person by name: as a viewer (allowed_emails),
  * an editor of the app, or an editor of its namespace. Apps open to all members don't count.
@@ -546,8 +542,8 @@ export async function listSharedSites(ctx: Ctx) {
   const out = sites.results
     .filter((s) => {
       const ns = nsByLabel.get(s.namespace);
-      if (!ns || ownsSite(user, s, ns)) return false;
-      return listed(s.allowed_emails, user.email) || listed(s.editors, user.email) || listed(ns.editors, user.email);
+      if (!ns || isAppOwner(user, s, ns)) return false;
+      return isListed(s.allowed_emails, user.email) || isListed(s.editors, user.email) || isListed(ns.editors, user.email);
     })
     .map((s) => listedView(env, s, canManageSite(user, s, nsByLabel.get(s.namespace)!), ctx.requestUrl));
   const shown = new Set(out.map((v) => v.id));
@@ -562,7 +558,7 @@ function findMissingIcons(ctx: Ctx, sites: SiteRow[]) {
   if (todo.length) ctx.waitUntil(Promise.all(todo.map((s) => iconPathFor(ctx.env, s).catch(() => ""))));
 }
 
-/** The person's own apps (see ownsSite), for the dashboard's "My apps". */
+/** The person's own apps (see isAppOwner), for the dashboard's "My apps". */
 export async function listOwnSites(ctx: Ctx) {
   const { env, user } = ctx;
   const [namespaces, sites] = await Promise.all([
@@ -573,7 +569,7 @@ export async function listOwnSites(ctx: Ctx) {
   const out = sites.results
     .filter((s) => {
       const ns = nsByLabel.get(s.namespace);
-      return !!ns && ownsSite(user, s, ns);
+      return !!ns && isAppOwner(user, s, ns);
     })
     .map((s) => ({ ...siteView(env, s, ctx.requestUrl), canManage: true }));
   const shown = new Set(out.map((v) => v.id));
@@ -639,31 +635,34 @@ async function eachLimited<T>(items: T[], fn: (item: T) => Promise<void>) {
   await Promise.all(Array.from({ length: Math.min(R2_CONCURRENCY, items.length) }, worker));
 }
 
-async function sha256Bytes(data: Uint8Array): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", data);
-  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
-}
-
 /** Writes each file with its SHA-256 in customMetadata, so siteManifest can tell clients what is unchanged. */
 async function putFiles(bucket: R2Bucket, prefix: string, files: FileMap) {
   await eachLimited([...files.entries()], async ([path, data]) => {
     await bucket.put(prefix + path, data, {
       httpMetadata: { contentType: contentTypeFor(path) },
-      customMetadata: { sha256: await sha256Bytes(data) },
+      customMetadata: { sha256: await sha256Hex(data) },
     });
   });
 }
 
-/** Every file of the site's live version. */
-export async function currentFiles(env: Env, site: SiteRow): Promise<FileMap> {
-  const prefix = `sites/${site.id}/${site.current_version}/`;
-  const keys: string[] = [];
+/** Where a version's files live in R2: sites/<id>/<version>/<path>. */
+export const versionPrefix = (site: Pick<SiteRow, "id" | "current_version">) => `sites/${site.id}/${site.current_version}/`;
+
+/** Every object under `prefix`, a page of up to 1,000 at a time. */
+export async function* listObjects(bucket: R2Bucket, prefix: string, include?: ("customMetadata" | "httpMetadata")[]): AsyncGenerator<R2Object[]> {
   let cursor: string | undefined;
   do {
-    const list = await env.BUCKET.list({ prefix, cursor, limit: 1000 });
-    for (const o of list.objects) keys.push(o.key);
+    const list = await bucket.list({ prefix, cursor, limit: 1000, include });
+    yield list.objects;
     cursor = list.truncated ? list.cursor : undefined;
   } while (cursor);
+}
+
+/** Every file of the site's live version. */
+export async function currentFiles(env: Env, site: SiteRow): Promise<FileMap> {
+  const prefix = versionPrefix(site);
+  const keys: string[] = [];
+  for await (const page of listObjects(env.BUCKET, prefix)) keys.push(...page.map((o) => o.key));
   const files: FileMap = new Map();
   await eachLimited(keys, async (key) => {
     const obj = await env.BUCKET.get(key);
@@ -674,25 +673,17 @@ export async function currentFiles(env: Env, site: SiteRow): Promise<FileMap> {
 
 /** The live version's files with their sizes and SHA-256 (null for files written before hashes were kept). */
 export async function siteManifest(env: Env, site: SiteRow) {
-  const prefix = `sites/${site.id}/${site.current_version}/`;
+  const prefix = versionPrefix(site);
   const files: { path: string; bytes: number; sha256: string | null }[] = [];
-  let cursor: string | undefined;
-  do {
-    const list = await env.BUCKET.list({ prefix, cursor, limit: 1000, include: ["customMetadata"] });
-    for (const o of list.objects) files.push({ path: o.key.slice(prefix.length), bytes: o.size, sha256: o.customMetadata?.sha256 ?? null });
-    cursor = list.truncated ? list.cursor : undefined;
-  } while (cursor);
+  for await (const page of listObjects(env.BUCKET, prefix, ["customMetadata"])) {
+    for (const o of page) files.push({ path: o.key.slice(prefix.length), bytes: o.size, sha256: o.customMetadata?.sha256 ?? null });
+  }
   files.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
   return { version: site.current_version, files };
 }
 
 export async function deletePrefix(bucket: R2Bucket, prefix: string) {
-  let cursor: string | undefined;
-  do {
-    const list = await bucket.list({ prefix, cursor, limit: 1000 });
-    if (list.objects.length) await bucket.delete(list.objects.map((o) => o.key));
-    cursor = list.truncated ? list.cursor : undefined;
-  } while (cursor);
+  for await (const page of listObjects(bucket, prefix)) if (page.length) await bucket.delete(page.map((o) => o.key));
 }
 
 /** Creates or atomically replaces the site at namespace/mountPath. */
@@ -709,10 +700,10 @@ export async function publishSite(ctx: Ctx, input: PublishInput) {
   const dataWrites = parseDataWrites(input.dataWrites);
   const editors = input.editors === undefined ? undefined : emailList(input.editors, "editors");
   if (!input.files.has("index.html")) throw badRequest("The upload has no index.html.", "Include an index.html at the root.");
-  // The app's icon for the web app's tiles (see icons.ts).
-  const icon = findIcon(input.files.keys(), new TextDecoder().decode(input.files.get("index.html")!.subarray(0, 64 * 1024)), mount);
-  // Its link preview image (see share.ts).
-  const share = findShareImage(input.files.keys(), new TextDecoder().decode(input.files.get("index.html")!.subarray(0, 192 * 1024)), mount);
+  // The app's icon for the web app's tiles (see icons.ts) and its link preview image (see share.ts).
+  const indexHtml = new TextDecoder().decode(input.files.get("index.html")!.subarray(0, 192 * 1024));
+  const icon = findIcon(input.files.keys(), indexHtml, mount);
+  const share = findShareImage(input.files.keys(), indexHtml, mount);
   if (input.requireIcon && !icon) throw err(400, "icon_required", "This app has no icon (favicon). Formelab shows it on the app's tile.", ICON_HINT);
 
   let ns = await getNamespace(env, label);
@@ -743,7 +734,7 @@ export async function publishSite(ctx: Ctx, input: PublishInput) {
   const version = sortableId();
   const id = existing?.id ?? randomId("s_");
   const hostLabel = existing?.host_label ?? (await newHostLabel(env, label, mount));
-  const prefix = `sites/${id}/${version}/`;
+  const prefix = versionPrefix({ id, current_version: version });
   let totalBytes = 0;
   for (const d of input.files.values()) totalBytes += d.length;
   const t = now();
@@ -812,7 +803,7 @@ export async function publishSite(ctx: Ctx, input: PublishInput) {
     }
     throw e;
   }
-  if (existing) ctx.waitUntil(deletePrefix(env.BUCKET, `sites/${id}/${existing.current_version}/`).catch(() => {}));
+  if (existing) ctx.waitUntil(deletePrefix(env.BUCKET, versionPrefix(existing)).catch(() => {}));
   await env.DB.prepare("UPDATE sites SET icon_path = ?, share_path = ? WHERE id = ? AND current_version = ?").bind(icon, share, id, version).run();
   row.icon_path = icon;
   row.share_path = share;
@@ -910,7 +901,7 @@ export async function updateSite(ctx: Ctx, id: string, patch: SitePatch) {
   }
   // Which editors may also share it: the owner's choice, and always among the editors.
   if (patch.sharers !== undefined || patch.editors !== undefined) {
-    const before = parseJsonArray(site.sharers ?? "[]");
+    const before = parseJsonArray(site.sharers);
     let list = patch.sharers !== undefined ? emailList(patch.sharers, "sharers") : before;
     if (patch.sharers !== undefined) {
       if (!isAppOwner(ctx.user, site, ns)) throw ownerOnly();
@@ -935,10 +926,10 @@ export async function updateSite(ctx: Ctx, id: string, patch: SitePatch) {
     if (changed.includes("public_link")) detail.publicLink = !next ? "off" : site.public_link ? "new" : "on";
   }
   const guestResponses = parseBool(patch.guest_responses);
-  if (guestResponses !== undefined && !(await flagOnForOwner(ctx.env, "responses", site.owner_email))) {
-    throw err(403, "not_available", "Responses aren't available on Formelab yet.", "Leave guest_responses out until they are.");
-  }
   if (guestResponses !== undefined) {
+    if (!(await flagOnForOwner(ctx.env, "responses", site.owner_email))) {
+      throw err(403, "not_available", "Responses aren't available on Formelab yet.", "Leave guest_responses out until they are.");
+    }
     set("guest_responses", guestResponses ? 1 : 0);
     if (changed.includes("guest_responses")) detail.guestResponses = guestResponses;
   }
@@ -967,7 +958,7 @@ export async function updateSite(ctx: Ctx, id: string, patch: SitePatch) {
   if (patch.connectors !== undefined) {
     // Connectors use the owner's own keys, so only the owner chooses which ones the app uses.
     const list = await connectorNameList(ctx.env, site.owner_email, patch.connectors);
-    const before = parseJsonArray(site.connectors ?? "[]");
+    const before = parseJsonArray(site.connectors);
     const gained = added(list, before);
     const lost = added(before, list);
     if (gained.length || lost.length) {
@@ -1068,7 +1059,7 @@ export async function copySite(ctx: Ctx, id: string) {
     if (n > 50) throw err(409, "too_many_copies", "This app already has a lot of copies in this space.", "Delete some of them, then try again.");
     mount = `${base}-copy-${n}`;
   }
-  const name = (site.title || site.mount_path || site.namespace).slice(0, 190);
+  const name = siteName(site).slice(0, 190);
   const result = await publishSite(ctx, {
     namespace: ns.label,
     mountPath: mount,

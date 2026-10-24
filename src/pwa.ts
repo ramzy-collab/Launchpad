@@ -13,10 +13,10 @@ import type { Context } from "hono";
 import type { AppEnv, Env } from "./env";
 import { appsLabelOf } from "./hosts";
 import { ICON_192_PNG, ICON_512_PNG, MASKABLE_512_PNG, APPLE_TOUCH_ICON_PNG, SW_JS } from "./generated/assets";
-import { iconPathFor, iconResponse, letterIcon, pngSize } from "./icons";
+import { attr, ICON_HEADERS, iconPathFor, iconResponse, letterIcon, pngSize } from "./icons";
 import { extOf } from "./mime";
 import { getSiteById, type SiteRow } from "./sites";
-import { b64decode, escapeHtml } from "./util";
+import { b64decode, escapeHtml, hex } from "./util";
 
 const CANVAS = "#FBFAF7";
 const CANVAS_DARK = "#161514";
@@ -86,13 +86,12 @@ export const pwaRoutes: [string, () => Response][] = [
 // Published apps
 // ---------------------------------------------------------------------------
 
-type IconSite = SiteRow & { icon_path?: string | null };
 type IconKind = "icon" | "letter";
 
 async function sign(env: Env, message: string): Promise<string> {
   const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(env.SECRETS_KEK), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
   const mac = new Uint8Array(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(`pwa-icon:${message}`)));
-  return [...mac.subarray(0, 16)].map((b) => b.toString(16).padStart(2, "0")).join("");
+  return hex(mac.subarray(0, 16));
 }
 
 /** A signed address for an app's icon (or its letter tile) on the app's own host, for this version. */
@@ -107,15 +106,15 @@ export async function appPwaIcon(c: Context<AppEnv>): Promise<Response> {
   const notFound = () => new Response("Not found", { status: 404, headers: { ...NO_SNIFF, "content-type": "text/plain; charset=utf-8" } });
   if (kind !== "icon" && kind !== "letter") return notFound();
   if (sig !== (await sign(c.env, `${id}:${version}:${kind}`))) return notFound();
-  const site = (await getSiteById(c.env, id)) as IconSite | null;
+  const site = await getSiteById(c.env, id);
   if (!site || site.host_label !== appsLabelOf(new URL(c.req.url).hostname, c.env) || String(site.current_version) !== version) return notFound();
   const res =
     kind === "letter"
       ? new Response(letterIcon(site), { headers: { "content-type": "image/svg+xml" } })
       : await iconResponse(c.env, site);
   const headers = new Headers(res.headers);
-  headers.set("x-content-type-options", "nosniff");
-  headers.set("content-security-policy", "default-src 'none'; img-src data:; style-src 'unsafe-inline'; sandbox");
+  for (const [k, v] of Object.entries(ICON_HEADERS)) headers.set(k, v);
+  // Signed for this version only, so shared caches may keep it.
   headers.set("cache-control", "public, max-age=86400");
   return new Response(res.body, { headers });
 }
@@ -123,7 +122,7 @@ export async function appPwaIcon(c: Context<AppEnv>): Promise<Response> {
 export const appTitle = (site: SiteRow) => site.title || site.mount_path.split("/").pop() || site.namespace;
 
 /** The icons for an app's manifest: its own when it's an SVG or a PNG of at least 144px, else its letter tile. */
-async function manifestIcons(env: Env, site: IconSite) {
+async function manifestIcons(env: Env, site: SiteRow) {
   const res = await iconResponse(env, site);
   const type = (res.headers.get("content-type") ?? "").split(";")[0]!;
   const bytes = new Uint8Array(await res.arrayBuffer());
@@ -138,7 +137,7 @@ async function manifestIcons(env: Env, site: IconSite) {
 
 /** GET /_platform/manifest.webmanifest on an app's host, for people who can open the app (checked before this runs). */
 export async function appManifest(c: Context<AppEnv>): Promise<Response> {
-  const site = c.get("site") as IconSite;
+  const site = c.get("site");
   const scope = "/";
   const name = appTitle(site);
   return manifestResponse(
@@ -161,10 +160,10 @@ export async function appManifest(c: Context<AppEnv>): Promise<Response> {
  * iPhones and iPads (which only use PNG home screen icons), an apple-touch-icon. Nothing is
  * added that the app already has.
  */
-export async function appPwaTags(env: Env, site: IconSite, html: string): Promise<string> {
+export async function appPwaTags(env: Env, site: SiteRow, html: string): Promise<string> {
   const head = html.slice(0, 64 * 1024);
   const links = head.match(/<link\b[^>]*>/gi) ?? [];
-  const has = (rel: RegExp) => links.some((tag) => rel.test(/\brel\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i.exec(tag)?.slice(1).find((x) => x !== undefined) ?? ""));
+  const has = (rel: RegExp) => links.some((tag) => rel.test(attr(tag, "rel") ?? ""));
   let tags = "";
   if (!has(/\bmanifest\b/i)) {
     tags += `<link rel="manifest" href="/_platform/manifest.webmanifest" crossorigin="use-credentials">`;
