@@ -4,6 +4,7 @@ import type { AppEnv } from "./env";
 import { ApiError, badRequest, err, errorBody, jsonError, onError } from "./errors";
 import { adminOrigin, hostKind } from "./hosts";
 import { sendRoleInvites, setStar, transferOwnership, withoutAccounts } from "./sharing";
+import { removeSavedKey, replaceSavedKey } from "./connections";
 import {
   copySite,
   createNamespace,
@@ -248,10 +249,15 @@ export function managementApi(kind: "admin" | "deploy") {
       return new Response(readable, { headers: { "content-type": "application/x-ndjson; charset=utf-8", "cache-control": "no-store" } });
     });
     // Connected apps are behind a feature flag (admin panel → Features).
-    api.use("/services/*", async (c, next) => {
+    const connectedAppsFlag = async (c: Context<AppEnv>, next: () => Promise<void>) => {
       if (!(await flagOn(c.env, "connected_apps", c.get("user")))) throw err(404, "not_found", "Connected apps aren't available yet.", "Check back soon.");
       await next();
-    });
+    };
+    api.use("/services/*", connectedAppsFlag);
+    // An app's saved keys, from its Connected apps tab: a new value for the same hosts, or remove it.
+    api.use("/sites/:id/keys/*", connectedAppsFlag);
+    api.put("/sites/:id/keys/:name", async (c) => c.json(await replaceSavedKey(ctxOf(c), c.req.param("id"), c.req.param("name"), (await jsonBody(c)).value)));
+    api.delete("/sites/:id/keys/:name", async (c) => c.json(await removeSavedKey(ctxOf(c), c.req.param("id"), c.req.param("name"))));
     api.get("/services/gemini", async (c) => c.json(await geminiStatus(c.env, c.get("user").email)));
     api.put("/services/gemini", async (c) => c.json(await connectGemini(c.env, c.get("user"), (await jsonBody(c)).apiKey)));
     api.delete("/services/gemini", async (c) => c.json(await disconnectGemini(c.env, c.get("user"))));

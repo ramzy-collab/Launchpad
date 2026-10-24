@@ -66,7 +66,9 @@ describe("dashboard", () => {
       const html = await res.text();
       expect(html, path).toContain(`<h1>${title}</h1>`);
       expect(html, path).toContain('<a class="new-app" href="/new"');
-      for (const href of ['href="/"', 'href="/shared"', 'href="/spaces"', 'href="/connect"', 'href="/connected"', 'href="/keys"']) expect(html, path).toContain(href);
+      for (const href of ['href="/"', 'href="/shared"', 'href="/spaces"', 'href="/connect"', 'href="/keys"']) expect(html, path).toContain(href);
+      // Connected apps is behind its feature flag, off by default: no link to it in the menu.
+      expect(html, path).not.toContain('<a href="/connected"');
       expect(html, path).toContain("data-theme-toggle");
       expect(html, path).toContain("Admin panel ↗");
       expect(html, path).toContain('<a class="link" href="/keys"'); // Access keys sit in the account menu

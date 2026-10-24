@@ -162,7 +162,7 @@ describe("the connected_apps feature flag", () => {
     const page = await (await call("/app/connected", { as: OWNER })).text();
     expect(page).toContain("Coming soon");
     expect(page).not.toContain("dlg-gemini-service");
-    expect(page).toContain('Connected apps <span class="soon">Soon</span>');
+    expect(page).not.toContain('href="/connected"'); // no menu link while the feature is off
     expect((await connect(OWNER, GOOD)).status).toBe(404);
     const ns = uniq();
     await publishHtml(OWNER, ns, "ai", PAGE("x"));

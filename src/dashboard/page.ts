@@ -23,6 +23,7 @@ import { responsesCsv } from "../responses";
 import { flagOnForOwner } from "../flags";
 import { appPreviewText } from "../share";
 import { peopleWithAccounts, pendingInvites, starredIds } from "../sharing";
+import { appConnections, connectionsUsedBy, type AppConnections } from "../connections";
 
 export const fmtTime = (ms: number | null) => (ms ? new Date(ms).toISOString().replace("T", " ").slice(0, 16) + " UTC" : "never");
 
@@ -72,7 +73,7 @@ export function shell(c: Context<AppEnv>, user: User, page: Page, body: string, 
       ${link("spaces", "/spaces")}
       <p class="side-label">Connect</p>
       ${link("connect", "/connect")}
-      <a href="/connected"${current("connected")}>Connected apps${c.get("features")?.has("connected_apps") ? "" : ` <span class="soon">Soon</span>`}</a>
+      ${c.get("features")?.has("connected_apps") ? `<a href="/connected"${current("connected")}>Connected apps</a>` : ""}
     </nav>
     ${getApp}`
     : `<nav class="side-nav" aria-label="Main">
@@ -189,6 +190,84 @@ export async function appActivityPage(c: Context<AppEnv>, id: string): Promise<R
   return shell(c, user, site.ownerEmail === user.email ? "apps" : "shared", body, `Activity: ${appName(site)}`);
 }
 
+/** Google Sheets' logo, from the services sprite's data. */
+const SHEETS_LOGO = () => {
+  const icon = SERVICE_ICONS.find(([name]) => name === "Google Sheets")!;
+  return `<svg viewBox="0 0 48 48" aria-hidden="true"><rect width="48" height="48" rx="12" fill="${icon[1]}"/><path transform="translate(12 12)" fill="${icon[2]}" d="${icon[3]}"/></svg>`;
+};
+const KEY_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="15" r="4"/><path d="M10.8 12.2L20 3M16 7l3 3M14 9l2 2"/></svg>`;
+
+/** A spreadsheet in an app's list: a link to open it in Google Sheets, and Remove for the owner. */
+export function sheetItem(id: string, canEdit: boolean): string {
+  return `<li class="sheet-item" data-sheet="${e(id)}">${SHEETS_LOGO()}<a href="https://docs.google.com/spreadsheets/d/${encodeURIComponent(id)}" target="_blank" rel="noopener">Spreadsheet ${e(id.slice(-6))}</a>${
+    canEdit ? `<button type="button" class="secondary small" data-sheet-remove="${e(id)}">Remove</button>` : ""
+  }</li>`;
+}
+
+/** The app page's Connected apps tab: what this app is connected to (connected_apps flag). */
+function connectionsPanel(site: SiteView, conns: AppConnections, opts: { isSiteOwner: boolean; canManage: boolean }): string {
+  const owner = opts.isSiteOwner ? "your" : `${site.ownerEmail}'s`;
+  const rows: string[] = [];
+  if (conns.gemini.used) {
+    rows.push(`<div class="conn" data-conn="gemini">
+  <span class="conn-ic">${AI_LOGOS.gemini}</span>
+  <div class="conn-txt">
+    <strong>Google Gemini ${conns.gemini.connected ? `<span class="chip ok">Connected</span>` : `<span class="chip off">Not connected</span>`}</strong>
+    <span>AI that writes, sorts and summarizes inside this app, with ${e(owner)} Gemini key.${conns.gemini.lastUsedAt ? ` Last used ${e(ago(conns.gemini.lastUsedAt))}.` : ""}</span>
+    <span class="conn-note">${
+      conns.gemini.connected
+        ? `Every one of ${e(opts.isSiteOwner ? "your" : `${site.ownerEmail}'s`)} apps can use it. Disconnect it on <a href="/connected">Connected apps</a>.`
+        : `The key isn't connected any more, so this app can't use Gemini until it's connected again on <a href="/connected">Connected apps</a>.`
+    }</span>
+  </div>
+</div>`);
+  }
+  if (conns.sheets.ids.length || (opts.isSiteOwner && conns.sheets.connected)) {
+    rows.push(`<div class="conn" data-conn="sheets">
+  <span class="conn-ic">${SHEETS_LOGO()}</span>
+  <div class="conn-txt">
+    <strong>Google Sheets ${conns.sheets.connected ? `<span class="chip ok">Connected</span>` : `<span class="chip off">Not connected</span>`}</strong>
+    <span>Reads and adds rows to the spreadsheets listed here, with ${e(owner)} Google account, and nothing else in ${opts.isSiteOwner ? "your" : "their"} Drive.</span>
+    ${conns.sheets.connected ? "" : `<span class="conn-note">Google Sheets isn't connected, so this app can't reach these spreadsheets. ${opts.isSiteOwner ? `Connect it on <a href="/connected">Connected apps</a>.` : `Ask ${e(site.ownerEmail)} to connect it.`}</span>`}
+    <ul class="sheet-list" data-sheet-list>${conns.sheets.ids.map((id) => sheetItem(id, opts.isSiteOwner)).join("")}</ul>
+    <p class="muted sheet-empty" data-sheet-empty${conns.sheets.ids.length ? " hidden" : ""}>No spreadsheets yet.</p>
+    ${
+      opts.isSiteOwner
+        ? `<button type="button" class="linkish" data-sheet-add-open aria-expanded="false" aria-controls="sheet-add">+ Add a spreadsheet</button>
+    <form class="sheet-add" id="sheet-add" data-sheet-add hidden>
+      <input name="sheet" autocomplete="off" spellcheck="false" placeholder="https://docs.google.com/spreadsheets/d/..." aria-label="Google Sheets link">
+      <button>Add it</button>
+    </form>`
+        : ""
+    }
+  </div>
+</div>`);
+  }
+  for (const k of conns.keys) {
+    const where = k.hosts.length ? `Only ever sent to ${k.hosts.join(", ")}, never shown in the app or to people you share it with.` : "Saved before keys listed where they may be sent, so the app can't use it until it's saved again with its hosts.";
+    rows.push(`<div class="conn" data-key="${e(k.name)}">
+  <span class="conn-ic key">${KEY_ICON}</span>
+  <div class="conn-txt">
+    <strong>${e(k.name)} <span class="chip ok">Key saved</span></strong>
+    <span>${e(where)}</span>
+    <form class="key-replace" data-key-form hidden>
+      <input type="password" name="value" autocomplete="off" spellcheck="false" placeholder="Paste the new key" aria-label="New key for ${e(k.name)}">
+      <button>Save key</button><button type="button" class="secondary" data-key-cancel>Cancel</button>
+    </form>
+  </div>
+  ${
+    opts.canManage
+      ? `<div class="conn-actions">${k.hosts.length ? `<button type="button" class="secondary small" data-key-replace>Replace key</button>` : ""}<button type="button" class="secondary small" data-key-remove>Remove</button></div>`
+      : ""
+  }
+</div>`);
+  }
+  return `<h2>Connected to this app</h2>
+  <p class="muted" data-conn-intro${rows.length ? "" : " hidden"}>Services this app can use. To connect a new one, go to <a href="/connected">Connected apps</a>.</p>
+  <div class="conns" data-conns>${rows.join("\n")}</div>
+  <div class="conn-empty" data-conn-empty${rows.length ? " hidden" : ""}><strong>Nothing connected yet.</strong><br>Connect AI, spreadsheets or other services on the <a href="/connected">Connected apps</a> page, then let this app use them.</div>`;
+}
+
 /** The roles on an app's People list, from its share lists. */
 type Role = "viewer" | "editor" | "admin";
 const ROLE_NAME: Record<Role, string> = { viewer: "Viewer", editor: "Editor", admin: "Admin" };
@@ -260,6 +339,8 @@ export async function appSettingsPage(c: Context<AppEnv>, id: string): Promise<R
   // Update with AI: the person's own key rewrites the app (app_builder flag).
   const builderOn = !!c.get("features")?.has("app_builder");
   const keys = builderOn ? await builderKeys(c.env, user.email) : {};
+  // The Connected apps tab is behind the connected_apps flag (admin panel → Features).
+  const conns = c.get("features")?.has("connected_apps") ? await appConnections(c.env, site) : null;
   const provider = UPDATE_ORDER.find((b) => keys[b]);
   const access = accessOf(site);
   const isPublic = !!site.publicUrl;
@@ -276,6 +357,7 @@ export async function appSettingsPage(c: Context<AppEnv>, id: string): Promise<R
   const pendingRoles = new Map(pending.map((p) => [p.email, p.role] as [string, Role]));
   const myRole = site.editors.includes(user.email) ? roleOf(site, user.email) : null;
   const state = {
+    sheets: site.sheets,
     starred,
     accounts,
     pending: pending.map((p) => ({ email: p.email, role: p.role })),
@@ -361,7 +443,7 @@ export async function appSettingsPage(c: Context<AppEnv>, id: string): Promise<R
 </section>
 
 <div class="tabbar" role="tablist" aria-label="App settings">
-  ${tab("sharing", "Sharing", true)}${tab("update", "Update")}${tab("activity", "Activity")}
+  ${tab("sharing", "Sharing", true)}${conns ? tab("connected", `Connected apps <span class="tab-badge" data-conn-count>${conns.count}</span>`) : ""}${tab("update", "Update")}${tab("activity", "Activity")}
 </div>
 
 <section class="panel" id="panel-sharing" role="tabpanel" aria-labelledby="tab-sharing">
@@ -424,7 +506,23 @@ export async function appSettingsPage(c: Context<AppEnv>, id: string): Promise<R
   </div>
 </section>
 
-<section class="panel" id="panel-update" role="tabpanel" aria-labelledby="tab-update" hidden>
+${
+  conns
+    ? `<section class="panel" id="panel-connected" role="tabpanel" aria-labelledby="tab-connected" hidden>
+  ${connectionsPanel(site, conns, { isSiteOwner: site.ownerEmail === user.email, canManage: true })}
+</section>
+
+<dialog id="dlg-key-remove" class="howto-dialog confirm" aria-labelledby="dlg-key-remove-title">
+  <div class="howto">
+    <h2 id="dlg-key-remove-title">Remove the key <span data-key-remove-name></span>?</h2>
+    <p>The app can't use it any more, so anything that needs it stops working until a key is saved again. The key itself is deleted for good.</p>
+    <div class="dialog-actions"><button type="button" class="secondary" data-close>Keep it</button><button type="button" class="danger-solid" data-key-remove-go>Remove key</button></div>
+  </div>
+</dialog>
+
+`
+    : ""
+}<section class="panel" id="panel-update" role="tabpanel" aria-labelledby="tab-update" hidden>
   ${updatePanel}
 </section>
 
@@ -771,6 +869,9 @@ export async function connectedPage(c: Context<AppEnv>): Promise<Response> {
   const on = !!c.get("features")?.has("connected_apps");
   const gemini: ServiceStatus = on ? await geminiStatus(c.env, user.email) : { connected: false };
   const sheets = on ? await sheetsStatus(c.env, user.email) : { connected: false };
+  const usedBy = on ? await connectionsUsedBy(ctxOf(c)) : null;
+  const appLinks = (apps: { id: string; name: string }[]) =>
+    apps.length ? `Used by ${apps.map((a) => `<a href="/apps/${e(encodeURIComponent(a.id))}">${e(a.name)}</a>`).join(", ")}` : "Not used by any of your apps yet";
   const sheetsReady = sheetsConfigured(c.env);
   const SHEETS_OUTCOME: Record<string, [boolean, string]> = {
     connected: [true, "Connected. Your apps can use your Google Sheets now."],
@@ -780,10 +881,7 @@ export async function connectedPage(c: Context<AppEnv>): Promise<Response> {
     scope: [false, "Google didn't give access to spreadsheets. Try again and leave the spreadsheets box ticked."],
   };
   const outcome = SHEETS_OUTCOME[c.req.query("sheets") ?? ""];
-  const sheetsLogo = (() => {
-    const icon = SERVICE_ICONS.find(([name]) => name === "Google Sheets")!;
-    return `<svg viewBox="0 0 48 48" aria-hidden="true"><rect width="48" height="48" rx="12" fill="${icon[1]}"/><path transform="translate(12 12)" fill="${icon[2]}" d="${icon[3]}"/></svg>`;
-  })();
+  const sheetsLogo = SHEETS_LOGO();
   // The coming-soon wall: each logo drawn once in a cached sprite and reused.
   const tiles = Array.from({ length: Math.max(150, SERVICE_ICONS.length) }, (_, n) => {
     const i = n % SERVICE_ICONS.length;
@@ -806,6 +904,18 @@ export async function connectedPage(c: Context<AppEnv>): Promise<Response> {
       ${sheets.connected ? `<span class="badge on"><span class="dot" aria-hidden="true"></span>Connected</span>` : `<span class="badge">${sheetsReady ? "Connect" : "Not set up yet"}</span>`}
     </button>
   </div>
+</section>
+
+<section class="used-by" aria-labelledby="used-by-title">
+  <h2 id="used-by-title">Where they're used</h2>
+  <ul class="used-list">
+    <li><span class="conn-ic">${AI_LOGOS.gemini}</span><div><strong>Google Gemini</strong><span>${appLinks(usedBy!.gemini)}</span></div></li>
+    <li><span class="conn-ic">${sheetsLogo}</span><div><strong>Google Sheets</strong><span>${appLinks(usedBy!.sheets)}</span></div></li>
+    ${usedBy!.keys
+      .map((k) => `<li><span class="conn-ic key">${KEY_ICON}</span><div><strong>${e(k.name)} <span class="chip ok">Key saved</span></strong><span>${appLinks(k.apps)}</span></div></li>`)
+      .join("")}
+  </ul>
+  <p class="muted">Keys belong to one app each: manage them on that app's Connected apps tab.</p>
 </section>
 
 <dialog id="dlg-google-sheets" class="howto-dialog" aria-labelledby="dlg-google-sheets-title">
