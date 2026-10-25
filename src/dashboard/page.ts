@@ -2,7 +2,7 @@ import type { Context } from "hono";
 import { describeActivity, HIGH_VOLUME_ACTIONS, siteActivity, type AuditRow } from "../audit";
 import { canPublishTo, listTokens } from "../auth";
 import type { AppEnv, User } from "../env";
-import { getManageableSite, getNamespace, getSiteById, listNamespaces, listOwnSites, listSharedSites, type SiteView } from "../sites";
+import { getManageableSite, listNamespaces, listOwnSites, listSharedSites, type SiteView } from "../sites";
 import { ago, escapeHtml as e } from "../util";
 import { ApiError } from "../errors";
 import { notFoundPage } from "../serve";
@@ -137,14 +137,14 @@ async function manageable(c: Context<AppEnv>, id: string) {
 
 /** Every response the app received, as a spreadsheet, for the people who can manage it. */
 export async function appResponsesCsv(c: Context<AppEnv>, id: string): Promise<Response> {
-  const site = await manageable(c, id);
+  const site = (await manageable(c, id))?.view;
   if (!site || !(await flagOnForOwner(c.env, "responses", site.ownerEmail))) return notFoundPage();
   return csvDownload(appName(site), "responses", await responsesCsv(c.env, site.id));
 }
 
 /** An app's activity log: everything done to or in the app, for the people who can manage it. */
 export async function appActivityPage(c: Context<AppEnv>, id: string): Promise<Response> {
-  const site = await manageable(c, id);
+  const site = (await manageable(c, id))?.view;
   if (!site) return notFoundPage();
   const user = c.get("user");
   const rows = (await siteActivity(c.env, site.id))
@@ -324,18 +324,18 @@ const UPDATE_ORDER: Builder[] = ["gemini", "claude", "openai", "grok"];
 
 /** An app's own page: its name and share pill, then Sharing, Update and Activity tabs. */
 export async function appSettingsPage(c: Context<AppEnv>, id: string): Promise<Response> {
-  const site = await manageable(c, id);
-  if (!site) return notFoundPage();
+  const found = await manageable(c, id);
+  if (!found) return notFoundPage();
+  const { view: site, site: row, ns } = found;
   const user = c.get("user");
   const mine = site.ownerEmail === user.email;
   const isOwner = site.canEditEditors;
   const name = appName(site);
-  const row = await getSiteById(c.env, site.id);
   const [activity, responsesOn, preview] = await Promise.all([
     siteActivity(c.env, site.id, 8),
     // Responses follow the app's owner (the responses flag), like the runtime API.
     flagOnForOwner(c.env, "responses", site.ownerEmail),
-    row ? appPreviewText(c.env, row) : Promise.resolve({ title: name, description: "" }),
+    appPreviewText(c.env, row),
   ]);
   // Update with AI: the person's own key rewrites the app (app_builder flag).
   const builderOn = !!c.get("features")?.has("app_builder");
@@ -348,13 +348,12 @@ export async function appSettingsPage(c: Context<AppEnv>, id: string): Promise<R
   const lock = site.canShare ? "" : " disabled";
   const appHost = new URL(site.url).host;
   const ctx = ctxOf(c);
-  const [starred, accounts, pending, ns] = await Promise.all([
+  const [starred, accounts, pending] = await Promise.all([
     starredIds(ctx).then((s) => s.has(site.id)),
     peopleWithAccounts(ctx, site),
     pendingInvites(ctx, site.id),
-    getNamespace(c.env, site.namespace),
   ]);
-  const canCopy = user.active && !!ns && canPublishTo(user, ns);
+  const canCopy = user.active && canPublishTo(user, ns);
   const pendingRoles = new Map(pending.map((p) => [p.email, p.role] as [string, Role]));
   const myRole = site.editors.includes(user.email) ? roleOf(site, user.email) : null;
   const state = {

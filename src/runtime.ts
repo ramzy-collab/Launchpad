@@ -1,5 +1,4 @@
 import { Hono, type Context } from "hono";
-import { canManageSite } from "./auth";
 import type { AppEnv } from "./env";
 import { badRequest, err, forbidden, jsonError, onError } from "./errors";
 import { kvDelete, kvGet, kvList, kvSet, type KvScope } from "./kv";
@@ -8,7 +7,6 @@ import { connectorFetch } from "./connectors";
 import { geminiAvailable, geminiGenerate } from "./gemini";
 import { flagOnForOwner } from "./flags";
 import { sheetsAvailable, sheetsCall } from "./sheets";
-import { getNamespace } from "./sites";
 import { deleteResponse, listResponses, submitResponse } from "./responses";
 import { parseJsonArray } from "./util";
 
@@ -93,16 +91,10 @@ export function runtimeApi() {
   const shared = (c: Ctx) => ({ siteId: c.get("site").id });
   const mine = (c: Ctx) => ({ siteId: c.get("site").id, email: c.get("user").email });
 
-  /** Whether the signed-in person is one of the app's owners or editors. */
-  const manages = async (c: Ctx) => {
-    const ns = await getNamespace(c.env, c.get("namespace"));
-    return !!ns && canManageSite(c.get("user"), c.get("site"), ns);
-  };
-
   /** Shared data: everyone who can open the app reads it; who may change it is the app's kv_writes setting. */
-  const requireDataWrite = async (c: Ctx) => {
+  const requireDataWrite = (c: Ctx) => {
     if (c.get("site").kv_writes !== "editors") return;
-    if (!(await manages(c))) {
+    if (!c.get("manages")) {
       throw err(
         403,
         "read_only_data",
@@ -121,11 +113,11 @@ export function runtimeApi() {
   api.get("/kv", (c) => listKv(c, shared(c)));
   api.get("/kv/*", async (c) => c.json(await kvGet(c.env, shared(c), sharedKey(c))));
   api.put("/kv/*", async (c) => {
-    await requireDataWrite(c);
+    requireDataWrite(c);
     return c.json(await kvSet(c.env, shared(c), sharedKey(c), await readValue(c)));
   });
   api.delete("/kv/*", async (c) => {
-    await requireDataWrite(c);
+    requireDataWrite(c);
     return c.json(await kvDelete(c.env, shared(c), sharedKey(c)));
   });
 
@@ -135,8 +127,8 @@ export function runtimeApi() {
   api.put("/me/kv/*", async (c) => c.json(await kvSet(c.env, mine(c), myKey(c), await readValue(c))));
   api.delete("/me/kv/*", async (c) => c.json(await kvDelete(c.env, mine(c), myKey(c))));
 
-  const requireManage = async (c: Ctx, what = "manage its secrets") => {
-    if (!(await manages(c))) throw forbidden(`Only the app's owner or editors can ${what}.`);
+  const requireManage = (c: Ctx, what = "manage its secrets") => {
+    if (!c.get("manages")) throw forbidden(`Only the app's owner or editors can ${what}.`);
   };
 
   /**
@@ -172,23 +164,23 @@ export function runtimeApi() {
     return c.json(await submitResponse(c.env, c.get("site"), guest ? null : c.get("user").email, body, ip), 201);
   });
   api.get("/responses", async (c) => {
-    await requireManage(c, "read its responses");
+    requireManage(c, "read its responses");
     const limit = c.req.query("limit");
     return c.json(await listResponses(c.env, c.get("site").id, { before: c.req.query("before"), limit: limit ? Number(limit) : undefined }));
   });
   api.delete("/responses/:id", async (c) => {
-    await requireManage(c, "delete its responses");
+    requireManage(c, "delete its responses");
     return c.json(await deleteResponse(c.env, c.get("site").id, c.req.param("id")));
   });
 
   api.get("/secrets", async (c) => c.json(await secretList(c.env, c.get("site"))));
   api.put("/secrets/:name", async (c) => {
-    await requireManage(c);
+    requireManage(c);
     const body = await objectBody(c, '{ "value": "..." }', "Use formelab.secrets.set(name, value).");
     return c.json(await secretSet(c.env, c.get("site"), c.get("user"), c.req.param("name"), body));
   });
   api.delete("/secrets/:name", async (c) => {
-    await requireManage(c);
+    requireManage(c);
     return c.json(await secretDelete(c.env, c.get("site"), c.get("user"), c.req.param("name")));
   });
   api.post("/secrets/:name/proxy", async (c) => {
