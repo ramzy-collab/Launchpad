@@ -5,6 +5,7 @@ import type { Env } from "../src/env";
 import { describe, expect, it } from "vitest";
 import { afterEach } from "vitest";
 import { accessJwt, appAt, call, ICON, onOutbound, OWNER, PAGE, publishHtml, uniq } from "./helpers";
+import { tileFor } from "../src/dashboard/aiapps";
 
 const ORIGIN = "https://example.com";
 const RESOURCE = `${ORIGIN}/mcp`;
@@ -355,13 +356,16 @@ describe("OAuth for MCP (Claude chat connector)", () => {
 });
 
 describe("OAuth for MCP: Gemini-style clients", () => {
-  // Gemini CLI registers dynamically with a loopback redirect and may leave out scope and resource.
-  const LOOPBACK = "http://localhost:7777/oauth/callback";
-
-  it("registers, signs in and calls tools without scope or resource parameters", async () => {
+  // Gemini CLI and Claude Code register dynamically with a loopback redirect and may leave out
+  // scope and resource.
+  it.each([
+    ["Gemini CLI MCP Client", "http://localhost:7777/oauth/callback"],
+    ["Claude Code (formelab)", "http://localhost:53682/callback"],
+  ])("%s registers, signs in and calls tools without scope or resource parameters", async (clientName, LOOPBACK) => {
+    expect(tileFor(clientName)).toBe(clientName.startsWith("Claude") ? "claude-code" : "gemini"); // its Connected badge
     const reg = await call(`${ORIGIN}/oauth/register`, {
       method: "POST",
-      json: { client_name: "Gemini CLI MCP Client", redirect_uris: [LOOPBACK], token_endpoint_auth_method: "none", grant_types: ["authorization_code", "refresh_token"], response_types: ["code"] },
+      json: { client_name: clientName, redirect_uris: [LOOPBACK], token_endpoint_auth_method: "none", grant_types: ["authorization_code", "refresh_token"], response_types: ["code"] },
     });
     expect(reg.status, await reg.clone().text()).toBe(201);
     const clientId = (await reg.json<{ client_id: string }>()).client_id;
@@ -372,7 +376,7 @@ describe("OAuth for MCP: Gemini-style clients", () => {
     const page = await call(u.toString(), { as: OWNER });
     expect(page.status, await page.clone().text()).toBe(200);
     const html = await page.text();
-    expect(html).toContain("Gemini CLI MCP Client");
+    expect(html).toContain(clientName);
     expect(html).toContain("an app on your computer"); // loopback warning
     const handle = /name="handle" value="([^"]+)"/.exec(html)![1]!;
     const approved = await call(`${ORIGIN}/authorize`, {

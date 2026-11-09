@@ -2,6 +2,14 @@
 
 Everything that has changed in Formelab, newest first. Shown in the admin panel under Changelog.
 
+## 2026-11-09
+
+- **Simpler Connect your AI.** Each app's setup starts with one main action: **Copy URL and open** for Claude, ChatGPT and Grok, which copies the connector URL and opens the right settings page; **Add to Cursor**; and one command to copy for Gemini CLI and Claude Code. The main steps are three or fewer, and other plans, manual setup and the no-browser route sit in a closed section below them.
+- **Claude Code logs in through the browser.** No access key to make or paste: add Formelab with one command, then pick it in `/mcp` and click **Allow**. The access key route is still there for servers and CI.
+- **Gemini CLI in one command.** `gemini mcp add` replaces editing `~/.gemini/settings.json` by hand, which is still under Other ways to set it up.
+- **Connected badges update on their own.** Come back to the tab after connecting and the tile turns **Connected** without a reload.
+- **Test plan:** [Simpler Connect your AI](/test-plans/2026-11-09-connect-your-ai-simpler), 64 browser test cases to hand to Claude Cowork.
+
 ## 2026-10-24
 
 - **One My apps page.** Shared with me is part of My apps now. Your own apps sit under **Made by you** and the apps other people shared with you under **Shared with you**, with starred apps of both kinds on top. A shared app's card shows its owner's initial on the icon, "From" and their email, and what you can do (Viewer, Editor or Admin). Search sits next to one filter button that holds every filter and the sort: **Owner** (Anyone, Me, Other people), **Space** and **Sort**. It turns purple with a dot when anything is set, and the choices stay in the address, so a reload or a link keeps them. On a phone the button opens a sheet from the bottom. Old Shared with me links, in emails, bookmarks and the phone shortcut, open My apps filtered to other people's apps.

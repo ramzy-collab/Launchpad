@@ -27,7 +27,9 @@ export async function connectPage(c: Context<AppEnv>): Promise<Response> {
   const cursorConfig = JSON.stringify({ mcpServers: { formelab: { url } } }, null, 2);
   // Cursor's one-click install link: the server's config, base64-encoded.
   const cursorInstall = `cursor://anysphere.cursor-deeplink/mcp/install?name=formelab&config=${encodeURIComponent(btoa(JSON.stringify({ url })))}`;
-  const cmd = `claude mcp add --transport http formelab ${url} \\\n  --header "Authorization: Bearer fl_..."`;
+  const cmd = `claude mcp add --transport http formelab ${url}`;
+  const keyCmd = `${cmd} \\\n  --header "Authorization: Bearer fl_..."`;
+  const geminiCmd = `gemini mcp add --transport http formelab ${url}`;
 
   // Connections are OAuth sign-ins (Claude, ChatGPT, Gemini, Grok, Cursor) and access keys an AI app has
   // used over MCP (Claude Code), matched to a tile by the app's name.
@@ -52,95 +54,77 @@ export async function connectPage(c: Context<AppEnv>): Promise<Response> {
   for (const k of connections) if (k.tile) byTile.set(k.tile, [...(byTile.get(k.tile) ?? []), k]);
   const others = connections.filter((k) => !k.tile);
 
+  // Where each chat app adds a connector, for its "Copy URL and open" button.
+  const OPEN: Record<string, string> = {
+    claude: "https://claude.ai/settings/connectors",
+    chatgpt: "https://chatgpt.com/#settings/Connectors",
+    grok: "https://grok.com/connectors",
+  };
+  const more = (title: string, inner: string) => `<details class="steps"><summary>${title}</summary>${inner}</details>`;
   const STEPS: Record<string, string> = {
-    claude: `  <p class="muted">claude.ai, the Claude desktop app, and the mobile apps. Works on every plan, including Free. Free accounts can add one custom connector, so if you already use yours, remove it first.</p>
-  <h3>Free, Pro and Max plans</h3>
-  <ol>
-    <li>On <a href="https://claude.ai/settings/connectors" rel="noopener">claude.ai</a>, open <strong>Settings → Connectors</strong>.</li>
-    <li>Click <strong>Add custom connector</strong>.</li>
-    <li>Name it <strong>Formelab</strong> and paste the connector URL above. Leave <em>Advanced settings</em> empty.</li>
-    <li>Click <strong>Add</strong>, then <strong>Connect</strong>. A Formelab window opens: log in, check the account shown, and click <strong>Allow</strong>.</li>
+    claude: `  <ol>
+    <li>Click <strong>Add custom connector</strong> and paste the URL. Leave <em>Advanced settings</em> empty.</li>
+    <li>Click <strong>Add</strong>, then <strong>Connect</strong>.</li>
+    <li>In the Formelab window, check the account shown and click <strong>Allow</strong>.</li>
   </ol>
-  <p>Once added on the web, Formelab is available in the desktop and mobile apps too.</p>
-  <h3>Team and Enterprise plans</h3>
-  <ol>
-    <li>An owner of your Claude organization adds it once: <strong>Organization settings → Connectors → Add → Custom → Web</strong>, with the connector URL above.</li>
-    <li>Then each person finds Formelab under <strong>Settings → Connectors</strong> and clicks <strong>Connect</strong>.</li>
-  </ol>
-  <h3>Use it</h3>
-  <p>In a chat, open the <strong>+</strong> menu, choose <strong>Connectors</strong>, and make sure Formelab is on. Then ask, for example:</p>
+  <p>It then works in the Claude desktop and mobile apps too. In a chat, make sure Formelab is on in the <strong>+</strong> menu under <strong>Connectors</strong>, then ask, for example:</p>
   <p class="example">Build me a simple tracker for my 12 rental units and publish it to Formelab.</p>
+  ${more("Team, Enterprise or Free plan", `<p>Works on every plan. Free accounts can add one custom connector, so remove yours first if you already use it.</p>
+  <p>On Team and Enterprise plans, an owner adds it once in <strong>Organization settings, Connectors, Add, Custom, Web</strong>, with the connector URL. Then each person finds Formelab under <strong>Settings, Connectors</strong> and clicks <strong>Connect</strong>.</p>`)}
 `,
-    chatgpt: `  <p class="muted">Needs <strong>Developer mode</strong>, which is on paid plans (Plus and Pro; on Business and Enterprise an admin may have to allow it). ChatGPT on the web is the easiest place to set this up.</p>
-  <ol>
-    <li>Open <strong>Settings → Apps &amp; Connectors → Advanced settings</strong> and turn on <strong>Developer mode</strong>. (If it isn't there, look under <strong>Settings → Security</strong>; OpenAI has moved it before.)</li>
-    <li>Back in <strong>Apps &amp; Connectors</strong>, click <strong>Create</strong>.</li>
-    <li>Fill in:
-      <ul>
-        <li><strong>Name:</strong> Formelab</li>
-        <li><strong>Description:</strong> Build and publish small web apps to Formelab.</li>
-        <li><strong>MCP server URL:</strong> the connector URL above</li>
-        <li><strong>Authentication:</strong> OAuth</li>
-      </ul>
-    </li>
-    <li>Confirm you trust the app and click <strong>Create</strong>. A Formelab window opens: log in and click <strong>Allow</strong>.</li>
+    chatgpt: `  <ol>
+    <li>Under <strong>Advanced settings</strong>, turn on <strong>Developer mode</strong>.</li>
+    <li>Click <strong>Create</strong>, name it <strong>Formelab</strong>, paste the URL, pick <strong>OAuth</strong>, and click <strong>Create</strong>.</li>
+    <li>In the Formelab window, click <strong>Allow</strong>.</li>
   </ol>
-  <h3>Use it</h3>
-  <p>In a new chat, open the <strong>+</strong> menu, pick <strong>Developer mode</strong>, and turn on Formelab. Then ask, for example:</p>
+  <p>In a new chat, open the <strong>+</strong> menu, pick <strong>Developer mode</strong> and turn on Formelab. Then ask, for example:</p>
   <p class="example">Make a lunch poll for my team and publish it to Formelab.</p>
-  <p class="muted">Without Developer mode, ChatGPT can still use Formelab's read-only tools to find your apps and read their code, but it can't publish.</p>
+  ${more("Can't find Developer mode?", `<p>Developer mode is on paid plans (Plus and Pro). On Business and Enterprise, an admin may have to allow it. If it isn't under <strong>Apps &amp; Connectors</strong>, look under <strong>Settings, Security</strong>.</p>
+  <p>Without Developer mode, ChatGPT can still find your apps and read their code, but it can't publish.</p>`)}
 `,
-    gemini: `  <p class="muted">Gemini CLI is the dependable way to use Formelab with Gemini today.</p>
-  <h3>Gemini CLI (and Antigravity)</h3>
+    gemini: `  <p>Run this in your terminal:</p>
+  <div class="copyrow"><pre id="gemini-cmd">${e(geminiCmd)}</pre><button type="button" data-copy="#gemini-cmd">Copy</button></div>
   <ol>
-    <li>Add Formelab to <code>~/.gemini/settings.json</code> (merge it with anything already there):</li>
+    <li>Start <code>gemini</code> and run <code>/mcp auth formelab</code>.</li>
+    <li>In the Formelab window, click <strong>Allow</strong>. Formelab says access goes to an app on your computer; that's expected.</li>
   </ol>
-  <div class="copyrow"><pre id="gemini-config">${e(geminiConfig)}</pre><button type="button" data-copy="#gemini-config">Copy</button></div>
-  <ol start="2">
-    <li>Start <code>gemini</code> and run <code>/mcp auth formelab</code>. Your browser opens Formelab: log in and click <strong>Allow</strong>. Formelab warns that access goes to an app on your computer; that's expected here.</li>
-    <li>Run <code>/mcp</code> to check that Formelab is connected.</li>
-  </ol>
-  <h3>Gemini app (Gemini Enterprise only)</h3>
-  <p class="muted">In the Gemini app, custom connectors like Formelab are only available on <strong>Gemini Enterprise</strong> plans and up. On a personal or standard Google Workspace plan, use Gemini CLI above, or Claude, which works on every plan.</p>
-  <ol>
-    <li>An admin of your Gemini Enterprise organization adds Formelab as a custom MCP server, with the connector URL above.</li>
-    <li>Each person then connects it from Gemini, logs in to Formelab, and clicks <strong>Allow</strong>.</li>
-  </ol>
-  <p>Then mention Formelab in a chat, for example:</p>
+  <p>Then ask, for example:</p>
   <p class="example">Use Formelab to build a sign-up sheet for our book club and publish it.</p>
-  <p class="muted">Antigravity CLI, which Google is moving Gemini CLI users to, takes the same server URL as Gemini CLI.</p>
+  ${more("Other ways to set it up", `<p>To edit the settings file instead, merge this into <code>~/.gemini/settings.json</code>:</p>
+  <div class="copyrow"><pre id="gemini-config">${e(geminiConfig)}</pre><button type="button" data-copy="#gemini-config">Copy</button></div>
+  <p>Antigravity CLI takes the same settings. In the Gemini app, custom connectors need a <strong>Gemini Enterprise</strong> plan: an admin adds Formelab as a custom MCP server with <code>${e(url)}</code>, then each person connects it. On other plans, use Gemini CLI, or Claude, which works on every plan.</p>`)}
 `,
-    grok: `  <p class="muted">On grok.com. xAI keeps custom connectors to paid plans, and on Business and Enterprise plans an admin may have to add it first. Grok moves these menus now and then, so the labels may differ a little.</p>
-  <ol>
-    <li>Open <a href="https://grok.com/connectors" target="_blank" rel="noopener">grok.com/connectors</a>.</li>
-    <li>Click <strong>New connector</strong> and pick <strong>Custom</strong>.</li>
-    <li>Name it <strong>Formelab</strong> and paste the connector URL above.</li>
-    <li>Click to connect. A Formelab window opens: log in, check the account shown, and click <strong>Allow</strong>. Grok then lists Formelab's tools.</li>
+    grok: `  <ol>
+    <li>Click <strong>New connector</strong>, pick <strong>Custom</strong>, name it <strong>Formelab</strong> and paste the URL.</li>
+    <li>Click to connect. In the Formelab window, check the account shown and click <strong>Allow</strong>.</li>
   </ol>
-  <h3>Use it</h3>
-  <p>In a chat, make sure Formelab is turned on in the connectors menu, then ask, for example:</p>
+  <p>In a chat, make sure Formelab is on in the connectors menu, then ask, for example:</p>
   <p class="example">Build a pickup-basketball sign-up sheet and publish it to Formelab.</p>
-  <p class="muted">Once it's connected, <strong>Make it with Grok</strong> on <a href="/new">New app</a> opens Grok with your idea typed in.</p>
+  ${more("Plans and labels", `<p>Custom connectors are on paid plans. On Business and Enterprise, an admin may have to add it first. Grok moves these menus now and then, so the labels may differ a little.</p>
+  <p>Once it's connected, <strong>Make it with Grok</strong> on <a href="/new">New app</a> opens Grok with your idea typed in.</p>`)}
 `,
-    cursor: `  <p class="muted">Cursor signs in to Formelab with your account; there's no key to copy.</p>
-  <p><a class="btn" href="${e(cursorInstall)}">Add to Cursor</a></p>
-  <p class="muted">Or add it by hand: in Cursor, open <strong>Settings → MCP &amp; Integrations → New MCP server</strong>, which opens <code>~/.cursor/mcp.json</code>, and merge this in:</p>
-  <div class="copyrow"><pre id="cursor-config">${e(cursorConfig)}</pre><button type="button" data-copy="#cursor-config">Copy</button></div>
+    cursor: `  <p><a class="btn" href="${e(cursorInstall)}">Add to Cursor</a></p>
   <ol>
-    <li>Back in <strong>MCP &amp; Integrations</strong>, Formelab shows <strong>Needs login</strong>: click it. Your browser opens Formelab: log in and click <strong>Allow</strong>. Formelab warns that access goes to an app on your computer; that's expected here.</li>
-    <li>Cursor opens again and Formelab turns green.</li>
+    <li>In Cursor, click <strong>Install</strong>.</li>
+    <li>Formelab shows <strong>Needs login</strong>: click it, then click <strong>Allow</strong> in the Formelab window. Formelab says access goes to an app on your computer; that's expected.</li>
   </ol>
-  <h3>Use it</h3>
-  <p>In Cursor's chat (Agent mode), ask, for example:</p>
+  <p>Then ask in Cursor's chat (Agent mode), for example:</p>
   <p class="example">Build a simple expense splitter and publish it to Formelab.</p>
+  ${more("Add it by hand", `<p>In Cursor, open <strong>Settings, MCP &amp; Integrations, New MCP server</strong>, which opens <code>~/.cursor/mcp.json</code>, and merge this in:</p>
+  <div class="copyrow"><pre id="cursor-config">${e(cursorConfig)}</pre><button type="button" data-copy="#cursor-config">Copy</button></div>`)}
 `,
-    "claude-code": `  <ol>
-    <li>Open <a href="/keys">Access keys</a>, create a key (30 days is fine for personal use) and copy it.</li>
-    <li>Run this in your terminal, with your token in place of <code>fl_...</code>:</li>
-  </ol>
+    "claude-code": `  <p>Run this in your terminal:</p>
   <div class="copyrow"><pre id="mcp-cmd">${e(cmd)}</pre><button type="button" data-copy="#mcp-cmd">Copy</button></div>
-  <p>Then start Claude Code. It shows up here as <strong>Connected</strong> the first time it uses Formelab.</p>
-  <p class="muted">Agents can also read the build guide at <a href="/_platform/guide.md">/_platform/guide.md</a>.</p>
+  <ol>
+    <li>Start <code>claude</code>, run <code>/mcp</code> and pick <strong>formelab</strong>.</li>
+    <li>In the Formelab window, click <strong>Allow</strong>. Formelab says access goes to an app on your computer; that's expected.</li>
+  </ol>
+  ${more("No browser, such as on a server or in CI", `<ol>
+    <li>Open <a href="/keys">Access keys</a>, create a key and copy it.</li>
+    <li>Run this, with your key in place of <code>fl_...</code>:</li>
+  </ol>
+  <div class="copyrow"><pre id="mcp-key-cmd">${e(keyCmd)}</pre><button type="button" data-copy="#mcp-key-cmd">Copy</button></div>
+  <p>It shows up here as <strong>Connected</strong> the first time it uses Formelab. Agents can also read the build guide at <a href="/_platform/guide.md">/_platform/guide.md</a>.</p>`)}
 `,
   };
 
@@ -166,8 +150,9 @@ export async function connectPage(c: Context<AppEnv>): Promise<Response> {
   <form method="dialog" class="dialog-close"><button aria-label="Close">×</button></form>
   <div class="howto">
     <div class="dialog-head"><span class="ai-logo">${AI_LOGOS[a.id]}</span><h2 id="dlg-${a.id}-title">${e(a.name)}</h2></div>
-    ${status(byTile.get(a.id) ?? [])}
-    ${a.id === "claude-code" ? "" : `<p class="muted">Connector URL</p><div class="copyrow"><pre id="mcp-url-${a.id}">${e(url)}</pre><button type="button" data-copy="#mcp-url-${a.id}">Copy</button></div>`}
+    <div data-status="${a.id}">${status(byTile.get(a.id) ?? [])}</div>
+    ${OPEN[a.id] ? `<p><a class="btn" href="${OPEN[a.id]}" target="_blank" rel="noopener" data-copy-open="#mcp-url-${a.id}">Copy URL and open ${e(a.name)}</a></p>
+    <p class="muted">Connector URL</p><div class="copyrow"><pre id="mcp-url-${a.id}">${e(url)}</pre><button type="button" data-copy="#mcp-url-${a.id}">Copy</button></div>` : ""}
     ${STEPS[a.id]}
   </div>
 </dialog>`,
@@ -177,7 +162,7 @@ export async function connectPage(c: Context<AppEnv>): Promise<Response> {
   <h2>Pick your AI</h2>
   ${user.active ? "" : `<p class="note">Your account is still on the waitlist. You can connect now, but your AI can only create apps once you're let in.</p>`}
   <div class="ai-grid">${tiles}</div>
-  ${others.length ? `<h3>Other connected apps</h3>${status(others)}` : ""}
+  <div data-status="others">${others.length ? `<h3>Other connected apps</h3>${status(others)}` : ""}</div>
 </section>
 
 ${dialogs}`;

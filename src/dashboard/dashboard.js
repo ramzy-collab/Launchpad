@@ -208,6 +208,31 @@
   });
   if (location.hash.length > 1) openDialog("dlg-" + location.hash.slice(1));
 
+  // "Copy URL and open Claude": copies the connector URL, and the link opens the app's settings.
+  document.addEventListener("click", function (ev) {
+    var link = ev.target.closest("[data-copy-open]");
+    var src = link && document.querySelector(link.dataset.copyOpen);
+    if (src) copyText(src.textContent, "Connector URL copied. Paste it in " + link.textContent.replace("Copy URL and open ", "") + ".");
+  });
+
+  // Back from connecting in another tab: refresh the Connected badges without a reload.
+  document.addEventListener("visibilitychange", function () {
+    var grid = document.querySelector(".ai-grid");
+    if (!grid || document.visibilityState !== "visible") return;
+    fetch(location.pathname, { credentials: "same-origin" })
+      .then(function (res) { return res.ok ? res.text() : Promise.reject(); })
+      .then(function (html) {
+        var doc = new DOMParser().parseFromString(html, "text/html");
+        var fresh = doc.querySelector(".ai-grid");
+        if (fresh) grid.replaceWith(fresh);
+        doc.querySelectorAll("[data-status]").forEach(function (el) {
+          var mine = document.querySelector('[data-status="' + el.dataset.status + '"]');
+          if (mine) mine.replaceWith(el);
+        });
+      })
+      .catch(function () {});
+  });
+
   // New app: hand the idea to Claude or ChatGPT in a new tab, or copy it for Claude Code.
   var MAKE_URLS = { claude: "https://claude.ai/new?q=", chatgpt: "https://chatgpt.com/?q=", grok: "https://grok.com/?q=" };
   function makePrompt(idea) {

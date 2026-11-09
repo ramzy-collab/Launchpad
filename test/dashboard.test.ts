@@ -115,7 +115,14 @@ describe("dashboard", () => {
     }
     expect(html).not.toContain("Connected</span>");
     expect(html).toContain("&quot;httpUrl&quot;: &quot;https://example.com/mcp&quot;"); // Gemini CLI settings
-    expect(html).toContain("claude mcp add --transport http formelab https://example.com/mcp");
+    expect(html).toContain('<pre id="mcp-cmd">claude mcp add --transport http formelab https://example.com/mcp</pre>'); // signs in, no key
+    expect(html).toContain("--header &quot;Authorization: Bearer fl_...&quot;"); // the key route, for no browser
+    expect(html).toContain('<pre id="gemini-cmd">gemini mcp add --transport http formelab https://example.com/mcp</pre>');
+    // One main button per chat app: copy the URL and open its connector settings.
+    expect(html).toContain('href="https://claude.ai/settings/connectors" target="_blank" rel="noopener" data-copy-open="#mcp-url-claude"');
+    expect(html).toContain('data-copy-open="#mcp-url-chatgpt"');
+    expect(html).toContain('data-copy-open="#mcp-url-grok"');
+    expect(html).not.toContain("\u2014"); // no em dashes in UI copy
     expect(html).toContain("cursor://anysphere.cursor-deeplink/mcp/install?name=formelab&amp;config="); // Add to Cursor
     expect(html).not.toMatch(/\son[a-z]+=/i);
     expect((await call("/app/connect")).status).toBe(302); // signed out: to the login screen
