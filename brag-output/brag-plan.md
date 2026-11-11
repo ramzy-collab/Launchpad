@@ -92,3 +92,12 @@ Transition mood: end
 
 **Music mood for this video:** upbeat
 **Audio summary:** one bright bed carries the whole film, with a thud on the strike, keys and clicks for the demo, card slides on the wall and one bell on the end card before the music fades.
+
+## Revision 2: the redesigned home page (fl/home-redesign)
+
+Scenes 1, 2 and 5 now use the new home page design; scenes 3 and 4 are unchanged.
+
+- **Scene 1, Hero, 0.00-7.38s:** logo top left; "Early Access now open" pill; "Software that fits you," word by word, then "not the other way around." in purple on the 1.60s strong cue; "Tell your AI what you need. Get an app that's yours." at 3.70s (strong cue) and the email box with "Request early access". It hands off straight to "Ask your AI to build". Replaces the old hook and reveal.
+- **Scene 5, End card, 18.44-21.60s:** the new site's purple final card: "put your idea on the wall" (yellow marker), "What would you make?", "Leave your email and we'll send your invite.", the email box, and a cursor click on "Request early access" at 19.49s. Logo and formelab.ai below. The site's "Early access is free..." line was left out: too long to read in the time left.
+- Colors follow the new tokens (canvas #FBFAF7, ink #1C1B19, soft #6B6862). "SaaS is dead." no longer appears.
+- Poster: 5.5s, the finished hero.

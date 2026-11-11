@@ -9,7 +9,7 @@
     <style>
       @font-face { font-family: "Bricolage Grotesque"; font-weight: 800; src: url("assets/fonts/BricolageGrotesque_800ExtraBold.ttf"); }
       @font-face { font-family: "Permanent Marker"; font-weight: 400; src: url("assets/fonts/PermanentMarker.woff2"); }
-      :root { --ground: #FAFAF8; --ink: #111110; --soft: #6E6D68; --accent: #5B4CF5; --pop: #FF6B4A; --green: #1F9D6B; }
+      :root { --ground: #FBFAF7; --ink: #1C1B19; --soft: #6B6862; --accent: #5B4CF5; --pop: #FF6B4A; --green: #1F9D6B; }
       * { box-sizing: border-box; }
       html, body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; }
       #root { width: 100%; height: 100%; position: relative; }
@@ -19,18 +19,19 @@
       .display { font-family: "Bricolage Grotesque", sans-serif; font-weight: 800; letter-spacing: -.045em; color: var(--ink); }
       .w { display: inline-block; }
 
-      /* 1. Hook */
-      #s1-sticker { font-family: "Permanent Marker", cursive; font-size: 46px; color: #EE5F3F; margin-bottom: 36px; }
-      #s1-line { font-size: 280px; line-height: .98; margin: 0; white-space: nowrap; }
-      #s1-saas { position: relative; }
-      #s1-slash { position: absolute; left: -4%; right: -4%; top: 50%; height: .12em; background: var(--pop); border-radius: 999px; transform-origin: 0 50%; }
-      #s1-dead { color: var(--accent); }
-
-      /* 2. Reveal */
-      .logo-big { display: flex; align-items: center; gap: 36px; font-family: "Bricolage Grotesque", sans-serif; font-weight: 800; font-size: 150px; letter-spacing: -.03em; color: var(--ink); }
-      .logo-big .mk { width: 150px; height: 150px; border-radius: 44px; background: var(--accent); color: #fff; display: grid; place-items: center; font-size: 100px; position: relative; }
-      .logo-big .mk i { position: absolute; width: 44px; height: 44px; border-radius: 50%; background: var(--pop); right: -14px; top: -14px; }
-      #s2-sub { font-family: "Inter", sans-serif; font-weight: 400; font-size: 60px; color: var(--soft); margin-top: 56px; max-width: 26ch; line-height: 1.3; }
+      /* 1. Hero (the redesigned home page, fl/home-redesign) */
+      .logo { display: inline-flex; align-items: center; gap: 16px; font-family: "Bricolage Grotesque", sans-serif; font-weight: 800; font-size: 40px; letter-spacing: -.02em; color: var(--ink); }
+      .logo .mk { position: relative; width: 52px; height: 52px; border-radius: 16px; background: var(--accent); color: #fff; display: grid; place-items: center; font-size: 32px; }
+      .logo .mk i { position: absolute; width: 16px; height: 16px; border-radius: 50%; background: var(--pop); right: -5px; top: -5px; }
+      #s1-logo { position: absolute; left: 96px; top: 64px; }
+      #s1-eyebrow { display: inline-flex; align-items: center; gap: 14px; font-family: "Inter", sans-serif; font-size: 30px; font-weight: 600; color: #4A3BE0; background: #EFEDFE; padding: 12px 26px; border-radius: 999px; margin-bottom: 44px; }
+      #s1-eyebrow i { width: 13px; height: 13px; border-radius: 50%; background: var(--accent); }
+      #s1-h1 { font-size: 136px; line-height: 1.02; letter-spacing: -.04em; margin: 0; }
+      #s1-h1 .em { display: block; color: var(--accent); }
+      #s1-lede { font-family: "Inter", sans-serif; font-size: 44px; line-height: 1.5; color: var(--soft); margin: 48px 0 0; }
+      .fjoin { display: flex; align-items: center; gap: 10px; width: 860px; margin: 44px auto 0; background: #fff; border: 2px solid #E8E5DE; border-radius: 999px; padding: 9px; box-shadow: 0 1px 2px rgba(28,27,25,.05); font-family: "Inter", sans-serif; }
+      .fjoin .in { flex: 1; text-align: left; padding: 0 30px; font-size: 30px; color: #85827B; }
+      .fjoin .go { height: 80px; padding: 0 40px; border-radius: 999px; background: var(--accent); color: #fff; font-size: 30px; font-weight: 600; display: grid; place-items: center; white-space: nowrap; }
 
       /* 3. Flow */
       #s3-label, #s4-label { font-family: "Inter", sans-serif; font-size: 26px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--accent); }
@@ -59,16 +60,12 @@
       .wall figcaption { font-size: 22px !important; }
 
       /* 5. End card */
-      #s5 .logo-big { font-size: 110px; gap: 28px; }
-      #s5 .logo-big .mk { width: 110px; height: 110px; border-radius: 32px; font-size: 74px; }
-      #s5 .logo-big .mk i { width: 32px; height: 32px; right: -10px; top: -10px; }
-      #s5-line { font-size: 120px; margin: 44px 0 0; white-space: nowrap; }
-      #s5-line .strike { position: relative; display: inline-block; }
-      #s5-line .strike::after { content: ""; position: absolute; left: -4%; right: -4%; top: 50%; height: .12em; background: var(--pop); border-radius: 999px; transform: rotate(-3deg); }
-      #s5-line .dead { color: var(--accent); }
-      #s5-cta { margin-top: 56px; height: 96px; padding: 0 52px; font-size: 36px; border-radius: 22px; font-family: "Inter", sans-serif; }
-      #s5-note { font-family: "Inter", sans-serif; font-size: 30px; color: var(--soft); margin-top: 26px; }
-      #s5-note b { color: var(--ink); font-weight: 600; }
+      #s5-card { position: absolute; left: 110px; right: 110px; top: 90px; bottom: 150px; background: var(--accent); border-radius: 56px; color: #fff; overflow: hidden; }
+      #s5-scribble { font-family: "Permanent Marker", cursive; font-size: 48px; color: #FFC93C; margin-bottom: 26px; }
+      #s5-h2 { font-size: 150px; line-height: 1.04; letter-spacing: -.035em; color: #fff; margin: 0; }
+      #s5-p { font-family: "Inter", sans-serif; font-size: 40px; color: #E5E1FF; margin: 28px 0 0; }
+      #s5 .fjoin { border-color: transparent; }
+      #s5-foot { position: absolute; left: 0; right: 0; bottom: 48px; display: flex; justify-content: center; align-items: center; gap: 26px; font-family: "Inter", sans-serif; font-size: 32px; font-weight: 600; color: var(--ink); }
       #s5-cursor { position: absolute; left: 0; top: 0; width: 64px; height: 64px; z-index: 20; filter: drop-shadow(0 4px 6px rgba(0,0,0,.3)); }
     </style>
   </head>
@@ -76,19 +73,16 @@
     <div id="root" data-composition-id="main" data-start="0" data-duration="21.6" data-width="1920" data-height="1080">
       <div class="bg"></div>
 
-      <!-- 1. Hook -->
-      <div id="s1" class="scene clip" data-start="0" data-duration="3.7" data-track-index="1" data-track-kind="graphics">
-        <div class="center" id="s1-in">
-          <div id="s1-sticker">psst, you can build this stuff now</div>
-          <h1 id="s1-line" class="display"><span class="w" id="s1-saas">SaaS<span id="s1-slash"></span></span> <span class="w" id="s1-is">is</span> <span class="w" id="s1-dead">dead.</span></h1>
-        </div>
-      </div>
-
-      <!-- 2. Reveal -->
-      <div id="s2" class="scene clip" data-start="3.7" data-duration="3.68" data-track-index="1" data-track-kind="graphics">
-        <div class="center" id="s2-in">
-          <div class="logo-big" id="s2-logo"><span class="mk" id="s2-mark">F<i></i></span><span id="s2-name">Formelab</span></div>
-          <p id="s2-sub"><span class="w">Software</span> <span class="w">that</span> <span class="w">fits</span> <span class="w">you,</span> <span class="w">not</span> <span class="w">the</span> <span class="w">other</span> <span class="w">way</span> <span class="w">around.</span></p>
+      <!-- 1. Hero: the redesigned home page -->
+      <div id="s1" class="scene clip" data-start="0" data-duration="7.38" data-track-index="1" data-track-kind="graphics">
+        <div id="s1-in">
+          <div class="logo" id="s1-logo"><span class="mk">F<i></i></span>Formelab</div>
+          <div class="center">
+            <div id="s1-eyebrow"><i></i>Early Access now open</div>
+            <h1 id="s1-h1" class="display"><span id="s1-a"><span class="w">Software</span> <span class="w">that</span> <span class="w">fits</span> <span class="w">you,</span></span><span class="em" id="s1-b">not the other way around.</span></h1>
+            <p id="s1-lede">Tell your AI what you need. Get an app that's yours.</p>
+            <div class="fjoin" id="s1-join"><span class="in">you@email.com</span><span class="go">Request early access</span></div>
+          </div>
         </div>
       </div>
 
@@ -219,12 +213,13 @@
 
       <!-- 5. End card -->
       <div id="s5" class="scene clip" data-start="18.44" data-duration="3.16" data-track-index="1" data-track-kind="graphics">
-        <div class="center" id="s5-in">
-          <div class="logo-big" id="s5-logo"><span class="mk">F<i></i></span><span>Formelab</span></div>
-          <h2 id="s5-line" class="display"><span class="strike">SaaS</span> is <span class="dead">dead.</span></h2>
-          <div><span class="btn" id="s5-cta">Join the waitlist</span></div>
-          <div id="s5-note">Free early access. <b>formelab.ai</b></div>
-        </div>
+        <div id="s5-card"><div class="center">
+          <div id="s5-scribble">put your idea on the wall</div>
+          <h2 id="s5-h2" class="display">What would you make?</h2>
+          <p id="s5-p">Leave your email and we'll send your invite.</p>
+          <div class="fjoin" id="s5-join"><span class="in">you@email.com</span><span class="go" id="s5-cta">Request early access</span></div>
+        </div></div>
+        <div id="s5-foot"><span class="logo"><span class="mk">F<i></i></span>Formelab</span><span>formelab.ai</span></div>
         <svg id="s5-cursor" viewBox="0 0 24 24"><path d="M5 3l14 8-6 1.5L10 19z" fill="#111" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/></svg>
       </div>
 
@@ -261,19 +256,14 @@
       const blurIn = (sel, t, d = 0.2) => tl.fromTo(sel, { opacity: 0, filter: "blur(10px)" }, { opacity: 1, filter: "blur(0px)", duration: d, ease: IN }, t);
       const blurOut = (sel, t, d = 0.2) => tl.fromTo(sel, { opacity: 1, filter: "blur(0px)" }, { opacity: 0, filter: "blur(10px)", duration: d, ease: OUT, immediateRender: false }, t);
 
-      // 1. Hook
-      tl.fromTo("#s1-sticker", { opacity: 0, rotation: -12, scale: 0.8 }, { opacity: 1, rotation: -4, scale: 1, duration: 0.5, ease: "back.out(1.6)" }, 0.1);
-      tl.fromTo("#s1-saas", { opacity: 0, scale: 1.25, filter: "blur(12px)" }, { opacity: 1, scale: 1, filter: "blur(0px)", duration: 0.35, ease: IN }, 0.45);
-      tl.fromTo("#s1-slash", { scaleX: 0, rotation: -3 }, { scaleX: 1, rotation: -3, duration: 0.22, ease: "power3.out" }, 1.5); // beat-locked: 1.60s (slash done at 1.72)
-      blurIn("#s1-is", 2.0, 0.15);
-      tl.fromTo("#s1-dead", { opacity: 0, y: 40, filter: "blur(10px)" }, { opacity: 1, y: 0, filter: "blur(0px)", duration: 0.3, ease: IN }, 2.12); // beat: 2.12s
-      blurOut("#s1-in", 3.5);
-
-      // 2. Reveal
-      tl.fromTo("#s2-mark", { opacity: 0, scale: 0.4, rotation: -40 }, { opacity: 1, scale: 1, rotation: -6, duration: 0.55, ease: "back.out(1.5)" }, 3.66); // beat-locked: 3.70s
-      blurIn("#s2-name", 3.8, 0.25);
-      tl.fromTo("#s2-sub .w", { opacity: 0, filter: "blur(6px)" }, { opacity: 1, filter: "blur(0px)", duration: 0.13, ease: IN, stagger: 0.067 }, 4.2);
-      blurOut("#s2-in", 7.18);
+      // 1. Hero
+      blurIn("#s1-logo", 0.05, 0.3);
+      tl.fromTo("#s1-eyebrow", { opacity: 0, scale: 0.7 }, { opacity: 1, scale: 1, duration: 0.45, ease: "back.out(1.8)" }, 0.15);
+      tl.fromTo("#s1-a .w", { opacity: 0, filter: "blur(6px)" }, { opacity: 1, filter: "blur(0px)", duration: 0.15, ease: IN, stagger: 0.09 }, 0.5);
+      tl.fromTo("#s1-b", { opacity: 0, y: 40, filter: "blur(12px)" }, { opacity: 1, y: 0, filter: "blur(0px)", duration: 0.32, ease: IN }, 1.54); // beat-locked: 1.60s
+      blurIn("#s1-lede", 3.66, 0.25); // beat-locked: 3.70s
+      tl.fromTo("#s1-join", { opacity: 0, y: 30 }, { opacity: 1, y: 0, duration: 0.45, ease: IN }, 4.23); // beat: 4.23s
+      blurOut("#s1-in", 7.16, 0.22);
 
       // 3. Flow
       blurIn("#s3-label", 7.38, 0.25);
@@ -306,11 +296,13 @@
       blurOut("#s4-label", 18.2, 0.22);
 
       // 5. End card
-      tl.fromTo("#s5-logo", { opacity: 0, scale: 0.85 }, { opacity: 1, scale: 1, duration: 0.5, ease: "back.out(1.4)" }, 18.44); // beat: 18.44s
-      blurIn("#s5-line", 18.6, 0.25);
-      tl.fromTo("#s5-cta", { opacity: 0, y: 30 }, { opacity: 1, y: 0, duration: 0.4, ease: IN }, 18.75);
-      blurIn("#s5-note", 18.9, 0.25);
-      tl.fromTo("#s5-cursor", { x: 1500, y: 1000, opacity: 0 }, { x: 955, y: 730, opacity: 1, duration: 0.55, ease: "power3.inOut" }, 18.9);
+      tl.fromTo("#s5-card", { opacity: 0, scale: 0.86, y: 60 }, { opacity: 1, scale: 1, y: 0, duration: 0.5, ease: IN }, 18.4); // beat: 18.44s
+      tl.fromTo("#s5-scribble", { opacity: 0, rotation: -12, scale: 0.8 }, { opacity: 1, rotation: -3, scale: 1, duration: 0.45, ease: "back.out(1.6)" }, 18.55);
+      blurIn("#s5-h2", 18.62, 0.22);
+      blurIn("#s5-p", 18.8, 0.22);
+      tl.fromTo("#s5-join", { opacity: 0, y: 30 }, { opacity: 1, y: 0, duration: 0.4, ease: IN }, 18.9);
+      blurIn("#s5-foot", 19.1, 0.3);
+      tl.fromTo("#s5-cursor", { x: 1500, y: 1000, opacity: 0 }, { x: 1171, y: 721, opacity: 1, duration: 0.55, ease: "power3.inOut" }, 18.9);
       tl.fromTo("#s5-cta", { scale: 1 }, { scale: 0.94, duration: 0.07, yoyo: true, repeat: 1, ease: "power2.out", immediateRender: false }, 19.49); // beat: 19.49s
       tl.fromTo("#s5-cursor", { opacity: 1 }, { opacity: 0, duration: 0.25, immediateRender: false }, 20.2);
 
