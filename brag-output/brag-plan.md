@@ -129,3 +129,9 @@ Scenes 1, 2 and 5 now use the new home page design; scenes 3 and 4 are unchanged
 - **Two more examples in "Ask your AI to build" (8 beats, +4.19s):** after the booking app, the same prompt box takes "Make a budget that matches how I spend" (the redesigned site's own use case) and a budget app slides in at `budget.formelab.app` with spending bars filling and a "Coffee −$4.50" entry (9.45-11.55s). Then "Make a spelling game for my kids": a spelling game at `spelling.formelab.app`, the missing G drops into DOG and "Great job!" pops (11.55-13.47s). Both apps are illustrations in the home page's card style.
 - **"You use your own AI":** the prompt box shows "Your AI" with the AI's name in a purple pill, rolling from Claude (booking) to ChatGPT (budget) to Gemini (game), so one Formelab works with whichever AI you use (the site's "Works with the AI you already use").
 - Later scenes moved 8 beats later. Total 26.8s, past /brag's 25s guideline at the user's request.
+
+## Revision 6: works with the AI you already use
+
+- **New scene, 13.71-17.38s (7 beats):** "Works with the AI you already use" (the redesigned site's wording) over the Formelab tile, with Claude, ChatGPT, Gemini, Grok and Cursor landing one per half beat, each wired into the tile; the tile pulses once all five are connected (15.74s). "Any AI" is not written on screen: the product lists these five.
+- **Logos:** the AI chips and the "Your AI" pill in the prompt box use the product's own marks (`AI_LOGOS` in `src/dashboard/logos.ts`, the ones on Connect your AI). The pill is now white with a purple outline so the coloured marks read.
+- Later scenes moved 7 beats later. Total 30.5s.
