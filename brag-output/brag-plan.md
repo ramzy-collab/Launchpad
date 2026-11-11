@@ -108,3 +108,7 @@ Scenes 1, 2 and 5 now use the new home page design; scenes 3 and 4 are unchanged
 - **Scene 5, End card, 16.35-19.51s:** "What would you make?" and the "Request early access" button (dark, as on the site's final card) with the cursor click at 17.40s. Logo and formelab.ai below.
 - Scene 1 was cut by 4 beats (2.094s) and everything after it moved up the same amount. The music now starts 2.094s into the track, so every cut still lands on its beat and "not the other way around." hits the track's 3.70s strong cue. Total 19.5s.
 - Poster: 3.0s, the finished headline.
+
+## Phone version (brag-vertical.mp4)
+
+1080x1920, same timing, music and sound. `composition-vertical/` is the same composition with a phone layout: headline over four lines, the prompt above the live booking app, the apps wall in two columns (2 + 2 + 1), and a taller end card. Poster: 3.0s.

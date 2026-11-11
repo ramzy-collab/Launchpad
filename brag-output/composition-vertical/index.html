@@ -1,0 +1,318 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1080, height=1920" />
+    <script src="assets/js/gsap.min.js"></script>
+    <!-- Formelab's own home page styles: the showcase cards render exactly as on formelab.ai -->
+    <link rel="stylesheet" href="assets/home.css" />
+    <style>
+      @font-face { font-family: "Bricolage Grotesque"; font-weight: 800; src: url("assets/fonts/BricolageGrotesque_800ExtraBold.ttf"); }
+      @font-face { font-family: "Permanent Marker"; font-weight: 400; src: url("assets/fonts/PermanentMarker.woff2"); }
+      :root { --ground: #FBFAF7; --ink: #1C1B19; --soft: #6B6862; --accent: #5B4CF5; --pop: #FF6B4A; --green: #1F9D6B; }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; width: 1080px; height: 1920px; overflow: hidden; }
+      #root { width: 100%; height: 100%; position: relative; }
+      .bg { position: absolute; inset: 0; background: var(--ground); background-image: radial-gradient(#E8E5DE 1.5px, transparent 1.5px); background-size: 32px 32px; }
+      .scene { position: absolute; inset: 0; }
+      .center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+      .display { font-family: "Bricolage Grotesque", sans-serif; font-weight: 800; letter-spacing: -.045em; color: var(--ink); }
+      .w { display: inline-block; }
+
+      /* 1. Hero (the redesigned home page, fl/home-redesign) */
+      .logo { display: inline-flex; align-items: center; gap: 16px; font-family: "Bricolage Grotesque", sans-serif; font-weight: 800; font-size: 40px; letter-spacing: -.02em; color: var(--ink); }
+      .logo .mk { position: relative; width: 52px; height: 52px; border-radius: 16px; background: var(--accent); color: #fff; display: grid; place-items: center; font-size: 32px; }
+      .logo .mk i { position: absolute; width: 16px; height: 16px; border-radius: 50%; background: var(--pop); right: -5px; top: -5px; }
+      #s1-logo { position: absolute; left: 96px; top: 64px; }
+      #s1-eyebrow { display: inline-flex; align-items: center; gap: 14px; font-family: "Inter", sans-serif; font-size: 30px; font-weight: 600; color: #4A3BE0; background: #EFEDFE; padding: 12px 26px; border-radius: 999px; margin-bottom: 44px; }
+      #s1-eyebrow i { width: 13px; height: 13px; border-radius: 50%; background: var(--accent); }
+      #s1-h1 { font-size: 136px; line-height: 1.02; letter-spacing: -.04em; margin: 0; }
+      #s1-h1 .em { display: block; color: var(--accent); }
+      #s1-lede { font-family: "Inter", sans-serif; font-size: 44px; line-height: 1.5; color: var(--soft); margin: 48px 0 0; }
+      .fjoin { display: flex; align-items: center; gap: 10px; width: 860px; margin: 44px auto 0; background: #fff; border: 2px solid #E8E5DE; border-radius: 999px; padding: 9px; box-shadow: 0 1px 2px rgba(28,27,25,.05); font-family: "Inter", sans-serif; }
+      .fjoin .in { flex: 1; text-align: left; padding: 0 30px; font-size: 30px; color: #85827B; }
+      .fjoin .go { height: 80px; padding: 0 40px; border-radius: 999px; background: var(--accent); color: #fff; font-size: 30px; font-weight: 600; display: grid; place-items: center; white-space: nowrap; }
+
+      /* 3. Flow */
+      #s3-label, #s4-label { font-family: "Inter", sans-serif; font-size: 26px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--accent); }
+      #s3-label { position: absolute; left: 140px; top: 300px; }
+      #s3-prompt { position: absolute; left: 140px; top: 360px; width: 720px; min-height: 230px; background: #fff; border: 1.5px solid #ECEAE4; border-radius: 28px; box-shadow: 0 1px 2px rgba(17,17,16,.05), 0 24px 48px -20px rgba(17,17,16,.25); padding: 36px 40px 100px; font-family: "Inter", sans-serif; font-size: 44px; line-height: 1.3; color: var(--ink); text-align: left; }
+      #s3-prompt .c { display: none; }
+      #s3-caret { display: inline-block; width: 4px; height: 50px; background: var(--accent); vertical-align: -8px; margin-left: 2px; }
+      #s3-send { position: absolute; right: 26px; bottom: 26px; width: 68px; height: 68px; border-radius: 50%; background: var(--accent); display: grid; place-items: center; }
+      #s3-appwrap { position: absolute; left: 1000px; top: 170px; width: 780px; }
+      #s3-glow { position: absolute; left: -80px; top: 40px; width: 940px; height: 740px; border-radius: 50%; background: radial-gradient(closest-side, rgba(91,76,245,.35), rgba(91,76,245,0)); }
+      #s3-bar { position: relative; display: flex; align-items: center; gap: 16px; margin-bottom: 22px; font-family: "Inter", sans-serif; }
+      #s3-url { background: #fff; border: 1.5px solid #ECEAE4; border-radius: 999px; padding: 12px 26px; font-size: 28px; font-weight: 600; color: var(--ink); }
+      #s3-url span { color: var(--soft); font-weight: 500; }
+      #s3-live { background: #E6F5EE; color: #11643F; border-radius: 999px; padding: 12px 24px; font-size: 28px; font-weight: 700; }
+      #s3-app { position: relative; }
+      #s3-app figure { transform-origin: 0 0; scale: 1.68; }
+      #s3-app figcaption { display: none; }
+      #s3-cursor { position: absolute; left: 0; top: 0; width: 64px; height: 64px; z-index: 20; filter: drop-shadow(0 4px 6px rgba(0,0,0,.3)); }
+
+      /* 4. Wall */
+      #s4-label { position: absolute; left: 0; right: 0; top: 70px; text-align: center; }
+      .wall { position: absolute; left: 0; right: 0; display: flex; justify-content: center; gap: 44px; }
+      #s4-row1 { top: 130px; } #s4-row2 { top: 590px; }
+      .wall .cell { width: 414px; height: 440px; }
+      .wall figure { transform-origin: 0 0; scale: .9; }
+      .wall figcaption { font-size: 22px !important; }
+
+      /* 5. End card */
+      #s5-card { position: absolute; left: 110px; right: 110px; top: 90px; bottom: 150px; background: var(--accent); border-radius: 56px; color: #fff; overflow: hidden; }
+      #s5-scribble { font-family: "Permanent Marker", cursive; font-size: 48px; color: #FFC93C; margin-bottom: 26px; }
+      #s5-h2 { font-size: 150px; line-height: 1.04; letter-spacing: -.035em; color: #fff; margin: 0; }
+      #s5-p { font-family: "Inter", sans-serif; font-size: 40px; color: #E5E1FF; margin: 28px 0 0; }
+      #s5-join { margin-top: 64px; }
+      #s5-cta { display: inline-grid; place-items: center; height: 110px; padding: 0 64px; border-radius: 999px; background: #1C1B19; color: #fff; font-family: "Inter", sans-serif; font-size: 40px; font-weight: 600; }
+      #s5-foot { position: absolute; left: 0; right: 0; bottom: 48px; display: flex; justify-content: center; align-items: center; gap: 26px; font-family: "Inter", sans-serif; font-size: 32px; font-weight: 600; color: var(--ink); }
+      #s5-cursor { position: absolute; left: 0; top: 0; width: 64px; height: 64px; z-index: 20; filter: drop-shadow(0 4px 6px rgba(0,0,0,.3)); }
+      /* Vertical (1080x1920) layout for phones */
+      #s1-logo { left: 64px; top: 90px; }
+      #s1-h1 { font-size: 128px; padding: 0 70px; }
+      #s3-label { left: 80px; top: 330px; }
+      #s3-prompt { left: 80px; top: 390px; width: 920px; }
+      #s3-appwrap { left: 150px; top: 860px; width: 780px; }
+      #s4 { display: grid; grid-template-columns: 460px 460px; justify-content: center; align-content: start; column-gap: 40px; row-gap: 10px; padding-top: 230px; }
+      #s4-label { top: 140px; font-size: 30px; }
+      #s4 .wall { display: contents; }
+      #s4 .cell { width: 460px; height: 470px; }
+      #s4 .wall figure { scale: 1; }
+      #s4-c5 { grid-column: 1 / span 2; justify-self: center; }
+      #s5-card { left: 60px; right: 60px; top: 220px; bottom: 320px; }
+      #s5-h2 { font-size: 132px; padding: 0 50px; }
+      #s5-foot { bottom: 150px; }
+    </style>
+  </head>
+  <body>
+    <div id="root" data-composition-id="main" data-start="0" data-duration="19.51" data-width="1080" data-height="1920">
+      <div class="bg"></div>
+
+      <!-- 1. Hero: the redesigned home page -->
+      <div id="s1" class="scene clip" data-start="0" data-duration="5.29" data-track-index="1" data-track-kind="graphics">
+        <div id="s1-in">
+          <div class="logo" id="s1-logo"><span class="mk">F<i></i></span>Formelab</div>
+          <div class="center">
+            <h1 id="s1-h1" class="display"><span id="s1-a"><span class="w">Software</span> <span class="w">that</span> <span class="w">fits</span> <span class="w">you,</span></span><span class="em" id="s1-b">not the other way around.</span></h1>
+          </div>
+        </div>
+      </div>
+
+      <!-- 3. Flow: ask, it's live, it works -->
+      <div id="s3" class="scene clip" data-start="5.29" data-duration="5.8" data-track-index="1" data-track-kind="graphics">
+        <div id="s3-left">
+          <div id="s3-label">Ask your AI to build</div>
+          <div id="s3-prompt"><span class="c">M</span><span class="c">a</span><span class="c">k</span><span class="c">e</span><span class="c"> </span><span class="c">a</span><span class="c"> </span><span class="c">c</span><span class="c">l</span><span class="c">a</span><span class="c">s</span><span class="c">s</span><span class="c"> </span><span class="c">b</span><span class="c">o</span><span class="c">o</span><span class="c">k</span><span class="c">i</span><span class="c">n</span><span class="c">g</span><span class="c"> </span><span class="c">p</span><span class="c">a</span><span class="c">g</span><span class="c">e</span><span class="c"> </span><span class="c">f</span><span class="c">o</span><span class="c">r</span><span class="c"> </span><span class="c">m</span><span class="c">y</span><span class="c"> </span><span class="c">s</span><span class="c">t</span><span class="c">u</span><span class="c">d</span><span class="c">i</span><span class="c">o</span><span id="s3-caret"></span>
+            <div id="s3-send"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg></div>
+          </div>
+        </div>
+        <div id="s3-appwrap">
+          <div id="s3-glow"></div>
+          <div id="s3-bar"><div id="s3-url">studio.formelab.app<span>/booking</span></div><div id="s3-live">It's live.</div></div>
+          <div id="s3-app"><figure>
+  <div class="stage bg-blue"><div class="shot" data-layout-allow-overlap><div class="cal">
+    <div class="side">
+      <div class="av"></div>
+      <div class="host">Ana Ruiz</div>
+      <div class="ev">Reformer Pilates</div>
+      <div class="meta"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>50 min</div>
+      <div class="meta"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 21s-7-6-7-11a7 7 0 0 1 14 0c0 5-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>Oak St. Studio</div>
+    </div>
+    <div class="main">
+      <h4>Select a Date &amp; Time</h4>
+      <div class="mo"><span>October 2026</span><i>&#8249; &#8250;</i></div>
+      <div class="grid">
+        <span class="dh">MON</span><span class="dh">TUE</span><span class="dh">WED</span><span class="dh">THU</span><span class="dh">FRI</span><span class="dh">SAT</span><span class="dh">SUN</span>
+        <span>12</span><span class="av2">13</span><span class="sel">14</span><span class="av2">15</span><span class="av2">16</span><span>17</span><span>18</span>
+        <span class="av2">19</span><span class="av2">20</span><span>21</span><span class="av2">22</span><span class="av2">23</span><span>24</span><span>25</span>
+      </div>
+      <div class="slots"><span>8:30am</span><span class="pick">10:00am</span><span>12:15pm</span><span class="go">Next</span></div>
+    </div>
+  </div></div>
+  <div data-layout-allow-occlusion data-layout-allow-overlap class="float toast at-br"><span class="ti ti-blue"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg></span><span><b>New booking</b><small>Maya R. · Tue, 10:00am</small></span></div></div>
+  <figcaption><b>Class booking</b> by a studio owner</figcaption>
+</figure></div>
+        </div>
+        <svg id="s3-cursor" viewBox="0 0 24 24"><path d="M5 3l14 8-6 1.5L10 19z" fill="#111" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/></svg>
+      </div>
+
+      <!-- 4. Built with Formelab -->
+      <div id="s4" class="scene clip" data-start="11.09" data-duration="5.26" data-track-index="1" data-track-kind="graphics">
+        <div id="s4-label">Built with Formelab</div>
+        <div class="wall" id="s4-row1"><div class="cell" id="s4-c1"><figure>
+  <div class="stage bg-peach"><div class="shot" data-layout-allow-overlap><div class="asa">
+    <div class="hd"><span class="pj"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h10"/></svg></span><b>Client onboarding</b></div>
+    <div class="tabs"><span class="on">List</span><span>Board</span><span>Timeline</span><span>Files</span></div>
+    <div class="colh"><span>Task name</span><span>Assignee</span><span>Due date</span></div>
+    <div class="sec"><svg width="8" height="8" viewBox="0 0 10 10"><path d="M1 3l4 4 4-4" fill="none" stroke="#1e1f21" stroke-width="1.6"/></svg>Harbor &amp; Co.</div>
+    <div class="t"><span><i class="ck on"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="4"><path d="M20 6 9 17l-5-5"/></svg></i><span class="done">Signed agreement</span></span><i class="who p-blue">DK</i><span class="due">Oct 6</span></div>
+    <div class="t"><span><i class="ck on"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="4"><path d="M20 6 9 17l-5-5"/></svg></i><span class="done">Kickoff call</span></span><i class="who p-purple">SL</i><span class="due">Oct 8</span></div>
+    <div class="t"><span><i class="ck"></i>Collect brand assets</span><i class="who p-red">RM</i><span class="due late">Yesterday</span></div>
+    <div class="t"><span><i class="ck"></i>Draft homepage copy</span><i class="who p-purple">SL</i><span class="due today">Today</span></div>
+  </div></div>
+  <div data-layout-allow-occlusion data-layout-allow-overlap class="float working"><span class="faces"><i class="p-blue"></i><i class="p-purple"></i><i class="p-red"></i></span><b>3 working</b></div>
+  <div data-layout-allow-occlusion data-layout-allow-overlap class="float toast at-bl"><span class="ti ti-green"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round"><path d="M20 6 9 17l-5-5"/></svg></span><span><b>Kickoff call</b><small>Marked complete by Sam</small></span></div></div>
+  <figcaption><b>Onboarding checklist</b> by a 4-person agency</figcaption>
+</figure></div><div class="cell" id="s4-c2"><figure>
+  <div class="stage bg-night"><div class="shot" data-layout-allow-overlap><div class="str">
+    <div class="lbl">Rent collected <svg width="9" height="9" viewBox="0 0 10 10"><path d="M2 3.5l3 3 3-3" fill="none" stroke="#687385" stroke-width="1.5"/></svg></div>
+    <div class="amt">$21,450.00<span class="delta">+4.2%</span><small>October</small></div>
+    <svg class="chart" viewBox="0 0 300 54" preserveAspectRatio="none">
+      <path d="M0 46 L30 44 L60 40 L90 41 L120 33 L150 30 L180 24 L210 22 L240 15 L270 12 L300 8" fill="none" stroke="#635bff" stroke-width="1.8"/>
+      <path d="M0 46 L30 46 L60 45 L90 43 L120 40 L150 38 L180 36 L210 35 L240 32 L270 31 L300 29" fill="none" stroke="#c1c9d2" stroke-width="1.4" stroke-dasharray="3 3"/>
+    </svg>
+    <div class="th"><span>Amount</span><span>Status</span><span>Unit</span></div>
+    <div class="tr"><b>$2,350.00</b><span class="badge ok">Succeeded <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="4"><path d="M20 6 9 17l-5-5"/></svg></span><span class="desc">12 Elm St, Unit 1</span></div>
+    <div class="tr"><b>$1,950.00</b><span class="badge inc">Incomplete</span><span class="desc">48 Centre St, Unit 3</span></div>
+    <div class="tr"><b>$2,150.00</b><span class="badge fail">Failed</span><span class="desc">7 Park Ln, Unit 1</span></div>
+  </div></div>
+  <div data-layout-allow-occlusion data-layout-allow-overlap class="float toast at-br2"><span class="ti ti-mint"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#006908" stroke-width="3" stroke-linecap="round"><path d="M20 6 9 17l-5-5"/></svg></span><span><b>Payment received</b><small>12 Elm St, Unit 1</small></span><b class="gain">+$2,350</b></div></div>
+  <figcaption><b>Rent tracker</b> by a landlord with 12 units</figcaption>
+</figure></div><div class="cell" id="s4-c3"><figure>
+  <div class="stage bg-mint"><div class="shot" data-layout-allow-overlap><div class="doo">
+    <p class="t">Team lunch, this week</p>
+    <p class="s">Organized by Priya · 4 responses</p>
+    <table>
+      <tr><th>4 participants</th><th>WED<small>12:00</small></th><th class="best">THU<small>12:30</small></th><th>FRI<small>12:00</small></th></tr>
+      <tr><td><span class="av v-blue">P</span>Priya</td><td class="y"><svg viewBox="0 0 24 24" fill="none" stroke="#1d8a4a" stroke-width="3.5"><path d="M20 6 9 17l-5-5"/></svg></td><td class="y"><svg viewBox="0 0 24 24" fill="none" stroke="#1d8a4a" stroke-width="3.5"><path d="M20 6 9 17l-5-5"/></svg></td><td></td></tr>
+      <tr><td><span class="av v-orange">D</span>Dana</td><td></td><td class="y"><svg viewBox="0 0 24 24" fill="none" stroke="#1d8a4a" stroke-width="3.5"><path d="M20 6 9 17l-5-5"/></svg></td><td class="y"><svg viewBox="0 0 24 24" fill="none" stroke="#1d8a4a" stroke-width="3.5"><path d="M20 6 9 17l-5-5"/></svg></td></tr>
+      <tr><td><span class="av v-green">S</span>Sam</td><td class="m"><span class="maybe">(✓)</span></td><td class="y"><svg viewBox="0 0 24 24" fill="none" stroke="#1d8a4a" stroke-width="3.5"><path d="M20 6 9 17l-5-5"/></svg></td><td></td></tr>
+      <tr><td><span class="av v-violet">T</span>Theo</td><td></td><td class="y"><svg viewBox="0 0 24 24" fill="none" stroke="#1d8a4a" stroke-width="3.5"><path d="M20 6 9 17l-5-5"/></svg></td><td class="y"><svg viewBox="0 0 24 24" fill="none" stroke="#1d8a4a" stroke-width="3.5"><path d="M20 6 9 17l-5-5"/></svg></td></tr>
+      <tr class="cnt"><td></td><td>1</td><td class="best">4</td><td>2</td></tr>
+    </table>
+  </div></div>
+  <div data-layout-allow-occlusion data-layout-allow-overlap class="float decided"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round"><path d="M20 6 9 17l-5-5"/></svg>Thursday 12:30 it is</div>
+  <svg class="cursor" width="26" height="26" viewBox="0 0 24 24"><path d="M5 3l14 8-6 1.5L10 19z" fill="#111" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/></svg></div>
+  <figcaption><b>Team poll</b> by an office manager</figcaption>
+</figure></div></div>
+        <div class="wall" id="s4-row2"><div class="cell" id="s4-c4"><figure>
+  <div class="stage bg-sand"><div class="shot" data-layout-allow-overlap><div class="mer">
+    <div class="lbl">Total balance</div>
+    <div class="bal">$68,412<span>.37</span></div>
+    <div class="chg"><b>+$3,906.10</b> last 30 days</div>
+    <svg class="chart" viewBox="0 0 300 60" preserveAspectRatio="none">
+      <defs><linearGradient id="mg1" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#5266eb" stop-opacity=".18"/><stop offset="1" stop-color="#5266eb" stop-opacity="0"/></linearGradient></defs>
+      <path d="M0 44 C30 42 45 48 70 40 S110 30 140 34 S190 22 215 24 S265 12 300 10 L300 60 L0 60Z" fill="url(#mg1)"/>
+      <path d="M0 44 C30 42 45 48 70 40 S110 30 140 34 S190 22 215 24 S265 12 300 10" fill="none" stroke="#5266eb" stroke-width="1.8"/>
+    </svg>
+    <div class="acct"><span class="ic"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18"/></svg></span><span>Checking<small>&#8226;&#8226;4821</small></span><b>$52,108.02</b></div>
+    <div class="acct"><span class="ic"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M4 20V10l8-6 8 6v10"/><path d="M9 20v-6h6v6"/></svg></span><span>Savings<small>&#8226;&#8226;9930</small></span><b>$16,304.35</b></div>
+  </div></div>
+  <div data-layout-allow-occlusion data-layout-allow-overlap class="float debit">
+    <div class="top">Bean &amp; Barrel<span>DEBIT</span></div>
+    <i class="chip"></i>
+    <div class="num">•••• 4821</div></div></div>
+  <figcaption><b>Cash dashboard</b> by a coffee shop owner</figcaption>
+</figure></div><div class="cell" id="s4-c5"><figure>
+  <div class="stage bg-butter"><div class="shot" data-layout-allow-overlap><div class="not">
+    <div class="emo">💌</div>
+    <h5>Wedding RSVPs</h5>
+    <div class="view"><span class="on">Table</span><span>By table</span><span>Dietary</span></div>
+    <div class="r h"><span>Aa Name</span><span>RSVP</span><span>#</span></div>
+    <div class="r"><span class="nm">Priya Shah</span><span><i class="tag g">Attending</i></span><span>2</span></div>
+    <div class="r"><span class="nm">The Okafors</span><span><i class="tag g">Attending</i></span><span>4</span></div>
+    <div class="r"><span class="nm">Marcus Lee</span><span><i class="tag yel">Maybe</i></span><span>1</span></div>
+    <div class="r"><span class="nm">Elena Novak</span><span><i class="tag rd">Declined</i></span><span>0</span></div>
+    <div class="r"><span class="nm">Sam &amp; Theo</span><span><i class="tag g">Attending</i></span><span>2</span></div>
+  </div></div>
+  <div data-layout-allow-occlusion data-layout-allow-overlap class="float std">
+    <div class="kicker">Save the date</div>
+    <div class="names">Maya &amp; Jon</div>
+    <div class="when">June 6 · Hudson Valley</div></div></div>
+  <figcaption><b>Wedding RSVPs</b> by the couple</figcaption>
+</figure></div></div>
+      </div>
+
+      <!-- 5. End card -->
+      <div id="s5" class="scene clip" data-start="16.35" data-duration="3.16" data-track-index="1" data-track-kind="graphics">
+        <div id="s5-card"><div class="center">
+          <h2 id="s5-h2" class="display">What would you make?</h2>
+          <div id="s5-join"><span class="cta" id="s5-cta">Request early access</span></div>
+        </div></div>
+        <div id="s5-foot"><span class="logo"><span class="mk">F<i></i></span>Formelab</span><span>formelab.ai</span></div>
+        <svg id="s5-cursor" viewBox="0 0 24 24"><path d="M5 3l14 8-6 1.5L10 19z" fill="#111" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/></svg>
+      </div>
+
+      <!-- Audio. Music: Sascha Ende, ende.app (CC BY 4.0). SFX: Kenney (CC0), keypresses by unicae_games (CC0). -->
+      <audio id="music" class="clip" data-start="0" data-duration="19.51" data-media-start="2.094" data-track-index="10" data-volume="0.8" data-fade-out="1.2" src="assets/music/happy-beats-business-moves-vol-11-by-ende-dot-app.mp3"></audio>
+      <audio id="sfx0" class="clip" data-start="1.6" data-duration="0.19" data-track-index="11" data-volume="0.9" src="assets/sfx/impactSoft_medium_001.ogg"></audio>
+      <audio id="sfx1" class="clip" data-start="5.55" data-duration="0.25" data-track-index="12" data-volume="0.35" src="assets/sfx/keypress-001.wav"></audio>
+      <audio id="sfx2" class="clip" data-start="5.67" data-duration="0.25" data-track-index="13" data-volume="0.35" src="assets/sfx/keypress-002.wav"></audio>
+      <audio id="sfx3" class="clip" data-start="5.79" data-duration="0.25" data-track-index="14" data-volume="0.35" src="assets/sfx/keypress-003.wav"></audio>
+      <audio id="sfx4" class="clip" data-start="5.91" data-duration="0.25" data-track-index="15" data-volume="0.35" src="assets/sfx/keypress-004.wav"></audio>
+      <audio id="sfx5" class="clip" data-start="6.03" data-duration="0.25" data-track-index="16" data-volume="0.35" src="assets/sfx/keypress-005.wav"></audio>
+      <audio id="sfx6" class="clip" data-start="6.15" data-duration="0.25" data-track-index="17" data-volume="0.35" src="assets/sfx/keypress-006.wav"></audio>
+      <audio id="sfx7" class="clip" data-start="6.27" data-duration="0.25" data-track-index="18" data-volume="0.35" src="assets/sfx/keypress-001.wav"></audio>
+      <audio id="sfx8" class="clip" data-start="6.39" data-duration="0.25" data-track-index="19" data-volume="0.35" src="assets/sfx/keypress-002.wav"></audio>
+      <audio id="sfx9" class="clip" data-start="6.51" data-duration="0.25" data-track-index="20" data-volume="0.35" src="assets/sfx/keypress-003.wav"></audio>
+      <audio id="sfx10" class="clip" data-start="6.63" data-duration="0.25" data-track-index="21" data-volume="0.35" src="assets/sfx/keypress-004.wav"></audio>
+      <audio id="sfx11" class="clip" data-start="6.81" data-duration="0.05" data-track-index="22" data-volume="0.8" src="assets/sfx/click_003.ogg"></audio>
+      <audio id="sfx12" class="clip" data-start="6.89" data-duration="0.6" data-track-index="23" data-volume="0.5" src="assets/sfx/card-slide-1.ogg"></audio>
+      <audio id="sfx13" class="clip" data-start="8.97" data-duration="0.05" data-track-index="24" data-volume="0.8" src="assets/sfx/click_002.ogg"></audio>
+      <audio id="sfx14" class="clip" data-start="9.53" data-duration="0.11" data-track-index="25" data-volume="0.7" src="assets/sfx/drop_001.ogg"></audio>
+      <audio id="sfx15" class="clip" data-start="11.63" data-duration="0.6" data-track-index="26" data-volume="0.4" src="assets/sfx/card-slide-1.ogg"></audio>
+      <audio id="sfx16" class="clip" data-start="12.15" data-duration="0.2" data-track-index="27" data-volume="0.45" src="assets/sfx/drop_003.ogg"></audio>
+      <audio id="sfx17" class="clip" data-start="12.69" data-duration="0.6" data-track-index="28" data-volume="0.4" src="assets/sfx/card-slide-1.ogg"></audio>
+      <audio id="sfx18" class="clip" data-start="13.21" data-duration="0.2" data-track-index="29" data-volume="0.45" src="assets/sfx/drop_003.ogg"></audio>
+      <audio id="sfx19" class="clip" data-start="13.74" data-duration="0.6" data-track-index="30" data-volume="0.4" src="assets/sfx/card-slide-1.ogg"></audio>
+      <audio id="sfx20" class="clip" data-start="16.37" data-duration="1.48" data-track-index="31" data-volume="0.55" src="assets/sfx/impactBell_heavy_000.ogg"></audio>
+      <audio id="sfx21" class="clip" data-start="17.41" data-duration="0.05" data-track-index="32" data-volume="0.8" src="assets/sfx/click_003.ogg"></audio>
+    </div>
+    <script>
+      const RMS = [0.781, 0.749, 0.487, 0.436, 0.369, 0.335, 0.342, 0.358, 0.481, 0.439, 0.445, 0.431, 0.437, 0.373, 0.339, 0.327, 1.0, 0.61, 0.419, 0.331, 0.322, 0.307, 0.303, 0.289, 0.323, 0.324, 0.301, 0.283, 0.269, 0.266, 0.262, 0.423, 0.883, 0.559, 0.418, 0.392, 0.31, 0.286, 0.271, 0.277, 0.283, 0.268, 0.262, 0.265, 0.348, 0.31, 0.246, 0.666, 0.774, 0.55, 0.404, 0.31, 0.242, 0.241, 0.215, 0.347, 0.49, 0.436, 0.423, 0.388, 0.314, 0.22, 0.178, 0.744, 0.715, 0.546, 0.41, 0.347, 0.346, 0.334, 0.326, 0.445, 0.388, 0.351, 0.328, 0.275, 0.274, 0.253, 0.238, 0.807, 0.695, 0.411, 0.325, 0.294, 0.321, 0.287, 0.324, 0.248, 0.258, 0.235, 0.252, 0.246, 0.269, 0.238, 0.278, 0.836, 0.637, 0.472, 0.394, 0.276, 0.29, 0.26, 0.249, 0.278, 0.223, 0.202, 0.192, 0.295, 0.244, 0.187, 0.489, 0.865, 0.549, 0.425, 0.278, 0.179, 0.197, 0.158, 0.272, 0.403, 0.383, 0.355, 0.304, 0.287, 0.204, 0.168, 0.687, 0.672, 0.532, 0.457, 0.373, 0.376, 0.372, 0.344, 0.442, 0.482, 0.429, 0.422, 0.399, 0.379, 0.315, 0.313, 0.768, 0.594, 0.425, 0.378, 0.347, 0.386, 0.368, 0.415, 0.43, 0.337, 0.294, 0.278, 0.291, 0.307, 0.292, 0.247, 0.835, 0.644, 0.456, 0.47, 0.315, 0.305, 0.306, 0.264, 0.305, 0.302, 0.256, 0.218, 0.315, 0.279, 0.236, 0.359, 0.916, 0.662, 0.395, 0.381, 0.2, 0.224, 0.21, 0.267, 0.391, 0.395, 0.37, 0.333, 0.331, 0.222, 0.16, 0.531, 0.823, 0.511, 0.477, 0.345, 0.353, 0.342, 0.322, 0.41, 0.474, 0.459, 0.457, 0.379, 0.317, 0.313, 0.281, 0.759, 0.719, 0.384, 0.332, 0.358, 0.278, 0.273, 0.241, 0.335, 0.315, 0.312, 0.302, 0.307, 0.37, 0.31, 0.29, 0.742, 0.726, 0.405, 0.367, 0.314, 0.215, 0.214, 0.198, 0.245, 0.318, 0.255, 0.283, 0.307, 0.373, 0.315, 0.304, 0.9, 0.658, 0.492, 0.299, 0.333, 0.234, 0.296, 0.222, 0.368, 0.298, 0.308, 0.349, 0.193, 0.205, 0.162, 0.394, 0.834, 0.662, 0.43, 0.388, 0.359, 0.355, 0.364, 0.4, 0.482, 0.415, 0.402, 0.394, 0.392, 0.333, 0.274, 0.589, 0.895, 0.414, 0.383, 0.323, 0.33, 0.314, 0.287, 0.295, 0.35, 0.337, 0.333, 0.3, 0.3, 0.275, 0.263, 0.698, 0.735, 0.546, 0.43, 0.344, 0.318, 0.29, 0.25, 0.281, 0.287, 0.286, 0.256, 0.312, 0.381, 0.339, 0.38, 0.802, 0.664, 0.465, 0.427, 0.288, 0.262, 0.234, 0.223, 0.416, 0.47, 0.421, 0.37, 0.338, 0.239, 0.215, 0.213, 0.888, 0.619, 0.478, 0.414, 0.379, 0.368, 0.385, 0.381, 0.496, 0.426, 0.373, 0.354, 0.307, 0.284, 0.266, 0.408, 0.861, 0.478, 0.405, 0.272, 0.327, 0.32, 0.291, 0.296, 0.288, 0.259, 0.264, 0.231, 0.288, 0.273, 0.281, 0.582, 0.824, 0.519, 0.481, 0.366, 0.261, 0.27, 0.252, 0.275, 0.299, 0.216, 0.194, 0.22, 0.3, 0.232, 0.182, 0.754, 0.714, 0.463, 0.378, 0.251, 0.22, 0.193, 0.189, 0.329, 0.43, 0.366, 0.334, 0.333, 0.234, 0.2, 0.167, 0.814, 0.62, 0.555, 0.419, 0.407, 0.36, 0.349, 0.373, 0.509, 0.47, 0.436, 0.435, 0.358, 0.354, 0.334, 0.361, 0.787, 0.509, 0.42, 0.323, 0.399, 0.334, 0.347, 0.339, 0.315, 0.286, 0.267, 0.262, 0.284, 0.262, 0.276, 0.505, 0.817, 0.558, 0.477, 0.398, 0.351, 0.321, 0.318, 0.296, 0.301, 0.266, 0.254, 0.242, 0.339, 0.285, 0.232, 0.7, 0.795, 0.475, 0.36, 0.312, 0.258, 0.203, 0.206, 0.31, 0.453, 0.39, 0.41, 0.412, 0.272, 0.206, 0.159, 0.255, 0.319, 0.328, 0.315, 0.362, 0.374, 0.351, 0.469, 0.491, 0.51, 0.512, 0.442, 0.348, 0.368, 0.374, 0.364, 0.337, 0.328, 0.291, 0.276, 0.351, 0.334, 0.305, 0.33, 0.288, 0.3, 0.279, 0.237, 0.301, 0.316, 0.311, 0.355, 0.369, 0.385, 0.278, 0.333, 0.2, 0.2, 0.114, 0.113, 0.153, 0.087, 0.084, 0.074, 0.268, 0.197, 0.158, 0.171, 0.201, 0.168, 0.153, 0.121, 0.16, 0.158, 0.139, 0.161, 0.189, 0.195, 0.198, 0.198, 0.179, 0.203, 0.159, 0.79, 0.594, 0.445, 0.468, 0.432, 0.407, 0.396, 0.393, 0.486, 0.559, 0.492, 0.491, 0.433, 0.389, 0.368, 0.341, 0.861, 0.547, 0.393, 0.392, 0.451, 0.492, 0.452, 0.384, 0.394, 0.389, 0.384, 0.37, 0.385, 0.42, 0.384, 0.46, 0.837, 0.6, 0.498, 0.396, 0.34, 0.362, 0.345, 0.291, 0.349, 0.353, 0.356, 0.367, 0.52, 0.497, 0.417, 0.618, 0.729, 0.488, 0.383, 0.335, 0.317, 0.331, 0.332, 0.316, 0.613, 0.576, 0.517, 0.54, 0.504, 0.476, 0.411, 0.796, 0.632, 0.453, 0.373, 0.343, 0.364, 0.422, 0.369, 0.443, 0.543, 0.478, 0.361, 0.335, 0.345, 0.322, 0.342, 0.796, 0.589, 0.424, 0.318, 0.42, 0.475, 0.476, 0.435, 0.4, 0.389, 0.374, 0.334, 0.353, 0.33, 0.318, 0.333, 0.818, 0.636, 0.465, 0.423, 0.352, 0.394, 0.406, 0.374, 0.333, 0.358, 0.351, 0.335, 0.493, 0.498, 0.394, 0.444, 0.8, 0.624, 0.382, 0.378, 0.326, 0.358, 0.337, 0.335, 0.527, 0.471, 0.477, 0.414, 0.431, 0.443, 0.388, 0.706, 0.659, 0.397, 0.412, 0.331, 0.351, 0.34, 0.36, 0.457, 0.558, 0.551, 0.498, 0.474, 0.454, 0.423, 0.385, 0.795, 0.555, 0.288, 0.384, 0.395, 0.505, 0.472, 0.416, 0.437, 0.424, 0.408, 0.373, 0.38];
+      const tl = gsap.timeline({ paused: true });
+      const IN = "power4.out", OUT = "power3.in";
+      const blurIn = (sel, t, d = 0.2) => tl.fromTo(sel, { opacity: 0, filter: "blur(10px)" }, { opacity: 1, filter: "blur(0px)", duration: d, ease: IN }, t);
+      const blurOut = (sel, t, d = 0.2) => tl.fromTo(sel, { opacity: 1, filter: "blur(0px)" }, { opacity: 0, filter: "blur(10px)", duration: d, ease: OUT, immediateRender: false }, t);
+
+      // 1. Hero
+      blurIn("#s1-logo", 0.05, 0.3);
+      tl.fromTo("#s1-a .w", { opacity: 0, filter: "blur(6px)" }, { opacity: 1, filter: "blur(0px)", duration: 0.15, ease: IN, stagger: 0.09 }, 0.5);
+      tl.fromTo("#s1-b", { opacity: 0, y: 40, filter: "blur(12px)" }, { opacity: 1, y: 0, filter: "blur(0px)", duration: 0.32, ease: IN }, 1.54); // beat-locked: 1.60s (music 3.70s strong cue)
+      blurOut("#s1-in", 5.07, 0.22);
+
+      // 3. Flow
+      blurIn("#s3-label", 5.29, 0.25);
+      tl.fromTo("#s3-prompt", { opacity: 0, scaleX: 0.6, filter: "blur(12px)" }, { opacity: 1, scaleX: 1, filter: "blur(0px)", duration: 0.3, ease: "power3.out" }, 5.29);
+      const chars = gsap.utils.toArray("#s3-prompt .c");
+      chars.forEach((c, i) => tl.set(c, { display: "inline" }, 5.53 + i * (1.2 / chars.length)));
+      tl.fromTo("#s3-caret", { opacity: 1 }, { opacity: 0, duration: 0.01 }, 6.81);
+      tl.fromTo("#s3-cursor", { x: 1500, y: 980, opacity: 0 }, { x: 926, y: 573, opacity: 1, duration: 0.6, ease: "power3.inOut" }, 6.16);
+      tl.fromTo("#s3-send", { scale: 1 }, { scale: 0.86, duration: 0.06, yoyo: true, repeat: 1, ease: "power2.out" }, 6.79);
+      tl.fromTo("#s3-appwrap", { opacity: 0, y: 80, scale: 0.92, filter: "blur(14px)" }, { opacity: 1, y: 0, scale: 1, filter: "blur(0px)", duration: 0.55, ease: IN }, 6.87); // beat-locked: 6.87s
+      tl.fromTo("#s3-live", { opacity: 0, scale: 0.6 }, { opacity: 1, scale: 1, duration: 0.35, ease: "back.out(2)" }, 7.41); // beat: 7.41s
+      tl.fromTo("#s3-cursor", { x: 926, y: 573 }, { x: 770, y: 1323, duration: 0.7, ease: "power3.inOut", immediateRender: false }, 8.21);
+      tl.fromTo("#s3-app .slots span:nth-child(2)", { backgroundColor: "#ffffff", color: "#006bff" }, { backgroundColor: "#006bff", color: "#ffffff", duration: 0.12 }, 8.97); // beat: 8.97s
+      tl.fromTo("#s3-app .toast", { opacity: 0, y: 30, scale: 0.9 }, { opacity: 1, y: 0, scale: 1, duration: 0.4, ease: "back.out(1.8)" }, 9.51); // beat: 9.51s
+      tl.fromTo("#s3-cursor", { opacity: 1 }, { opacity: 0, duration: 0.2, immediateRender: false }, 10.31);
+      // audio-reactive: the glow behind the live app breathes with the music's loudness (per-frame RMS)
+      const glow = document.querySelector("#s3-glow");
+      tl.fromTo({ v: 0 }, { v: 0 }, { v: 1, duration: 5.8, ease: "none", onUpdate() {
+        const t = 5.29 + this.progress() * 5.8, r = RMS[Math.min(RMS.length - 1, Math.round((t + 2.094) * 30))];
+        glow.style.opacity = (0.45 + 0.55 * r).toFixed(3); glow.style.scale = (0.96 + 0.06 * r).toFixed(3);
+      } }, 5.29);
+      blurOut("#s3-left", 10.86, 0.22);
+      tl.fromTo("#s3-appwrap", { opacity: 1, scale: 1 }, { opacity: 0, scale: 0.7, x: -300, filter: "blur(8px)", duration: 0.25, ease: OUT, immediateRender: false }, 10.85);
+
+      // 4. Wall
+      blurIn("#s4-label", 11.09, 0.25);
+      [11.61, 12.13, 12.67, 13.19, 13.72].forEach((t, i) => // beat-grid: cards 1-5 at 11.61 12.13 12.67 13.19 13.72, full set holds to 16.11
+        tl.fromTo(`#s4-c${i + 1}`, { opacity: 0, y: 60, scale: 0.94, filter: "blur(10px)" }, { opacity: 1, y: 0, scale: 1, filter: "blur(0px)", duration: 0.5, ease: IN }, t));
+      tl.fromTo(".wall", { opacity: 1, filter: "blur(0px)" }, { opacity: 0, filter: "blur(10px)", duration: 0.22, ease: OUT, immediateRender: false }, 16.11);
+      blurOut("#s4-label", 16.11, 0.22);
+
+      // 5. End card
+      tl.fromTo("#s5-card", { opacity: 0, scale: 0.86, y: 60 }, { opacity: 1, scale: 1, y: 0, duration: 0.5, ease: IN }, 16.31); // beat: 16.35s
+      blurIn("#s5-h2", 16.53, 0.22);
+      tl.fromTo("#s5-join", { opacity: 0, y: 30 }, { opacity: 1, y: 0, duration: 0.4, ease: IN }, 16.81);
+      blurIn("#s5-foot", 17.01, 0.3);
+      tl.fromTo("#s5-cursor", { x: 1500, y: 1000, opacity: 0 }, { x: 527, y: 1245, opacity: 1, duration: 0.55, ease: "power3.inOut" }, 16.81);
+      tl.fromTo("#s5-cta", { scale: 1 }, { scale: 0.94, duration: 0.07, yoyo: true, repeat: 1, ease: "power2.out", immediateRender: false }, 17.40); // beat: 17.40s
+      tl.fromTo("#s5-cursor", { opacity: 1 }, { opacity: 0, duration: 0.25, immediateRender: false }, 18.11);
+
+      window.__timelines["main"] = tl;
+      tl.seek(0);
+    </script>
+  </body>
+</html>
