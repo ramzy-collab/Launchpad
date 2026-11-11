@@ -112,3 +112,10 @@ Scenes 1, 2 and 5 now use the new home page design; scenes 3 and 4 are unchanged
 ## Phone version (brag-vertical.mp4)
 
 1080x1920, same timing, music and sound. `composition-vertical/` is the same composition with a phone layout: headline over four lines, the prompt above the live booking app, the apps wall in two columns (2 + 2 + 1), and a taller end card. Poster: 3.0s.
+
+## Revision 4: tighter opening, smoother cut, sharing scene
+
+- **Dead space removed:** the opening is 3 beats shorter (0.00-3.72s). Later scenes moved up by the same 3 beats, so cuts stay on the beat.
+- **No jump at the cut:** the fade-out's blur was re-anchoring the centred headline 96 px higher just before the cut; the hero wrapper now has a fixed full-frame box. The "Ask your AI to build" prompt now enters centred where the headline was and slides to its place as the app arrives.
+- **New scene, Sharing and privacy, 14.78-19.49s (9 beats):** from the redesigned home page: "You decide who gets in", "Every app starts private.", and the three-option card (Only you, People you choose, Anyone with the link). The cursor picks "People you choose" (16.35s), then "Anyone with the link" (17.40s), and the link with "Copy link" appears.
+- End card now 19.49-22.65s. Total 22.6s. Posters at 2.8s.
