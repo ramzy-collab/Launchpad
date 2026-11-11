@@ -101,3 +101,10 @@ Scenes 1, 2 and 5 now use the new home page design; scenes 3 and 4 are unchanged
 - **Scene 5, End card, 18.44-21.60s:** the new site's purple final card: "put your idea on the wall" (yellow marker), "What would you make?", "Leave your email and we'll send your invite.", the email box, and a cursor click on "Request early access" at 19.49s. Logo and formelab.ai below. The site's "Early access is free..." line was left out: too long to read in the time left.
 - Colors follow the new tokens (canvas #FBFAF7, ink #1C1B19, soft #6B6862). "SaaS is dead." no longer appears.
 - Poster: 5.5s, the finished hero.
+
+## Revision 3: fewer words
+
+- **Scene 1, Hero, 0.00-5.29s:** logo and the headline only. The pill, the "Tell your AI..." line and the email form are gone.
+- **Scene 5, End card, 16.35-19.51s:** "What would you make?" and the "Request early access" button (dark, as on the site's final card) with the cursor click at 17.40s. Logo and formelab.ai below.
+- Scene 1 was cut by 4 beats (2.094s) and everything after it moved up the same amount. The music now starts 2.094s into the track, so every cut still lands on its beat and "not the other way around." hits the track's 3.70s strong cue. Total 19.5s.
+- Poster: 3.0s, the finished headline.

@@ -64,30 +64,28 @@
       #s5-scribble { font-family: "Permanent Marker", cursive; font-size: 48px; color: #FFC93C; margin-bottom: 26px; }
       #s5-h2 { font-size: 150px; line-height: 1.04; letter-spacing: -.035em; color: #fff; margin: 0; }
       #s5-p { font-family: "Inter", sans-serif; font-size: 40px; color: #E5E1FF; margin: 28px 0 0; }
-      #s5 .fjoin { border-color: transparent; }
+      #s5-join { margin-top: 64px; }
+      #s5-cta { display: inline-grid; place-items: center; height: 110px; padding: 0 64px; border-radius: 999px; background: #1C1B19; color: #fff; font-family: "Inter", sans-serif; font-size: 40px; font-weight: 600; }
       #s5-foot { position: absolute; left: 0; right: 0; bottom: 48px; display: flex; justify-content: center; align-items: center; gap: 26px; font-family: "Inter", sans-serif; font-size: 32px; font-weight: 600; color: var(--ink); }
       #s5-cursor { position: absolute; left: 0; top: 0; width: 64px; height: 64px; z-index: 20; filter: drop-shadow(0 4px 6px rgba(0,0,0,.3)); }
     </style>
   </head>
   <body>
-    <div id="root" data-composition-id="main" data-start="0" data-duration="21.6" data-width="1920" data-height="1080">
+    <div id="root" data-composition-id="main" data-start="0" data-duration="19.51" data-width="1920" data-height="1080">
       <div class="bg"></div>
 
       <!-- 1. Hero: the redesigned home page -->
-      <div id="s1" class="scene clip" data-start="0" data-duration="7.38" data-track-index="1" data-track-kind="graphics">
+      <div id="s1" class="scene clip" data-start="0" data-duration="5.29" data-track-index="1" data-track-kind="graphics">
         <div id="s1-in">
           <div class="logo" id="s1-logo"><span class="mk">F<i></i></span>Formelab</div>
           <div class="center">
-            <div id="s1-eyebrow"><i></i>Early Access now open</div>
             <h1 id="s1-h1" class="display"><span id="s1-a"><span class="w">Software</span> <span class="w">that</span> <span class="w">fits</span> <span class="w">you,</span></span><span class="em" id="s1-b">not the other way around.</span></h1>
-            <p id="s1-lede">Tell your AI what you need. Get an app that's yours.</p>
-            <div class="fjoin" id="s1-join"><span class="in">you@email.com</span><span class="go">Request early access</span></div>
           </div>
         </div>
       </div>
 
       <!-- 3. Flow: ask, it's live, it works -->
-      <div id="s3" class="scene clip" data-start="7.38" data-duration="5.8" data-track-index="1" data-track-kind="graphics">
+      <div id="s3" class="scene clip" data-start="5.29" data-duration="5.8" data-track-index="1" data-track-kind="graphics">
         <div id="s3-left">
           <div id="s3-label">Ask your AI to build</div>
           <div id="s3-prompt"><span class="c">M</span><span class="c">a</span><span class="c">k</span><span class="c">e</span><span class="c"> </span><span class="c">a</span><span class="c"> </span><span class="c">c</span><span class="c">l</span><span class="c">a</span><span class="c">s</span><span class="c">s</span><span class="c"> </span><span class="c">b</span><span class="c">o</span><span class="c">o</span><span class="c">k</span><span class="c">i</span><span class="c">n</span><span class="c">g</span><span class="c"> </span><span class="c">p</span><span class="c">a</span><span class="c">g</span><span class="c">e</span><span class="c"> </span><span class="c">f</span><span class="c">o</span><span class="c">r</span><span class="c"> </span><span class="c">m</span><span class="c">y</span><span class="c"> </span><span class="c">s</span><span class="c">t</span><span class="c">u</span><span class="c">d</span><span class="c">i</span><span class="c">o</span><span id="s3-caret"></span>
@@ -125,7 +123,7 @@
       </div>
 
       <!-- 4. Built with Formelab -->
-      <div id="s4" class="scene clip" data-start="13.18" data-duration="5.26" data-track-index="1" data-track-kind="graphics">
+      <div id="s4" class="scene clip" data-start="11.09" data-duration="5.26" data-track-index="1" data-track-kind="graphics">
         <div id="s4-label">Built with Formelab</div>
         <div class="wall" id="s4-row1"><div class="cell" id="s4-c1"><figure>
   <div class="stage bg-peach"><div class="shot" data-layout-allow-overlap><div class="asa">
@@ -212,42 +210,39 @@
       </div>
 
       <!-- 5. End card -->
-      <div id="s5" class="scene clip" data-start="18.44" data-duration="3.16" data-track-index="1" data-track-kind="graphics">
+      <div id="s5" class="scene clip" data-start="16.35" data-duration="3.16" data-track-index="1" data-track-kind="graphics">
         <div id="s5-card"><div class="center">
-          <div id="s5-scribble">put your idea on the wall</div>
           <h2 id="s5-h2" class="display">What would you make?</h2>
-          <p id="s5-p">Leave your email and we'll send your invite.</p>
-          <div class="fjoin" id="s5-join"><span class="in">you@email.com</span><span class="go" id="s5-cta">Request early access</span></div>
+          <div id="s5-join"><span class="cta" id="s5-cta">Request early access</span></div>
         </div></div>
         <div id="s5-foot"><span class="logo"><span class="mk">F<i></i></span>Formelab</span><span>formelab.ai</span></div>
         <svg id="s5-cursor" viewBox="0 0 24 24"><path d="M5 3l14 8-6 1.5L10 19z" fill="#111" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/></svg>
       </div>
 
       <!-- Audio. Music: Sascha Ende, ende.app (CC BY 4.0). SFX: Kenney (CC0), keypresses by unicae_games (CC0). -->
-      <audio id="music" class="clip" data-start="0" data-duration="21.6" data-track-index="10" data-volume="0.8" data-fade-out="1.2" src="assets/music/happy-beats-business-moves-vol-11-by-ende-dot-app.mp3"></audio>
+      <audio id="music" class="clip" data-start="0" data-duration="19.51" data-media-start="2.094" data-track-index="10" data-volume="0.8" data-fade-out="1.2" src="assets/music/happy-beats-business-moves-vol-11-by-ende-dot-app.mp3"></audio>
       <audio id="sfx0" class="clip" data-start="1.6" data-duration="0.19" data-track-index="11" data-volume="0.9" src="assets/sfx/impactSoft_medium_001.ogg"></audio>
-      <audio id="sfx1" class="clip" data-start="3.72" data-duration="0.2" data-track-index="12" data-volume="0.6" src="assets/sfx/drop_002.ogg"></audio>
-      <audio id="sfx2" class="clip" data-start="7.64" data-duration="0.25" data-track-index="13" data-volume="0.35" src="assets/sfx/keypress-001.wav"></audio>
-      <audio id="sfx3" class="clip" data-start="7.76" data-duration="0.25" data-track-index="14" data-volume="0.35" src="assets/sfx/keypress-002.wav"></audio>
-      <audio id="sfx4" class="clip" data-start="7.88" data-duration="0.25" data-track-index="15" data-volume="0.35" src="assets/sfx/keypress-003.wav"></audio>
-      <audio id="sfx5" class="clip" data-start="8" data-duration="0.25" data-track-index="16" data-volume="0.35" src="assets/sfx/keypress-004.wav"></audio>
-      <audio id="sfx6" class="clip" data-start="8.12" data-duration="0.25" data-track-index="17" data-volume="0.35" src="assets/sfx/keypress-005.wav"></audio>
-      <audio id="sfx7" class="clip" data-start="8.24" data-duration="0.25" data-track-index="18" data-volume="0.35" src="assets/sfx/keypress-006.wav"></audio>
-      <audio id="sfx8" class="clip" data-start="8.36" data-duration="0.25" data-track-index="19" data-volume="0.35" src="assets/sfx/keypress-001.wav"></audio>
-      <audio id="sfx9" class="clip" data-start="8.48" data-duration="0.25" data-track-index="20" data-volume="0.35" src="assets/sfx/keypress-002.wav"></audio>
-      <audio id="sfx10" class="clip" data-start="8.6" data-duration="0.25" data-track-index="21" data-volume="0.35" src="assets/sfx/keypress-003.wav"></audio>
-      <audio id="sfx11" class="clip" data-start="8.72" data-duration="0.25" data-track-index="22" data-volume="0.35" src="assets/sfx/keypress-004.wav"></audio>
-      <audio id="sfx12" class="clip" data-start="8.9" data-duration="0.05" data-track-index="23" data-volume="0.8" src="assets/sfx/click_003.ogg"></audio>
-      <audio id="sfx13" class="clip" data-start="8.98" data-duration="0.6" data-track-index="24" data-volume="0.5" src="assets/sfx/card-slide-1.ogg"></audio>
-      <audio id="sfx14" class="clip" data-start="11.06" data-duration="0.05" data-track-index="25" data-volume="0.8" src="assets/sfx/click_002.ogg"></audio>
-      <audio id="sfx15" class="clip" data-start="11.62" data-duration="0.11" data-track-index="26" data-volume="0.7" src="assets/sfx/drop_001.ogg"></audio>
-      <audio id="sfx16" class="clip" data-start="13.72" data-duration="0.6" data-track-index="27" data-volume="0.4" src="assets/sfx/card-slide-1.ogg"></audio>
-      <audio id="sfx17" class="clip" data-start="14.24" data-duration="0.2" data-track-index="28" data-volume="0.45" src="assets/sfx/drop_003.ogg"></audio>
-      <audio id="sfx18" class="clip" data-start="14.78" data-duration="0.6" data-track-index="29" data-volume="0.4" src="assets/sfx/card-slide-1.ogg"></audio>
-      <audio id="sfx19" class="clip" data-start="15.3" data-duration="0.2" data-track-index="30" data-volume="0.45" src="assets/sfx/drop_003.ogg"></audio>
-      <audio id="sfx20" class="clip" data-start="15.83" data-duration="0.6" data-track-index="31" data-volume="0.4" src="assets/sfx/card-slide-1.ogg"></audio>
-      <audio id="sfx21" class="clip" data-start="18.46" data-duration="1.48" data-track-index="32" data-volume="0.55" src="assets/sfx/impactBell_heavy_000.ogg"></audio>
-      <audio id="sfx22" class="clip" data-start="19.5" data-duration="0.05" data-track-index="33" data-volume="0.8" src="assets/sfx/click_003.ogg"></audio>
+      <audio id="sfx1" class="clip" data-start="5.55" data-duration="0.25" data-track-index="12" data-volume="0.35" src="assets/sfx/keypress-001.wav"></audio>
+      <audio id="sfx2" class="clip" data-start="5.67" data-duration="0.25" data-track-index="13" data-volume="0.35" src="assets/sfx/keypress-002.wav"></audio>
+      <audio id="sfx3" class="clip" data-start="5.79" data-duration="0.25" data-track-index="14" data-volume="0.35" src="assets/sfx/keypress-003.wav"></audio>
+      <audio id="sfx4" class="clip" data-start="5.91" data-duration="0.25" data-track-index="15" data-volume="0.35" src="assets/sfx/keypress-004.wav"></audio>
+      <audio id="sfx5" class="clip" data-start="6.03" data-duration="0.25" data-track-index="16" data-volume="0.35" src="assets/sfx/keypress-005.wav"></audio>
+      <audio id="sfx6" class="clip" data-start="6.15" data-duration="0.25" data-track-index="17" data-volume="0.35" src="assets/sfx/keypress-006.wav"></audio>
+      <audio id="sfx7" class="clip" data-start="6.27" data-duration="0.25" data-track-index="18" data-volume="0.35" src="assets/sfx/keypress-001.wav"></audio>
+      <audio id="sfx8" class="clip" data-start="6.39" data-duration="0.25" data-track-index="19" data-volume="0.35" src="assets/sfx/keypress-002.wav"></audio>
+      <audio id="sfx9" class="clip" data-start="6.51" data-duration="0.25" data-track-index="20" data-volume="0.35" src="assets/sfx/keypress-003.wav"></audio>
+      <audio id="sfx10" class="clip" data-start="6.63" data-duration="0.25" data-track-index="21" data-volume="0.35" src="assets/sfx/keypress-004.wav"></audio>
+      <audio id="sfx11" class="clip" data-start="6.81" data-duration="0.05" data-track-index="22" data-volume="0.8" src="assets/sfx/click_003.ogg"></audio>
+      <audio id="sfx12" class="clip" data-start="6.89" data-duration="0.6" data-track-index="23" data-volume="0.5" src="assets/sfx/card-slide-1.ogg"></audio>
+      <audio id="sfx13" class="clip" data-start="8.97" data-duration="0.05" data-track-index="24" data-volume="0.8" src="assets/sfx/click_002.ogg"></audio>
+      <audio id="sfx14" class="clip" data-start="9.53" data-duration="0.11" data-track-index="25" data-volume="0.7" src="assets/sfx/drop_001.ogg"></audio>
+      <audio id="sfx15" class="clip" data-start="11.63" data-duration="0.6" data-track-index="26" data-volume="0.4" src="assets/sfx/card-slide-1.ogg"></audio>
+      <audio id="sfx16" class="clip" data-start="12.15" data-duration="0.2" data-track-index="27" data-volume="0.45" src="assets/sfx/drop_003.ogg"></audio>
+      <audio id="sfx17" class="clip" data-start="12.69" data-duration="0.6" data-track-index="28" data-volume="0.4" src="assets/sfx/card-slide-1.ogg"></audio>
+      <audio id="sfx18" class="clip" data-start="13.21" data-duration="0.2" data-track-index="29" data-volume="0.45" src="assets/sfx/drop_003.ogg"></audio>
+      <audio id="sfx19" class="clip" data-start="13.74" data-duration="0.6" data-track-index="30" data-volume="0.4" src="assets/sfx/card-slide-1.ogg"></audio>
+      <audio id="sfx20" class="clip" data-start="16.37" data-duration="1.48" data-track-index="31" data-volume="0.55" src="assets/sfx/impactBell_heavy_000.ogg"></audio>
+      <audio id="sfx21" class="clip" data-start="17.41" data-duration="0.05" data-track-index="32" data-volume="0.8" src="assets/sfx/click_003.ogg"></audio>
     </div>
     <script>
       const RMS = [0.781, 0.749, 0.487, 0.436, 0.369, 0.335, 0.342, 0.358, 0.481, 0.439, 0.445, 0.431, 0.437, 0.373, 0.339, 0.327, 1.0, 0.61, 0.419, 0.331, 0.322, 0.307, 0.303, 0.289, 0.323, 0.324, 0.301, 0.283, 0.269, 0.266, 0.262, 0.423, 0.883, 0.559, 0.418, 0.392, 0.31, 0.286, 0.271, 0.277, 0.283, 0.268, 0.262, 0.265, 0.348, 0.31, 0.246, 0.666, 0.774, 0.55, 0.404, 0.31, 0.242, 0.241, 0.215, 0.347, 0.49, 0.436, 0.423, 0.388, 0.314, 0.22, 0.178, 0.744, 0.715, 0.546, 0.41, 0.347, 0.346, 0.334, 0.326, 0.445, 0.388, 0.351, 0.328, 0.275, 0.274, 0.253, 0.238, 0.807, 0.695, 0.411, 0.325, 0.294, 0.321, 0.287, 0.324, 0.248, 0.258, 0.235, 0.252, 0.246, 0.269, 0.238, 0.278, 0.836, 0.637, 0.472, 0.394, 0.276, 0.29, 0.26, 0.249, 0.278, 0.223, 0.202, 0.192, 0.295, 0.244, 0.187, 0.489, 0.865, 0.549, 0.425, 0.278, 0.179, 0.197, 0.158, 0.272, 0.403, 0.383, 0.355, 0.304, 0.287, 0.204, 0.168, 0.687, 0.672, 0.532, 0.457, 0.373, 0.376, 0.372, 0.344, 0.442, 0.482, 0.429, 0.422, 0.399, 0.379, 0.315, 0.313, 0.768, 0.594, 0.425, 0.378, 0.347, 0.386, 0.368, 0.415, 0.43, 0.337, 0.294, 0.278, 0.291, 0.307, 0.292, 0.247, 0.835, 0.644, 0.456, 0.47, 0.315, 0.305, 0.306, 0.264, 0.305, 0.302, 0.256, 0.218, 0.315, 0.279, 0.236, 0.359, 0.916, 0.662, 0.395, 0.381, 0.2, 0.224, 0.21, 0.267, 0.391, 0.395, 0.37, 0.333, 0.331, 0.222, 0.16, 0.531, 0.823, 0.511, 0.477, 0.345, 0.353, 0.342, 0.322, 0.41, 0.474, 0.459, 0.457, 0.379, 0.317, 0.313, 0.281, 0.759, 0.719, 0.384, 0.332, 0.358, 0.278, 0.273, 0.241, 0.335, 0.315, 0.312, 0.302, 0.307, 0.37, 0.31, 0.29, 0.742, 0.726, 0.405, 0.367, 0.314, 0.215, 0.214, 0.198, 0.245, 0.318, 0.255, 0.283, 0.307, 0.373, 0.315, 0.304, 0.9, 0.658, 0.492, 0.299, 0.333, 0.234, 0.296, 0.222, 0.368, 0.298, 0.308, 0.349, 0.193, 0.205, 0.162, 0.394, 0.834, 0.662, 0.43, 0.388, 0.359, 0.355, 0.364, 0.4, 0.482, 0.415, 0.402, 0.394, 0.392, 0.333, 0.274, 0.589, 0.895, 0.414, 0.383, 0.323, 0.33, 0.314, 0.287, 0.295, 0.35, 0.337, 0.333, 0.3, 0.3, 0.275, 0.263, 0.698, 0.735, 0.546, 0.43, 0.344, 0.318, 0.29, 0.25, 0.281, 0.287, 0.286, 0.256, 0.312, 0.381, 0.339, 0.38, 0.802, 0.664, 0.465, 0.427, 0.288, 0.262, 0.234, 0.223, 0.416, 0.47, 0.421, 0.37, 0.338, 0.239, 0.215, 0.213, 0.888, 0.619, 0.478, 0.414, 0.379, 0.368, 0.385, 0.381, 0.496, 0.426, 0.373, 0.354, 0.307, 0.284, 0.266, 0.408, 0.861, 0.478, 0.405, 0.272, 0.327, 0.32, 0.291, 0.296, 0.288, 0.259, 0.264, 0.231, 0.288, 0.273, 0.281, 0.582, 0.824, 0.519, 0.481, 0.366, 0.261, 0.27, 0.252, 0.275, 0.299, 0.216, 0.194, 0.22, 0.3, 0.232, 0.182, 0.754, 0.714, 0.463, 0.378, 0.251, 0.22, 0.193, 0.189, 0.329, 0.43, 0.366, 0.334, 0.333, 0.234, 0.2, 0.167, 0.814, 0.62, 0.555, 0.419, 0.407, 0.36, 0.349, 0.373, 0.509, 0.47, 0.436, 0.435, 0.358, 0.354, 0.334, 0.361, 0.787, 0.509, 0.42, 0.323, 0.399, 0.334, 0.347, 0.339, 0.315, 0.286, 0.267, 0.262, 0.284, 0.262, 0.276, 0.505, 0.817, 0.558, 0.477, 0.398, 0.351, 0.321, 0.318, 0.296, 0.301, 0.266, 0.254, 0.242, 0.339, 0.285, 0.232, 0.7, 0.795, 0.475, 0.36, 0.312, 0.258, 0.203, 0.206, 0.31, 0.453, 0.39, 0.41, 0.412, 0.272, 0.206, 0.159, 0.255, 0.319, 0.328, 0.315, 0.362, 0.374, 0.351, 0.469, 0.491, 0.51, 0.512, 0.442, 0.348, 0.368, 0.374, 0.364, 0.337, 0.328, 0.291, 0.276, 0.351, 0.334, 0.305, 0.33, 0.288, 0.3, 0.279, 0.237, 0.301, 0.316, 0.311, 0.355, 0.369, 0.385, 0.278, 0.333, 0.2, 0.2, 0.114, 0.113, 0.153, 0.087, 0.084, 0.074, 0.268, 0.197, 0.158, 0.171, 0.201, 0.168, 0.153, 0.121, 0.16, 0.158, 0.139, 0.161, 0.189, 0.195, 0.198, 0.198, 0.179, 0.203, 0.159, 0.79, 0.594, 0.445, 0.468, 0.432, 0.407, 0.396, 0.393, 0.486, 0.559, 0.492, 0.491, 0.433, 0.389, 0.368, 0.341, 0.861, 0.547, 0.393, 0.392, 0.451, 0.492, 0.452, 0.384, 0.394, 0.389, 0.384, 0.37, 0.385, 0.42, 0.384, 0.46, 0.837, 0.6, 0.498, 0.396, 0.34, 0.362, 0.345, 0.291, 0.349, 0.353, 0.356, 0.367, 0.52, 0.497, 0.417, 0.618, 0.729, 0.488, 0.383, 0.335, 0.317, 0.331, 0.332, 0.316, 0.613, 0.576, 0.517, 0.54, 0.504, 0.476, 0.411, 0.796, 0.632, 0.453, 0.373, 0.343, 0.364, 0.422, 0.369, 0.443, 0.543, 0.478, 0.361, 0.335, 0.345, 0.322, 0.342, 0.796, 0.589, 0.424, 0.318, 0.42, 0.475, 0.476, 0.435, 0.4, 0.389, 0.374, 0.334, 0.353, 0.33, 0.318, 0.333, 0.818, 0.636, 0.465, 0.423, 0.352, 0.394, 0.406, 0.374, 0.333, 0.358, 0.351, 0.335, 0.493, 0.498, 0.394, 0.444, 0.8, 0.624, 0.382, 0.378, 0.326, 0.358, 0.337, 0.335, 0.527, 0.471, 0.477, 0.414, 0.431, 0.443, 0.388, 0.706, 0.659, 0.397, 0.412, 0.331, 0.351, 0.34, 0.36, 0.457, 0.558, 0.551, 0.498, 0.474, 0.454, 0.423, 0.385, 0.795, 0.555, 0.288, 0.384, 0.395, 0.505, 0.472, 0.416, 0.437, 0.424, 0.408, 0.373, 0.38];
@@ -258,53 +253,48 @@
 
       // 1. Hero
       blurIn("#s1-logo", 0.05, 0.3);
-      tl.fromTo("#s1-eyebrow", { opacity: 0, scale: 0.7 }, { opacity: 1, scale: 1, duration: 0.45, ease: "back.out(1.8)" }, 0.15);
       tl.fromTo("#s1-a .w", { opacity: 0, filter: "blur(6px)" }, { opacity: 1, filter: "blur(0px)", duration: 0.15, ease: IN, stagger: 0.09 }, 0.5);
-      tl.fromTo("#s1-b", { opacity: 0, y: 40, filter: "blur(12px)" }, { opacity: 1, y: 0, filter: "blur(0px)", duration: 0.32, ease: IN }, 1.54); // beat-locked: 1.60s
-      blurIn("#s1-lede", 3.66, 0.25); // beat-locked: 3.70s
-      tl.fromTo("#s1-join", { opacity: 0, y: 30 }, { opacity: 1, y: 0, duration: 0.45, ease: IN }, 4.23); // beat: 4.23s
-      blurOut("#s1-in", 7.16, 0.22);
+      tl.fromTo("#s1-b", { opacity: 0, y: 40, filter: "blur(12px)" }, { opacity: 1, y: 0, filter: "blur(0px)", duration: 0.32, ease: IN }, 1.54); // beat-locked: 1.60s (music 3.70s strong cue)
+      blurOut("#s1-in", 5.07, 0.22);
 
       // 3. Flow
-      blurIn("#s3-label", 7.38, 0.25);
-      tl.fromTo("#s3-prompt", { opacity: 0, scaleX: 0.6, filter: "blur(12px)" }, { opacity: 1, scaleX: 1, filter: "blur(0px)", duration: 0.3, ease: "power3.out" }, 7.38);
+      blurIn("#s3-label", 5.29, 0.25);
+      tl.fromTo("#s3-prompt", { opacity: 0, scaleX: 0.6, filter: "blur(12px)" }, { opacity: 1, scaleX: 1, filter: "blur(0px)", duration: 0.3, ease: "power3.out" }, 5.29);
       const chars = gsap.utils.toArray("#s3-prompt .c");
-      chars.forEach((c, i) => tl.set(c, { display: "inline" }, 7.62 + i * (1.2 / chars.length)));
-      tl.fromTo("#s3-caret", { opacity: 1 }, { opacity: 0, duration: 0.01 }, 8.9);
-      tl.fromTo("#s3-cursor", { x: 1500, y: 980, opacity: 0 }, { x: 790, y: 548, opacity: 1, duration: 0.6, ease: "power3.inOut" }, 8.25);
-      tl.fromTo("#s3-send", { scale: 1 }, { scale: 0.86, duration: 0.06, yoyo: true, repeat: 1, ease: "power2.out" }, 8.88);
-      tl.fromTo("#s3-appwrap", { opacity: 0, y: 80, scale: 0.92, filter: "blur(14px)" }, { opacity: 1, y: 0, scale: 1, filter: "blur(0px)", duration: 0.55, ease: IN }, 8.96); // beat-locked: 8.96s
-      tl.fromTo("#s3-live", { opacity: 0, scale: 0.6 }, { opacity: 1, scale: 1, duration: 0.35, ease: "back.out(2)" }, 9.5); // beat: 9.50s
-      tl.fromTo("#s3-cursor", { x: 790, y: 548 }, { x: 1625, y: 638, duration: 0.7, ease: "power3.inOut", immediateRender: false }, 10.3);
-      tl.fromTo("#s3-app .slots span:nth-child(2)", { backgroundColor: "#ffffff", color: "#006bff" }, { backgroundColor: "#006bff", color: "#ffffff", duration: 0.12 }, 11.06); // beat: 11.06s
-      tl.fromTo("#s3-app .toast", { opacity: 0, y: 30, scale: 0.9 }, { opacity: 1, y: 0, scale: 1, duration: 0.4, ease: "back.out(1.8)" }, 11.6); // beat: 11.60s
-      tl.fromTo("#s3-cursor", { opacity: 1 }, { opacity: 0, duration: 0.2, immediateRender: false }, 12.4);
+      chars.forEach((c, i) => tl.set(c, { display: "inline" }, 5.53 + i * (1.2 / chars.length)));
+      tl.fromTo("#s3-caret", { opacity: 1 }, { opacity: 0, duration: 0.01 }, 6.81);
+      tl.fromTo("#s3-cursor", { x: 1500, y: 980, opacity: 0 }, { x: 790, y: 548, opacity: 1, duration: 0.6, ease: "power3.inOut" }, 6.16);
+      tl.fromTo("#s3-send", { scale: 1 }, { scale: 0.86, duration: 0.06, yoyo: true, repeat: 1, ease: "power2.out" }, 6.79);
+      tl.fromTo("#s3-appwrap", { opacity: 0, y: 80, scale: 0.92, filter: "blur(14px)" }, { opacity: 1, y: 0, scale: 1, filter: "blur(0px)", duration: 0.55, ease: IN }, 6.87); // beat-locked: 6.87s
+      tl.fromTo("#s3-live", { opacity: 0, scale: 0.6 }, { opacity: 1, scale: 1, duration: 0.35, ease: "back.out(2)" }, 7.41); // beat: 7.41s
+      tl.fromTo("#s3-cursor", { x: 790, y: 548 }, { x: 1625, y: 638, duration: 0.7, ease: "power3.inOut", immediateRender: false }, 8.21);
+      tl.fromTo("#s3-app .slots span:nth-child(2)", { backgroundColor: "#ffffff", color: "#006bff" }, { backgroundColor: "#006bff", color: "#ffffff", duration: 0.12 }, 8.97); // beat: 8.97s
+      tl.fromTo("#s3-app .toast", { opacity: 0, y: 30, scale: 0.9 }, { opacity: 1, y: 0, scale: 1, duration: 0.4, ease: "back.out(1.8)" }, 9.51); // beat: 9.51s
+      tl.fromTo("#s3-cursor", { opacity: 1 }, { opacity: 0, duration: 0.2, immediateRender: false }, 10.31);
       // audio-reactive: the glow behind the live app breathes with the music's loudness (per-frame RMS)
       const glow = document.querySelector("#s3-glow");
       tl.fromTo({ v: 0 }, { v: 0 }, { v: 1, duration: 5.8, ease: "none", onUpdate() {
-        const t = 7.38 + this.progress() * 5.8, r = RMS[Math.min(RMS.length - 1, Math.round(t * 30))];
+        const t = 5.29 + this.progress() * 5.8, r = RMS[Math.min(RMS.length - 1, Math.round((t + 2.094) * 30))];
         glow.style.opacity = (0.45 + 0.55 * r).toFixed(3); glow.style.scale = (0.96 + 0.06 * r).toFixed(3);
-      } }, 7.38);
-      blurOut("#s3-left", 12.95, 0.22);
-      tl.fromTo("#s3-appwrap", { opacity: 1, scale: 1 }, { opacity: 0, scale: 0.7, x: -300, filter: "blur(8px)", duration: 0.25, ease: OUT, immediateRender: false }, 12.94);
+      } }, 5.29);
+      blurOut("#s3-left", 10.86, 0.22);
+      tl.fromTo("#s3-appwrap", { opacity: 1, scale: 1 }, { opacity: 0, scale: 0.7, x: -300, filter: "blur(8px)", duration: 0.25, ease: OUT, immediateRender: false }, 10.85);
 
       // 4. Wall
-      blurIn("#s4-label", 13.18, 0.25);
-      [13.70, 14.22, 14.76, 15.28, 15.81].forEach((t, i) => // beat-grid: cards 1-5 at 13.70 14.22 14.76 15.28 15.81, full set holds to 18.2
+      blurIn("#s4-label", 11.09, 0.25);
+      [11.61, 12.13, 12.67, 13.19, 13.72].forEach((t, i) => // beat-grid: cards 1-5 at 11.61 12.13 12.67 13.19 13.72, full set holds to 16.11
         tl.fromTo(`#s4-c${i + 1}`, { opacity: 0, y: 60, scale: 0.94, filter: "blur(10px)" }, { opacity: 1, y: 0, scale: 1, filter: "blur(0px)", duration: 0.5, ease: IN }, t));
-      tl.fromTo(".wall", { opacity: 1, filter: "blur(0px)" }, { opacity: 0, filter: "blur(10px)", duration: 0.22, ease: OUT, immediateRender: false }, 18.2);
-      blurOut("#s4-label", 18.2, 0.22);
+      tl.fromTo(".wall", { opacity: 1, filter: "blur(0px)" }, { opacity: 0, filter: "blur(10px)", duration: 0.22, ease: OUT, immediateRender: false }, 16.11);
+      blurOut("#s4-label", 16.11, 0.22);
 
       // 5. End card
-      tl.fromTo("#s5-card", { opacity: 0, scale: 0.86, y: 60 }, { opacity: 1, scale: 1, y: 0, duration: 0.5, ease: IN }, 18.4); // beat: 18.44s
-      tl.fromTo("#s5-scribble", { opacity: 0, rotation: -12, scale: 0.8 }, { opacity: 1, rotation: -3, scale: 1, duration: 0.45, ease: "back.out(1.6)" }, 18.55);
-      blurIn("#s5-h2", 18.62, 0.22);
-      blurIn("#s5-p", 18.8, 0.22);
-      tl.fromTo("#s5-join", { opacity: 0, y: 30 }, { opacity: 1, y: 0, duration: 0.4, ease: IN }, 18.9);
-      blurIn("#s5-foot", 19.1, 0.3);
-      tl.fromTo("#s5-cursor", { x: 1500, y: 1000, opacity: 0 }, { x: 1171, y: 721, opacity: 1, duration: 0.55, ease: "power3.inOut" }, 18.9);
-      tl.fromTo("#s5-cta", { scale: 1 }, { scale: 0.94, duration: 0.07, yoyo: true, repeat: 1, ease: "power2.out", immediateRender: false }, 19.49); // beat: 19.49s
-      tl.fromTo("#s5-cursor", { opacity: 1 }, { opacity: 0, duration: 0.25, immediateRender: false }, 20.2);
+      tl.fromTo("#s5-card", { opacity: 0, scale: 0.86, y: 60 }, { opacity: 1, scale: 1, y: 0, duration: 0.5, ease: IN }, 16.31); // beat: 16.35s
+      blurIn("#s5-h2", 16.53, 0.22);
+      tl.fromTo("#s5-join", { opacity: 0, y: 30 }, { opacity: 1, y: 0, duration: 0.4, ease: IN }, 16.81);
+      blurIn("#s5-foot", 17.01, 0.3);
+      tl.fromTo("#s5-cursor", { x: 1500, y: 1000, opacity: 0 }, { x: 947, y: 636, opacity: 1, duration: 0.55, ease: "power3.inOut" }, 16.81);
+      tl.fromTo("#s5-cta", { scale: 1 }, { scale: 0.94, duration: 0.07, yoyo: true, repeat: 1, ease: "power2.out", immediateRender: false }, 17.40); // beat: 17.40s
+      tl.fromTo("#s5-cursor", { opacity: 1 }, { opacity: 0, duration: 0.25, immediateRender: false }, 18.11);
 
       window.__timelines["main"] = tl;
       tl.seek(0);
