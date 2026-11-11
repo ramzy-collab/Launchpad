@@ -1,0 +1,20 @@
+      /* Vertical (1080x1920) layout for phones */
+      #s1-logo { left: 64px; top: 90px; }
+      #s1-h1 { font-size: 128px; padding: 0 70px; }
+      #s3-label { left: 80px; top: 330px; }
+      #s3-prompt { left: 80px; top: 390px; width: 920px; }
+      #s3-appwrap { left: 150px; top: 860px; width: 780px; }
+      #s4 { display: grid; grid-template-columns: 460px 460px; justify-content: center; align-content: start; column-gap: 40px; row-gap: 10px; padding-top: 230px; }
+      #s4-label { top: 140px; font-size: 30px; }
+      #s4 .wall { display: contents; }
+      #s4 .cell { width: 460px; height: 470px; }
+      #s4 .wall figure { scale: 1; }
+      #s4-c5 { grid-column: 1 / span 2; justify-self: center; }
+      #s5-card { left: 60px; right: 60px; top: 220px; bottom: 320px; }
+      #s5-h2 { font-size: 132px; padding: 0 50px; }
+      #s5-foot { bottom: 150px; }
+      #s6-head { left: 80px; top: 430px; width: 920px; }
+      #s6-h2 { font-size: 120px; }
+      #s6-card { left: 80px; top: 920px; width: 920px; }
+      #s7-h2 { top: 360px; font-size: 104px; padding: 0 60px; }
+      #s7-net { left: -110px; top: 780px; scale: .74; }

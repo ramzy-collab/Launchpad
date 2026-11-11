@@ -1,0 +1,359 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.15.0/dist/gsap.min.js"></script>
+    <!-- Formelab's own home page styles: the showcase cards render exactly as on formelab.ai -->
+    <link rel="stylesheet" href="assets/home.css" />
+    <style>
+      @font-face { font-family: "Bricolage Grotesque"; font-weight: 800; src: url("assets/fonts/BricolageGrotesque_800ExtraBold.ttf"); }
+      @font-face { font-family: "Permanent Marker"; font-weight: 400; src: url("assets/fonts/PermanentMarker.woff2"); }
+      :root { --ground: #FBFAF7; --ink: #1C1B19; --soft: #6B6862; --accent: #5B4CF5; --pop: #FF6B4A; --green: #1F9D6B; }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; }
+      #root { width: 100%; height: 100%; position: relative; }
+      .bg { position: absolute; inset: 0; background: var(--ground); background-image: radial-gradient(#E8E5DE 1.5px, transparent 1.5px); background-size: 32px 32px; }
+      .scene { position: absolute; inset: 0; }
+      .center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+      .display { font-family: "Bricolage Grotesque", sans-serif; font-weight: 800; letter-spacing: -.045em; color: var(--ink); }
+      .w { display: inline-block; }
+
+      /* 1. Hero (the redesigned home page, fl/home-redesign) */
+      .logo { display: inline-flex; align-items: center; gap: 16px; font-family: "Bricolage Grotesque", sans-serif; font-weight: 800; font-size: 40px; letter-spacing: -.02em; color: var(--ink); }
+      .logo .mk { position: relative; width: 52px; height: 52px; border-radius: 16px; background: var(--accent); color: #fff; display: grid; place-items: center; font-size: 32px; }
+      .logo .mk i { position: absolute; width: 16px; height: 16px; border-radius: 50%; background: var(--pop); right: -5px; top: -5px; }
+      #s1-in { position: absolute; inset: 0; } /* a filter on the fade-out would otherwise re-anchor the centred headline */
+      #s1-logo { position: absolute; left: 96px; top: 64px; }
+      #s1-eyebrow { display: inline-flex; align-items: center; gap: 14px; font-family: "Inter", sans-serif; font-size: 30px; font-weight: 600; color: #4A3BE0; background: #EFEDFE; padding: 12px 26px; border-radius: 999px; margin-bottom: 44px; }
+      #s1-eyebrow i { width: 13px; height: 13px; border-radius: 50%; background: var(--accent); }
+      #s1-h1 { font-size: 136px; line-height: 1.02; letter-spacing: -.04em; margin: 0; }
+      #s1-h1 .em { display: block; color: var(--accent); }
+      #s1-lede { font-family: "Inter", sans-serif; font-size: 44px; line-height: 1.5; color: var(--soft); margin: 48px 0 0; }
+      .fjoin { display: flex; align-items: center; gap: 10px; width: 860px; margin: 44px auto 0; background: #fff; border: 2px solid #E8E5DE; border-radius: 999px; padding: 9px; box-shadow: 0 1px 2px rgba(28,27,25,.05); font-family: "Inter", sans-serif; }
+      .fjoin .in { flex: 1; text-align: left; padding: 0 30px; font-size: 30px; color: #85827B; }
+      .fjoin .go { height: 80px; padding: 0 40px; border-radius: 999px; background: var(--accent); color: #fff; font-size: 30px; font-weight: 600; display: grid; place-items: center; white-space: nowrap; }
+
+      /* 3. Flow */
+      #s3-label, #s4-label { font-family: "Inter", sans-serif; font-size: 26px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--accent); }
+      #s3-label { position: absolute; left: 140px; top: 300px; }
+      #s3-prompt { position: absolute; left: 140px; top: 360px; width: 720px; min-height: 340px; background: #fff; border: 1.5px solid #ECEAE4; border-radius: 28px; box-shadow: 0 1px 2px rgba(17,17,16,.05), 0 24px 48px -20px rgba(17,17,16,.25); padding: 36px 40px 100px; font-family: "Inter", sans-serif; font-size: 44px; line-height: 1.3; color: var(--ink); text-align: left; }
+      #s3-prompt .c { display: none; }
+      /* which AI you're talking to: one Formelab, whichever AI you already use */
+      #s3-ai { display: flex; align-items: center; gap: 14px; margin: -6px 0 20px; font-size: 30px; font-weight: 600; color: var(--soft); }
+      #s3-ai .who { display: inline-grid; overflow: hidden; background: #fff; color: var(--ink); border: 2.5px solid #5B4CF5; border-radius: 999px; padding: 6px 24px 6px 14px; font-size: 34px; }
+      #s3-ai .who b { grid-area: 1 / 1; font-weight: 700; display: inline-flex; align-items: center; gap: 12px; }
+      #s3-ai .who svg { width: 36px; height: 36px; flex: none; }
+      #s3-caret { display: inline-block; width: 4px; height: 50px; background: var(--accent); vertical-align: -8px; margin-left: 2px; }
+      #s3-send { position: absolute; right: 26px; bottom: 26px; width: 68px; height: 68px; border-radius: 50%; background: var(--accent); display: grid; place-items: center; }
+      #s3-appwrap { position: absolute; left: 1000px; top: 170px; width: 780px; }
+      #s3-glow { position: absolute; left: -80px; top: 40px; width: 940px; height: 740px; border-radius: 50%; background: radial-gradient(closest-side, rgba(91,76,245,.35), rgba(91,76,245,0)); }
+      #s3-bar { position: relative; display: flex; align-items: center; gap: 16px; margin-bottom: 22px; font-family: "Inter", sans-serif; }
+      #s3-url { background: #fff; border: 1.5px solid #ECEAE4; border-radius: 999px; padding: 12px 26px; font-size: 28px; font-weight: 600; color: var(--ink); }
+      #s3-url span { color: var(--soft); font-weight: 500; }
+      #s3-live { background: #E6F5EE; color: #11643F; border-radius: 999px; padding: 12px 24px; font-size: 28px; font-weight: 700; }
+      #s3-app { position: relative; }
+      .ucard { position: relative; }
+      #s3-card2, #s3-card3 { position: absolute; left: 0; top: 0; width: 100%; }
+      .ubar { position: relative; display: flex; align-items: center; gap: 16px; margin-bottom: 22px; font-family: "Inter", sans-serif; }
+      .uurl { background: #fff; border: 1.5px solid #ECEAE4; border-radius: 999px; padding: 12px 26px; font-size: 28px; font-weight: 600; color: var(--ink); }
+      .uurl span { color: var(--soft); font-weight: 500; }
+      .ulive { background: #E6F5EE; color: #11643F; border-radius: 999px; padding: 12px 24px; font-size: 28px; font-weight: 700; }
+      .uapp figure { transform-origin: 0 0; scale: 1.68; margin: 0; }
+      /* budget tracker */
+      .bud { font-family: "Inter", sans-serif; height: 100%; padding: 14px 16px; color: #1C1B19; }
+      .bud .bh { display: flex; justify-content: space-between; align-items: center; font-size: 13px; }
+      .bud .bh span { font-size: 10.5px; color: #6B6862; background: #F2F0EB; padding: 2px 8px; border-radius: 99px; }
+      .bud .bl { font: 800 26px/1.1 "Bricolage Grotesque", sans-serif; letter-spacing: -.02em; margin: 8px 0 10px; }
+      .bud .bl small { display: block; font: 500 10.5px "Inter", sans-serif; color: #6B6862; letter-spacing: 0; margin-top: 2px; }
+      .bud .br { display: grid; grid-template-columns: 1fr auto; gap: 3px 8px; font-size: 11px; margin-top: 8px; }
+      .bud .br em { font-style: normal; color: #6B6862; font-size: 10px; }
+      .bud .br i { grid-column: 1 / -1; height: 7px; border-radius: 9px; background: #EDEAE3; overflow: hidden; }
+      .bud .br i b { display: block; height: 100%; border-radius: 9px; transform-origin: 0 50%; }
+      /* spelling game for kids */
+      .game { font-family: "Inter", sans-serif; height: 100%; padding: 12px 16px; color: #1C1B19; background: #FFF8EC; text-align: center; }
+      .game .gh { display: flex; justify-content: space-between; align-items: center; font-size: 13px; }
+      .game .gh b { font: 800 16px "Bricolage Grotesque", sans-serif; color: #5B4CF5; }
+      .game .gh span { font-weight: 700; color: #8A5A00; background: #FFE8A3; padding: 2px 8px; border-radius: 99px; font-size: 11px; }
+      .game .gp { font-size: 54px; line-height: 1; margin: 8px 0 10px; }
+      .game .gs, .game .gt { display: flex; justify-content: center; gap: 8px; }
+      .game i { font-style: normal; display: grid; place-items: center; font: 800 22px "Bricolage Grotesque", sans-serif; }
+      .game .gs i { width: 42px; height: 46px; border-radius: 10px; background: #fff; border: 2px solid #E8E5DE; }
+      .game .gs .blank { border-style: dashed; border-color: #5B4CF5; }
+      .game .gs .blank b { color: #5B4CF5; }
+      .game .gt { margin-top: 14px; }
+      .game .gt i { width: 38px; height: 40px; border-radius: 10px; background: #5B4CF5; color: #fff; box-shadow: 0 3px 0 #3E2FCB; }
+      #s3-app figure { transform-origin: 0 0; scale: 1.68; }
+      #s3-app figcaption { display: none; }
+      #s3-cursor { position: absolute; left: 0; top: 0; width: 64px; height: 64px; z-index: 20; filter: drop-shadow(0 4px 6px rgba(0,0,0,.3)); }
+
+      /* 4. Wall */
+      #s4-label { position: absolute; left: 0; right: 0; top: 70px; text-align: center; }
+      .wall { position: absolute; left: 0; right: 0; display: flex; justify-content: center; gap: 44px; }
+      #s4-row1 { top: 130px; } #s4-row2 { top: 590px; }
+      .wall .cell { width: 414px; height: 440px; }
+      .wall figure { transform-origin: 0 0; scale: .9; }
+      .wall figcaption { font-size: 22px !important; }
+
+
+      /* 3b. Works with the AI you already use */
+      #s7-h2 { position: absolute; left: 0; right: 0; top: 130px; text-align: center; font-size: 96px; line-height: 1.04; letter-spacing: -.035em; margin: 0; padding: 0 80px; }
+      #s7-net { position: absolute; left: 310px; top: 330px; width: 1300px; height: 640px; }
+      #s7-lines { position: absolute; left: 0; top: 0; }
+      #s7-lines line { stroke: #5B4CF5; stroke-width: 5; stroke-linecap: round; opacity: .45; }
+      .aichip { position: absolute; width: 300px; height: 96px; margin: -48px 0 0 -150px; display: flex; align-items: center; justify-content: center; gap: 16px; background: #fff; border: 2px solid #E8E5DE; border-radius: 999px; font-family: "Inter", sans-serif; font-size: 42px; font-weight: 700; color: var(--ink); box-shadow: 0 2px 4px rgba(28,27,25,.04), 0 18px 44px -20px rgba(28,27,25,.25); }
+      .aichip svg { width: 46px; height: 46px; flex: none; }
+      #s7-hub { position: absolute; left: 650px; top: 280px; width: 200px; height: 200px; margin: -100px 0 0 -100px; }
+      #s7-hub span { position: absolute; inset: 0; border-radius: 58px; background: var(--accent); color: #fff; display: grid; place-items: center; font: 800 130px/1 "Bricolage Grotesque", sans-serif; box-shadow: 0 24px 60px -20px rgba(91,76,245,.6); }
+      #s7-hub i { position: absolute; width: 58px; height: 58px; border-radius: 50%; background: var(--pop); right: -18px; top: -18px; }
+
+      /* 4b. Sharing and privacy (the redesigned home page's "You decide who gets in" card) */
+      #s6-head { position: absolute; left: 140px; top: 400px; width: 760px; }
+      #s6-h2 { font-size: 112px; line-height: 1.04; letter-spacing: -.035em; margin: 0; }
+      #s6-sub { font-family: "Inter", sans-serif; font-size: 44px; color: var(--soft); margin: 30px 0 0; }
+      #s6-card { position: absolute; left: 1000px; top: 250px; width: 780px; background: #fff; border: 1.5px solid #E8E5DE; border-radius: 36px; padding: 40px; display: grid; gap: 18px; font-family: "Inter", sans-serif; box-shadow: 0 2px 4px rgba(28,27,25,.04), 0 18px 44px -20px rgba(28,27,25,.22); }
+      .srow { position: relative; display: flex; align-items: center; gap: 24px; padding: 24px 28px; border: 2.5px solid #E8E5DE; border-radius: 24px; font-size: 34px; font-weight: 500; color: var(--ink); }
+      .srow .onfill { position: absolute; inset: -2.5px; border: 2.5px solid #5B4CF5; background: #EFEDFE; border-radius: 24px; opacity: 0; }
+      .srow > span { position: relative; }
+      .srow small { display: block; font-size: 27px; font-weight: 400; color: var(--soft); margin-top: 2px; }
+      .srow .radio { position: relative; flex: none; width: 36px; height: 36px; border-radius: 50%; border: 3.5px solid #BDB9AF; background: #fff; }
+      .srow .ring { position: absolute; inset: -3.5px; border-radius: 50%; border: 11px solid #5B4CF5; background: #fff; opacity: 0; }
+      #s6-r1 .onfill, #s6-r1 .ring { opacity: 1; }
+      #s6-link { display: flex; align-items: center; justify-content: space-between; background: #F6F4EF; border-radius: 20px; padding: 20px 28px; font-size: 30px; color: var(--ink); }
+      #s6-link b { color: #4A3BE0; font-weight: 700; }
+      #s6-cursor { position: absolute; left: 0; top: 0; width: 64px; height: 64px; z-index: 20; filter: drop-shadow(0 4px 6px rgba(0,0,0,.3)); }
+
+      /* 5. End card */
+      #s5-card { position: absolute; left: 110px; right: 110px; top: 90px; bottom: 150px; background: var(--accent); border-radius: 56px; color: #fff; overflow: hidden; }
+      #s5-scribble { font-family: "Permanent Marker", cursive; font-size: 48px; color: #FFC93C; margin-bottom: 26px; }
+      #s5-h2 { font-size: 150px; line-height: 1.04; letter-spacing: -.035em; color: #fff; margin: 0; }
+      #s5-p { font-family: "Inter", sans-serif; font-size: 40px; color: #E5E1FF; margin: 28px 0 0; }
+      #s5-join { margin-top: 64px; }
+      #s5-cta { display: inline-grid; place-items: center; height: 110px; padding: 0 64px; border-radius: 999px; background: #1C1B19; color: #fff; font-family: "Inter", sans-serif; font-size: 40px; font-weight: 600; }
+      #s5-foot { position: absolute; left: 0; right: 0; bottom: 48px; display: flex; justify-content: center; align-items: center; gap: 26px; font-family: "Inter", sans-serif; font-size: 32px; font-weight: 600; color: var(--ink); }
+      #s5-cursor { position: absolute; left: 0; top: 0; width: 64px; height: 64px; z-index: 20; filter: drop-shadow(0 4px 6px rgba(0,0,0,.3)); }
+    </style>
+  </head>
+  <body>
+    <div id="root" data-composition-id="main" data-start="0" data-duration="30.51" data-width="1920" data-height="1080">
+      <div class="bg"></div>
+
+      <!-- 1. Hero: the redesigned home page -->
+      <div id="s1" class="scene clip" data-start="0" data-duration="3.72" data-track-index="1" data-track-kind="graphics">
+        <div id="s1-in">
+          <div class="logo" id="s1-logo"><span class="mk">F<i></i></span>Formelab</div>
+          <div class="center">
+            <h1 id="s1-h1" class="display"><span id="s1-a">__H1A__</span><span class="em" id="s1-b">not the other way around.</span></h1>
+          </div>
+        </div>
+      </div>
+
+      <!-- 3. Flow: ask, it's live, it works -->
+      <div id="s3" class="scene clip" data-start="3.72" data-duration="9.99" data-track-index="1" data-track-kind="graphics">
+        <div id="s3-left">
+          <div id="s3-label">Ask your AI to build</div>
+          <div id="s3-prompt"><div id="s3-ai"><span class="lbl">Your AI</span><span class="who"><b id="s3-ai1">__LOGO_CLAUDE__Claude</b><b id="s3-ai2">__LOGO_CHATGPT__ChatGPT</b><b id="s3-ai3">__LOGO_GEMINI__Gemini</b></span></div><span id="s3-p1">__PROMPT__</span><span id="s3-p2">__PROMPT2__</span><span id="s3-p3">__PROMPT3__</span><span id="s3-caret"></span>
+            <div id="s3-send"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg></div>
+          </div>
+        </div>
+        <div id="s3-appwrap">
+          <div id="s3-glow"></div>
+          <div class="ucard" id="s3-card1">
+            <div id="s3-bar" class="ubar"><div id="s3-url" class="uurl">studio.formelab.app<span>/booking</span></div><div id="s3-live" class="ulive">It's live.</div></div>
+            <div id="s3-app">__FIG0__</div>
+          </div>
+          <div class="ucard" id="s3-card2">
+            <div class="ubar"><div class="uurl">budget.formelab.app<span>/october</span></div><div class="ulive" id="s3-live2">It's live.</div></div>
+            <div class="uapp"><figure><div class="stage bg-mint"><div class="shot" data-layout-allow-overlap><div class="bud">
+              <div class="bh"><b>October budget</b><span>Home</span></div>
+              <div class="bl">$1,240<small>left to spend</small></div>
+              <div class="br"><span>Groceries</span><em>$412 of $600</em><i><b style="width:69%;background:#1F9D6B"></b></i></div>
+              <div class="br"><span>Eating out</span><em>$264 of $300</em><i><b style="width:88%;background:#E2613F"></b></i></div>
+              <div class="br"><span>Fun</span><em>$90 of $200</em><i><b style="width:45%;background:#5B4CF5"></b></i></div>
+              <div class="br"><span>Getting around</span><em>$60 of $200</em><i><b style="width:30%;background:#E0A800"></b></i></div>
+            </div></div>
+            <div data-layout-allow-occlusion data-layout-allow-overlap class="float toast at-br" id="s3-btoast"><span class="ti" style="background:#6F4E37"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"><path d="M4 9h12v5a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5zM16 10h2a2.5 2.5 0 0 1 0 5h-2M8 3v3M12 3v3"/></svg></span><span><b>Coffee</b><small>Just now · Eating out</small></span><b class="gain" style="color:#B3261E">−$4.50</b></div></div></figure></div>
+          </div>
+          <div class="ucard" id="s3-card3">
+            <div class="ubar"><div class="uurl">spelling.formelab.app<span>/play</span></div><div class="ulive" id="s3-live3">It's live.</div></div>
+            <div class="uapp"><figure><div class="stage bg-peach"><div class="shot" data-layout-allow-overlap><div class="game">
+              <div class="gh"><b>Spell it!</b><span>★ 3</span></div>
+              <div class="gp">🐶</div>
+              <div class="gs"><i>D</i><i>O</i><i class="blank"><b id="s3-gl">G</b></i></div>
+              <div class="gt"><i>T</i><i id="s3-gtile">G</i><i>B</i></div>
+            </div></div>
+            <div data-layout-allow-occlusion data-layout-allow-overlap class="float toast at-br" id="s3-gtoast"><span class="ti" style="background:#FFC93C"><svg width="16" height="16" viewBox="0 0 24 24" fill="#fff"><path d="M12 2l2.9 6.3 6.9.7-5.2 4.6 1.5 6.8L12 17l-6.1 3.4 1.5-6.8L2.2 9l6.9-.7z"/></svg></span><span><b>Great job!</b><small>DOG is right</small></span></div></div></figure></div>
+          </div>
+        </div>
+        <svg id="s3-cursor" viewBox="0 0 24 24"><path d="M5 3l14 8-6 1.5L10 19z" fill="#111" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/></svg>
+      </div>
+
+      <!-- 3b. Works with the AI you already use -->
+      <div id="s7" class="scene clip" data-start="13.71" data-duration="3.66" data-track-index="1" data-track-kind="graphics">
+        <h2 id="s7-h2" class="display">Works with the AI you already use</h2>
+        <div id="s7-net">
+          <svg id="s7-lines" viewBox="0 0 1300 640" width="1300" height="640"><line x1="170" y1="180" x2="650" y2="280"/><line x1="170" y1="400" x2="650" y2="280"/><line x1="1130" y1="180" x2="650" y2="280"/><line x1="1130" y1="400" x2="650" y2="280"/><line x1="650" y1="560" x2="650" y2="280"/></svg>
+          <div class="aichip" style="left:170px;top:180px">__LOGO_CLAUDE__<span>Claude</span></div><div class="aichip" style="left:170px;top:400px">__LOGO_CHATGPT__<span>ChatGPT</span></div><div class="aichip" style="left:1130px;top:180px">__LOGO_GEMINI__<span>Gemini</span></div><div class="aichip" style="left:1130px;top:400px">__LOGO_GROK__<span>Grok</span></div><div class="aichip" style="left:650px;top:560px">__LOGO_CURSOR__<span>Cursor</span></div>
+          <div id="s7-hub"><span>F</span><i></i></div>
+        </div>
+      </div>
+
+      <!-- 4. Built with Formelab -->
+      <div id="s4" class="scene clip" data-start="17.38" data-duration="5.26" data-track-index="1" data-track-kind="graphics">
+        <div id="s4-label">Built with Formelab</div>
+        <div class="wall" id="s4-row1"><div class="cell" id="s4-c1">__FIG1__</div><div class="cell" id="s4-c2">__FIG2__</div><div class="cell" id="s4-c3">__FIG3__</div></div>
+        <div class="wall" id="s4-row2"><div class="cell" id="s4-c4">__FIG4__</div><div class="cell" id="s4-c5">__FIG5__</div></div>
+      </div>
+
+      <!-- 4b. Sharing and privacy -->
+      <div id="s6" class="scene clip" data-start="22.64" data-duration="4.71" data-track-index="1" data-track-kind="graphics">
+        <div id="s6-head"><h2 id="s6-h2" class="display">You decide who gets in</h2><p id="s6-sub">Every app starts private.</p></div>
+        <div id="s6-card">
+          <div class="srow" id="s6-r1"><i class="onfill"></i><span class="radio"><i class="ring"></i></span><span>Only you<small>The starting point for every app</small></span></div>
+          <div class="srow" id="s6-r2"><i class="onfill"></i><span class="radio"><i class="ring"></i></span><span>People you choose<small>Invite by email, and let some of them edit</small></span></div>
+          <div class="srow" id="s6-r3"><i class="onfill"></i><span class="radio"><i class="ring"></i></span><span>Anyone with the link<small>No account needed to open it</small></span></div>
+          <div id="s6-link"><span>studio.formelab.app/booking</span><b>Copy link</b></div>
+        </div>
+        <svg id="s6-cursor" viewBox="0 0 24 24"><path d="M5 3l14 8-6 1.5L10 19z" fill="#111" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/></svg>
+      </div>
+
+      <!-- 5. End card -->
+      <div id="s5" class="scene clip" data-start="27.35" data-duration="3.16" data-track-index="1" data-track-kind="graphics">
+        <div id="s5-card"><div class="center">
+          <h2 id="s5-h2" class="display">What would you make?</h2>
+          <div id="s5-join"><span class="cta" id="s5-cta">Request early access</span></div>
+        </div></div>
+        <div id="s5-foot"><span class="logo"><span class="mk">F<i></i></span>Formelab</span><span>formelab.ai</span></div>
+        <svg id="s5-cursor" viewBox="0 0 24 24"><path d="M5 3l14 8-6 1.5L10 19z" fill="#111" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/></svg>
+      </div>
+
+      <!-- Audio. Music: Sascha Ende, ende.app (CC BY 4.0). SFX: Kenney (CC0), keypresses by unicae_games (CC0). -->
+      <audio id="music" class="clip" data-start="0" data-duration="30.51" data-media-start="2.094" data-track-index="10" data-volume="0.8" data-fade-out="1.2" src="assets/music/happy-beats-business-moves-vol-11-by-ende-dot-app.mp3"></audio>
+__SFX__
+    </div>
+    <script>
+      const RMS = __RMS__;
+      const tl = gsap.timeline({ paused: true });
+      const IN = "power4.out", OUT = "power3.in";
+      const blurIn = (sel, t, d = 0.2) => tl.fromTo(sel, { opacity: 0, filter: "blur(10px)" }, { opacity: 1, filter: "blur(0px)", duration: d, ease: IN }, t);
+      const blurOut = (sel, t, d = 0.2) => tl.fromTo(sel, { opacity: 1, filter: "blur(0px)" }, { opacity: 0, filter: "blur(10px)", duration: d, ease: OUT, immediateRender: false }, t);
+
+      // 1. Hero
+      blurIn("#s1-logo", 0.05, 0.3);
+      tl.fromTo("#s1-a .w", { opacity: 0, filter: "blur(6px)" }, { opacity: 1, filter: "blur(0px)", duration: 0.15, ease: IN, stagger: 0.09 }, 0.5);
+      tl.fromTo("#s1-b", { opacity: 0, y: 40, filter: "blur(12px)" }, { opacity: 1, y: 0, filter: "blur(0px)", duration: 0.32, ease: IN }, 1.54); // beat-locked: 1.60s (music 3.70s strong cue)
+      blurOut("#s1-in", 3.50, 0.22);
+
+      // 3. Flow
+      blurIn("#s3-label", 3.72, 0.25);
+      tl.fromTo("#s3-left", { x: __DX__, y: __DY__ }, { x: 0, y: 0, duration: 0.55, ease: "power3.inOut" }, 5.30);
+      tl.fromTo("#s3-prompt", { opacity: 0, scaleX: 0.6, filter: "blur(12px)" }, { opacity: 1, scaleX: 1, filter: "blur(0px)", duration: 0.3, ease: "power3.out" }, 3.72);
+      const chars = gsap.utils.toArray("#s3-p1 .c");
+      chars.forEach((c, i) => tl.set(c, { display: "inline" }, 3.96 + i * (1.2 / chars.length)));
+      tl.fromTo("#s3-caret", { opacity: 1 }, { opacity: 0, duration: 0.01 }, 5.24);
+      tl.fromTo("#s3-cursor", { x: 1500, y: 980, opacity: 0 }, { x: __SENDX__, y: __SENDY__, opacity: 1, duration: 0.6, ease: "power3.inOut" }, 4.59);
+      tl.fromTo("#s3-send", { scale: 1 }, { scale: 0.86, duration: 0.06, yoyo: true, repeat: 1, ease: "power2.out" }, 5.22);
+      tl.fromTo("#s3-appwrap", { opacity: 0, y: 80, scale: 0.92, filter: "blur(14px)" }, { opacity: 1, y: 0, scale: 1, filter: "blur(0px)", duration: 0.55, ease: IN }, 5.30); // beat-locked: 5.30s
+      tl.fromTo("#s3-live", { opacity: 0, scale: 0.6 }, { opacity: 1, scale: 1, duration: 0.35, ease: "back.out(2)" }, 5.84); // beat: 5.84s
+      tl.fromTo("#s3-cursor", { x: __SENDX__, y: __SENDY__ }, { x: __SLOTX__, y: __SLOTY__, duration: 0.7, ease: "power3.inOut", immediateRender: false }, 6.64);
+      tl.fromTo("#s3-app .slots span:nth-child(2)", { backgroundColor: "#ffffff", color: "#006bff" }, { backgroundColor: "#006bff", color: "#ffffff", duration: 0.12 }, 7.40); // beat: 7.40s
+      tl.fromTo("#s3-app .toast", { opacity: 0, y: 30, scale: 0.9 }, { opacity: 1, y: 0, scale: 1, duration: 0.4, ease: "back.out(1.8)" }, 7.94); // beat: 7.94s
+      tl.fromTo("#s3-cursor", { opacity: 1 }, { opacity: 0, duration: 0.2, immediateRender: false }, 8.74);
+      const typeIn = (sel, t0, d) => { const cs = gsap.utils.toArray(sel); cs.forEach((c, i) => tl.set(c, { display: "inline" }, t0 + i * (d / cs.length))); };
+      const swap = (from, to, t) => { // the previous app leaves left as the new one lands from the right
+        tl.fromTo(from, { opacity: 1, x: 0, filter: "blur(0px)" }, { opacity: 0, x: -90, filter: "blur(8px)", duration: 0.22, ease: OUT, immediateRender: false }, t - 0.22);
+        tl.fromTo(to, { opacity: 0, x: 120, filter: "blur(10px)" }, { opacity: 1, x: 0, filter: "blur(0px)", duration: 0.45, ease: IN }, t);
+      };
+      tl.set("#s3-card2, #s3-card3", { opacity: 0 }, 0);
+      tl.set("#s3-ai2, #s3-ai3", { opacity: 0 }, 0);
+      const roll = (from, to, t) => { // the AI name rolls over to the next one
+        tl.fromTo(from, { y: 0, opacity: 1 }, { y: -30, opacity: 0, duration: 0.2, ease: OUT, immediateRender: false }, t);
+        tl.fromTo(to, { y: 30, opacity: 0 }, { y: 0, opacity: 1, duration: 0.3, ease: IN, immediateRender: false }, t + 0.08);
+      };
+      roll("#s3-ai1", "#s3-ai2", 9.45);
+      roll("#s3-ai2", "#s3-ai3", 11.55);
+      // example 2: budget tracker
+      tl.set("#s3-p1 .c", { display: "none" }, 9.45); // beat: 9.45s
+      tl.fromTo("#s3-caret", { opacity: 0 }, { opacity: 1, duration: 0.01, immediateRender: false }, 9.45);
+      typeIn("#s3-p2 .c", 9.5, 0.45);
+      tl.fromTo("#s3-caret", { opacity: 1 }, { opacity: 0, duration: 0.01, immediateRender: false }, 9.98);
+      tl.fromTo("#s3-send", { scale: 1 }, { scale: 0.86, duration: 0.06, yoyo: true, repeat: 1, ease: "power2.out", immediateRender: false }, 9.96);
+      swap("#s3-card1", "#s3-card2", 9.98); // beat-locked: 9.98s
+      tl.fromTo("#s3-live2", { opacity: 0, scale: 0.6 }, { opacity: 1, scale: 1, duration: 0.35, ease: "back.out(2)" }, 10.25);
+      tl.fromTo("#s3-card2 .br i b", { scaleX: 0 }, { scaleX: 1, duration: 0.5, ease: "power3.out", stagger: 0.06 }, 10.15);
+      tl.fromTo("#s3-btoast", { opacity: 0, y: 30, scale: 0.9 }, { opacity: 1, y: 0, scale: 1, duration: 0.4, ease: "back.out(1.8)" }, 10.5); // beat: 10.50s
+      // example 3: spelling game for kids
+      tl.set("#s3-p2 .c", { display: "none" }, 11.55); // beat: 11.55s
+      tl.fromTo("#s3-caret", { opacity: 0 }, { opacity: 1, duration: 0.01, immediateRender: false }, 11.55);
+      typeIn("#s3-p3 .c", 11.6, 0.4);
+      tl.fromTo("#s3-caret", { opacity: 1 }, { opacity: 0, duration: 0.01, immediateRender: false }, 12.07);
+      tl.fromTo("#s3-send", { scale: 1 }, { scale: 0.86, duration: 0.06, yoyo: true, repeat: 1, ease: "power2.out", immediateRender: false }, 12.05);
+      swap("#s3-card2", "#s3-card3", 12.07); // beat-locked: 12.07s
+      tl.fromTo("#s3-live3", { opacity: 0, scale: 0.6 }, { opacity: 1, scale: 1, duration: 0.35, ease: "back.out(2)" }, 12.3);
+      tl.fromTo("#s3-gtile", { opacity: 1, y: 0 }, { opacity: 0, y: -40, duration: 0.2, ease: OUT }, 12.45);
+      tl.fromTo("#s3-gl", { opacity: 0, y: 30 }, { opacity: 1, y: 0, duration: 0.3, ease: "back.out(2)" }, 12.5);
+      tl.fromTo("#s3-gtoast", { opacity: 0, y: 30, scale: 0.9 }, { opacity: 1, y: 0, scale: 1, duration: 0.4, ease: "back.out(1.8)" }, 12.6); // beat: 12.60s
+      // audio-reactive: the glow behind the live app breathes with the music's loudness (per-frame RMS)
+      const glow = document.querySelector("#s3-glow");
+      tl.fromTo({ v: 0 }, { v: 0 }, { v: 1, duration: 9.99, ease: "none", onUpdate() {
+        const t = 3.72 + this.progress() * 9.99, r = RMS[Math.min(RMS.length - 1, Math.round((t + 2.094) * 30))];
+        glow.style.opacity = (0.45 + 0.55 * r).toFixed(3); glow.style.scale = (0.96 + 0.06 * r).toFixed(3);
+      } }, 3.72);
+      blurOut("#s3-left", 13.48, 0.22);
+      tl.fromTo("#s3-appwrap", { opacity: 1, scale: 1 }, { opacity: 0, scale: 0.7, x: -300, filter: "blur(8px)", duration: 0.25, ease: OUT, immediateRender: false }, 13.47);
+
+      // 3b. Works with the AI you already use (beats: 13.64 14.17 14.69 15.21 15.74 16.26 16.78 17.31)
+      blurIn("#s7-h2", 13.71, 0.25);
+      tl.fromTo("#s7-hub", { opacity: 0, scale: 0.4, rotation: -30 }, { opacity: 1, scale: 1, rotation: -6, duration: 0.5, ease: "back.out(1.6)" }, 13.9);
+      const aiLines = gsap.utils.toArray("#s7-lines line"), aiChips = gsap.utils.toArray(".aichip");
+      [14.17, 14.43, 14.69, 14.95, 15.21].forEach((t, i) => { // beat-grid: one AI per half beat, each wired into Formelab
+        const len = aiLines[i].getTotalLength();
+        tl.fromTo(aiChips[i], { opacity: 0, scale: 0.6 }, { opacity: 1, scale: 1, duration: 0.35, ease: "back.out(2)" }, t);
+        tl.fromTo(aiLines[i], { strokeDasharray: len, strokeDashoffset: len }, { strokeDashoffset: 0, duration: 0.3, ease: "power2.out" }, t + 0.08);
+      });
+      tl.fromTo("#s7-hub", { scale: 1 }, { scale: 1.1, duration: 0.12, yoyo: true, repeat: 1, ease: "power2.out", immediateRender: false }, 15.74); // beat: 15.74s
+      tl.fromTo("#s7-lines line", { opacity: 0.45 }, { opacity: 0.85, duration: 0.2, immediateRender: false }, 15.74);
+      blurOut("#s7-h2", 17.15, 0.22);
+      blurOut("#s7-net", 17.15, 0.22);
+
+      // 4. Wall
+      blurIn("#s4-label", 17.38, 0.25);
+      [17.89, 18.41, 18.95, 19.48, 20.00].forEach((t, i) => // beat-grid: cards 1-5 at 17.89 18.41 18.95 19.48 20.00, full set holds to 22.39
+        tl.fromTo(`#s4-c${i + 1}`, { opacity: 0, y: 60, scale: 0.94, filter: "blur(10px)" }, { opacity: 1, y: 0, scale: 1, filter: "blur(0px)", duration: 0.5, ease: IN }, t));
+      tl.fromTo(".wall", { opacity: 1, filter: "blur(0px)" }, { opacity: 0, filter: "blur(10px)", duration: 0.22, ease: OUT, immediateRender: false }, 22.39);
+      blurOut("#s4-label", 22.39, 0.22);
+
+      // 4b. Sharing and privacy (beats: 22.63 23.15 23.68 24.20 24.73 25.25 25.77 26.30 26.82 27.34)
+      blurIn("#s6-h2", 22.63, 0.25);
+      blurIn("#s6-sub", 22.89, 0.25);
+      tl.fromTo("#s6-card", { opacity: 0, y: 60, scale: 0.94 }, { opacity: 1, y: 0, scale: 1, duration: 0.5, ease: IN }, 22.89);
+      tl.fromTo("#s6-card .srow", { opacity: 0, y: 20 }, { opacity: 1, y: 0, duration: 0.35, ease: IN, stagger: 0.08 }, 23.15);
+      tl.fromTo("#s6-link", { opacity: 0, y: 20 }, { opacity: 0, y: 20, duration: 0.01 }, 23.15);
+      tl.fromTo("#s6-cursor", { x: __R0X__, y: __R0Y__, opacity: 0 }, { x: __R2X__, y: __R2Y__, opacity: 1, duration: 0.6, ease: "power3.inOut" }, 23.55);
+      const pick = (from, to, t) => { // the cursor's click moves the selection, as on the site
+        tl.fromTo(`${from} .onfill, ${from} .ring`, { opacity: 1 }, { opacity: 0, duration: 0.14, immediateRender: false }, t);
+        tl.fromTo(`${to} .onfill, ${to} .ring`, { opacity: 0 }, { opacity: 1, duration: 0.14, immediateRender: false }, t);
+        tl.fromTo(to, { scale: 1 }, { scale: 0.97, duration: 0.07, yoyo: true, repeat: 1, ease: "power2.out", immediateRender: false }, t);
+      };
+      pick("#s6-r1", "#s6-r2", 24.20); // beat: 32.05s
+      tl.fromTo("#s6-cursor", { x: __R2X__, y: __R2Y__ }, { x: __R3X__, y: __R3Y__, duration: 0.5, ease: "power3.inOut", immediateRender: false }, 24.70);
+      pick("#s6-r2", "#s6-r3", 25.25); // beat: 33.12s
+      tl.fromTo("#s6-link", { opacity: 0, y: 20 }, { opacity: 1, y: 0, duration: 0.4, ease: "back.out(1.8)", immediateRender: false }, 25.52);
+      tl.fromTo("#s6-cursor", { opacity: 1 }, { opacity: 0, duration: 0.2, immediateRender: false }, 26.30);
+      blurOut("#s6-head", 27.12, 0.22);
+      blurOut("#s6-card", 27.12, 0.22);
+
+      // 5. End card
+      tl.fromTo("#s5-card", { opacity: 0, scale: 0.86, y: 60 }, { opacity: 1, scale: 1, y: 0, duration: 0.5, ease: IN }, 27.30); // beat: 35.20s
+      blurIn("#s5-h2", 27.52, 0.22);
+      tl.fromTo("#s5-join", { opacity: 0, y: 30 }, { opacity: 1, y: 0, duration: 0.4, ease: IN }, 27.80);
+      blurIn("#s5-foot", 28.00, 0.3);
+      tl.fromTo("#s5-cursor", { x: 1500, y: 1000, opacity: 0 }, { x: __CTAX__, y: __CTAY__, opacity: 1, duration: 0.55, ease: "power3.inOut" }, 27.80);
+      tl.fromTo("#s5-cta", { scale: 1 }, { scale: 0.94, duration: 0.07, yoyo: true, repeat: 1, ease: "power2.out", immediateRender: false }, 28.39); // beat: 36.26s
+      tl.fromTo("#s5-cursor", { opacity: 1 }, { opacity: 0, duration: 0.25, immediateRender: false }, 29.11);
+
+      window.__timelines["main"] = tl;
+      tl.seek(0);
+    </script>
+  </body>
+</html>
