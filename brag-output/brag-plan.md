@@ -119,3 +119,5 @@ Scenes 1, 2 and 5 now use the new home page design; scenes 3 and 4 are unchanged
 - **No jump at the cut:** the fade-out's blur was re-anchoring the centred headline 96 px higher just before the cut; the hero wrapper now has a fixed full-frame box. The "Ask your AI to build" prompt now enters centred where the headline was and slides to its place as the app arrives.
 - **New scene, Sharing and privacy, 14.78-19.49s (9 beats):** from the redesigned home page: "You decide who gets in", "Every app starts private.", and the three-option card (Only you, People you choose, Anyone with the link). The cursor picks "People you choose" (16.35s), then "Anyone with the link" (17.40s), and the link with "Copy link" appears.
 - End card now 19.49-22.65s. Total 22.6s. Posters at 2.8s.
+
+- **Poster (both versions):** 9.1s, the typed request, the live booking app with "It's live." and the "New booking" toast. Baked in as frame 0.
