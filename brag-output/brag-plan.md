@@ -121,3 +121,5 @@ Scenes 1, 2 and 5 now use the new home page design; scenes 3 and 4 are unchanged
 - End card now 19.49-22.65s. Total 22.6s. Posters at 2.8s.
 
 - **Poster (both versions):** 9.1s, the typed request, the live booking app with "It's live." and the "New booking" toast. Baked in as frame 0.
+
+- **Poster (both versions), final:** the Formelab logo centred on purple (#5B4CF5): white tile with a purple F and the orange dot, white wordmark. Drawn from `poster.html` (set `--s` to 150px for 1920x1080, 140px for 1080x1920) and baked in as frame 0.
