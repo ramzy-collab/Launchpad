@@ -123,3 +123,9 @@ Scenes 1, 2 and 5 now use the new home page design; scenes 3 and 4 are unchanged
 - **Poster (both versions):** 9.1s, the typed request, the live booking app with "It's live." and the "New booking" toast. Baked in as frame 0.
 
 - **Poster (both versions), final:** the Formelab logo centred on purple (#5B4CF5): white tile with a purple F and the orange dot, white wordmark. Drawn from `poster.html` (set `--s` to 150px for 1920x1080, 140px for 1080x1920) and baked in as frame 0.
+
+## Revision 5: more examples, and your own AI
+
+- **Two more examples in "Ask your AI to build" (8 beats, +4.19s):** after the booking app, the same prompt box takes "Make a budget that matches how I spend" (the redesigned site's own use case) and a budget app slides in at `budget.formelab.app` with spending bars filling and a "Coffee −$4.50" entry (9.45-11.55s). Then "Make a spelling game for my kids": a spelling game at `spelling.formelab.app`, the missing G drops into DOG and "Great job!" pops (11.55-13.47s). Both apps are illustrations in the home page's card style.
+- **"You use your own AI":** the prompt box shows "Your AI" with the AI's name in a purple pill, rolling from Claude (booking) to ChatGPT (budget) to Gemini (game), so one Formelab works with whichever AI you use (the site's "Works with the AI you already use").
+- Later scenes moved 8 beats later. Total 26.8s, past /brag's 25s guideline at the user's request.

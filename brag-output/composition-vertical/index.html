@@ -37,8 +37,12 @@
       /* 3. Flow */
       #s3-label, #s4-label { font-family: "Inter", sans-serif; font-size: 26px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--accent); }
       #s3-label { position: absolute; left: 140px; top: 300px; }
-      #s3-prompt { position: absolute; left: 140px; top: 360px; width: 720px; min-height: 260px; background: #fff; border: 1.5px solid #ECEAE4; border-radius: 28px; box-shadow: 0 1px 2px rgba(17,17,16,.05), 0 24px 48px -20px rgba(17,17,16,.25); padding: 36px 40px 100px; font-family: "Inter", sans-serif; font-size: 44px; line-height: 1.3; color: var(--ink); text-align: left; }
+      #s3-prompt { position: absolute; left: 140px; top: 360px; width: 720px; min-height: 340px; background: #fff; border: 1.5px solid #ECEAE4; border-radius: 28px; box-shadow: 0 1px 2px rgba(17,17,16,.05), 0 24px 48px -20px rgba(17,17,16,.25); padding: 36px 40px 100px; font-family: "Inter", sans-serif; font-size: 44px; line-height: 1.3; color: var(--ink); text-align: left; }
       #s3-prompt .c { display: none; }
+      /* which AI you're talking to: one Formelab, whichever AI you already use */
+      #s3-ai { display: flex; align-items: center; gap: 14px; margin: -6px 0 20px; font-size: 30px; font-weight: 600; color: var(--soft); }
+      #s3-ai .who { display: inline-grid; overflow: hidden; background: #5B4CF5; color: #fff; border-radius: 999px; padding: 8px 26px; font-size: 34px; }
+      #s3-ai .who b { grid-area: 1 / 1; font-weight: 700; text-align: center; }
       #s3-caret { display: inline-block; width: 4px; height: 50px; background: var(--accent); vertical-align: -8px; margin-left: 2px; }
       #s3-send { position: absolute; right: 26px; bottom: 26px; width: 68px; height: 68px; border-radius: 50%; background: var(--accent); display: grid; place-items: center; }
       #s3-appwrap { position: absolute; left: 1000px; top: 170px; width: 780px; }
@@ -48,6 +52,36 @@
       #s3-url span { color: var(--soft); font-weight: 500; }
       #s3-live { background: #E6F5EE; color: #11643F; border-radius: 999px; padding: 12px 24px; font-size: 28px; font-weight: 700; }
       #s3-app { position: relative; }
+      .ucard { position: relative; }
+      #s3-card2, #s3-card3 { position: absolute; left: 0; top: 0; width: 100%; }
+      .ubar { position: relative; display: flex; align-items: center; gap: 16px; margin-bottom: 22px; font-family: "Inter", sans-serif; }
+      .uurl { background: #fff; border: 1.5px solid #ECEAE4; border-radius: 999px; padding: 12px 26px; font-size: 28px; font-weight: 600; color: var(--ink); }
+      .uurl span { color: var(--soft); font-weight: 500; }
+      .ulive { background: #E6F5EE; color: #11643F; border-radius: 999px; padding: 12px 24px; font-size: 28px; font-weight: 700; }
+      .uapp figure { transform-origin: 0 0; scale: 1.68; margin: 0; }
+      /* budget tracker */
+      .bud { font-family: "Inter", sans-serif; height: 100%; padding: 14px 16px; color: #1C1B19; }
+      .bud .bh { display: flex; justify-content: space-between; align-items: center; font-size: 13px; }
+      .bud .bh span { font-size: 10.5px; color: #6B6862; background: #F2F0EB; padding: 2px 8px; border-radius: 99px; }
+      .bud .bl { font: 800 26px/1.1 "Bricolage Grotesque", sans-serif; letter-spacing: -.02em; margin: 8px 0 10px; }
+      .bud .bl small { display: block; font: 500 10.5px "Inter", sans-serif; color: #6B6862; letter-spacing: 0; margin-top: 2px; }
+      .bud .br { display: grid; grid-template-columns: 1fr auto; gap: 3px 8px; font-size: 11px; margin-top: 8px; }
+      .bud .br em { font-style: normal; color: #6B6862; font-size: 10px; }
+      .bud .br i { grid-column: 1 / -1; height: 7px; border-radius: 9px; background: #EDEAE3; overflow: hidden; }
+      .bud .br i b { display: block; height: 100%; border-radius: 9px; transform-origin: 0 50%; }
+      /* spelling game for kids */
+      .game { font-family: "Inter", sans-serif; height: 100%; padding: 12px 16px; color: #1C1B19; background: #FFF8EC; text-align: center; }
+      .game .gh { display: flex; justify-content: space-between; align-items: center; font-size: 13px; }
+      .game .gh b { font: 800 16px "Bricolage Grotesque", sans-serif; color: #5B4CF5; }
+      .game .gh span { font-weight: 700; color: #8A5A00; background: #FFE8A3; padding: 2px 8px; border-radius: 99px; font-size: 11px; }
+      .game .gp { font-size: 54px; line-height: 1; margin: 8px 0 10px; }
+      .game .gs, .game .gt { display: flex; justify-content: center; gap: 8px; }
+      .game i { font-style: normal; display: grid; place-items: center; font: 800 22px "Bricolage Grotesque", sans-serif; }
+      .game .gs i { width: 42px; height: 46px; border-radius: 10px; background: #fff; border: 2px solid #E8E5DE; }
+      .game .gs .blank { border-style: dashed; border-color: #5B4CF5; }
+      .game .gs .blank b { color: #5B4CF5; }
+      .game .gt { margin-top: 14px; }
+      .game .gt i { width: 38px; height: 40px; border-radius: 10px; background: #5B4CF5; color: #fff; box-shadow: 0 3px 0 #3E2FCB; }
       #s3-app figure { transform-origin: 0 0; scale: 1.68; }
       #s3-app figcaption { display: none; }
       #s3-cursor { position: absolute; left: 0; top: 0; width: 64px; height: 64px; z-index: 20; filter: drop-shadow(0 4px 6px rgba(0,0,0,.3)); }
@@ -107,7 +141,7 @@
     </style>
   </head>
   <body>
-    <div id="root" data-composition-id="main" data-start="0" data-duration="22.65" data-width="1080" data-height="1920">
+    <div id="root" data-composition-id="main" data-start="0" data-duration="26.84" data-width="1080" data-height="1920">
       <div class="bg"></div>
 
       <!-- 1. Hero: the redesigned home page -->
@@ -121,17 +155,18 @@
       </div>
 
       <!-- 3. Flow: ask, it's live, it works -->
-      <div id="s3" class="scene clip" data-start="3.72" data-duration="5.8" data-track-index="1" data-track-kind="graphics">
+      <div id="s3" class="scene clip" data-start="3.72" data-duration="9.99" data-track-index="1" data-track-kind="graphics">
         <div id="s3-left">
           <div id="s3-label">Ask your AI to build</div>
-          <div id="s3-prompt"><span class="c">M</span><span class="c">a</span><span class="c">k</span><span class="c">e</span><span class="c"> </span><span class="c">a</span><span class="c"> </span><span class="c">c</span><span class="c">l</span><span class="c">a</span><span class="c">s</span><span class="c">s</span><span class="c"> </span><span class="c">b</span><span class="c">o</span><span class="c">o</span><span class="c">k</span><span class="c">i</span><span class="c">n</span><span class="c">g</span><span class="c"> </span><span class="c">p</span><span class="c">a</span><span class="c">g</span><span class="c">e</span><span class="c"> </span><span class="c">f</span><span class="c">o</span><span class="c">r</span><span class="c"> </span><span class="c">m</span><span class="c">y</span><span class="c"> </span><span class="c">s</span><span class="c">t</span><span class="c">u</span><span class="c">d</span><span class="c">i</span><span class="c">o</span><span id="s3-caret"></span>
+          <div id="s3-prompt"><div id="s3-ai"><span class="lbl">Your AI</span><span class="who"><b id="s3-ai1">Claude</b><b id="s3-ai2">ChatGPT</b><b id="s3-ai3">Gemini</b></span></div><span id="s3-p1"><span class="c">M</span><span class="c">a</span><span class="c">k</span><span class="c">e</span><span class="c"> </span><span class="c">a</span><span class="c"> </span><span class="c">c</span><span class="c">l</span><span class="c">a</span><span class="c">s</span><span class="c">s</span><span class="c"> </span><span class="c">b</span><span class="c">o</span><span class="c">o</span><span class="c">k</span><span class="c">i</span><span class="c">n</span><span class="c">g</span><span class="c"> </span><span class="c">p</span><span class="c">a</span><span class="c">g</span><span class="c">e</span><span class="c"> </span><span class="c">f</span><span class="c">o</span><span class="c">r</span><span class="c"> </span><span class="c">m</span><span class="c">y</span><span class="c"> </span><span class="c">s</span><span class="c">t</span><span class="c">u</span><span class="c">d</span><span class="c">i</span><span class="c">o</span></span><span id="s3-p2"><span class="c">M</span><span class="c">a</span><span class="c">k</span><span class="c">e</span><span class="c"> </span><span class="c">a</span><span class="c"> </span><span class="c">b</span><span class="c">u</span><span class="c">d</span><span class="c">g</span><span class="c">e</span><span class="c">t</span><span class="c"> </span><span class="c">t</span><span class="c">h</span><span class="c">a</span><span class="c">t</span><span class="c"> </span><span class="c">m</span><span class="c">a</span><span class="c">t</span><span class="c">c</span><span class="c">h</span><span class="c">e</span><span class="c">s</span><span class="c"> </span><span class="c">h</span><span class="c">o</span><span class="c">w</span><span class="c"> </span><span class="c">I</span><span class="c"> </span><span class="c">s</span><span class="c">p</span><span class="c">e</span><span class="c">n</span><span class="c">d</span></span><span id="s3-p3"><span class="c">M</span><span class="c">a</span><span class="c">k</span><span class="c">e</span><span class="c"> </span><span class="c">a</span><span class="c"> </span><span class="c">s</span><span class="c">p</span><span class="c">e</span><span class="c">l</span><span class="c">l</span><span class="c">i</span><span class="c">n</span><span class="c">g</span><span class="c"> </span><span class="c">g</span><span class="c">a</span><span class="c">m</span><span class="c">e</span><span class="c"> </span><span class="c">f</span><span class="c">o</span><span class="c">r</span><span class="c"> </span><span class="c">m</span><span class="c">y</span><span class="c"> </span><span class="c">k</span><span class="c">i</span><span class="c">d</span><span class="c">s</span></span><span id="s3-caret"></span>
             <div id="s3-send"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg></div>
           </div>
         </div>
         <div id="s3-appwrap">
           <div id="s3-glow"></div>
-          <div id="s3-bar"><div id="s3-url">studio.formelab.app<span>/booking</span></div><div id="s3-live">It's live.</div></div>
-          <div id="s3-app"><figure>
+          <div class="ucard" id="s3-card1">
+            <div id="s3-bar" class="ubar"><div id="s3-url" class="uurl">studio.formelab.app<span>/booking</span></div><div id="s3-live" class="ulive">It's live.</div></div>
+            <div id="s3-app"><figure>
   <div class="stage bg-blue"><div class="shot" data-layout-allow-overlap><div class="cal">
     <div class="side">
       <div class="av"></div>
@@ -154,12 +189,35 @@
   <div data-layout-allow-occlusion data-layout-allow-overlap class="float toast at-br"><span class="ti ti-blue"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg></span><span><b>New booking</b><small>Maya R. · Tue, 10:00am</small></span></div></div>
   <figcaption><b>Class booking</b> by a studio owner</figcaption>
 </figure></div>
+          </div>
+          <div class="ucard" id="s3-card2">
+            <div class="ubar"><div class="uurl">budget.formelab.app<span>/october</span></div><div class="ulive" id="s3-live2">It's live.</div></div>
+            <div class="uapp"><figure><div class="stage bg-mint"><div class="shot" data-layout-allow-overlap><div class="bud">
+              <div class="bh"><b>October budget</b><span>Home</span></div>
+              <div class="bl">$1,240<small>left to spend</small></div>
+              <div class="br"><span>Groceries</span><em>$412 of $600</em><i><b style="width:69%;background:#1F9D6B"></b></i></div>
+              <div class="br"><span>Eating out</span><em>$264 of $300</em><i><b style="width:88%;background:#E2613F"></b></i></div>
+              <div class="br"><span>Fun</span><em>$90 of $200</em><i><b style="width:45%;background:#5B4CF5"></b></i></div>
+              <div class="br"><span>Getting around</span><em>$60 of $200</em><i><b style="width:30%;background:#E0A800"></b></i></div>
+            </div></div>
+            <div data-layout-allow-occlusion data-layout-allow-overlap class="float toast at-br" id="s3-btoast"><span class="ti" style="background:#6F4E37"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"><path d="M4 9h12v5a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5zM16 10h2a2.5 2.5 0 0 1 0 5h-2M8 3v3M12 3v3"/></svg></span><span><b>Coffee</b><small>Just now · Eating out</small></span><b class="gain" style="color:#B3261E">−$4.50</b></div></div></figure></div>
+          </div>
+          <div class="ucard" id="s3-card3">
+            <div class="ubar"><div class="uurl">spelling.formelab.app<span>/play</span></div><div class="ulive" id="s3-live3">It's live.</div></div>
+            <div class="uapp"><figure><div class="stage bg-peach"><div class="shot" data-layout-allow-overlap><div class="game">
+              <div class="gh"><b>Spell it!</b><span>★ 3</span></div>
+              <div class="gp">🐶</div>
+              <div class="gs"><i>D</i><i>O</i><i class="blank"><b id="s3-gl">G</b></i></div>
+              <div class="gt"><i>T</i><i id="s3-gtile">G</i><i>B</i></div>
+            </div></div>
+            <div data-layout-allow-occlusion data-layout-allow-overlap class="float toast at-br" id="s3-gtoast"><span class="ti" style="background:#FFC93C"><svg width="16" height="16" viewBox="0 0 24 24" fill="#fff"><path d="M12 2l2.9 6.3 6.9.7-5.2 4.6 1.5 6.8L12 17l-6.1 3.4 1.5-6.8L2.2 9l6.9-.7z"/></svg></span><span><b>Great job!</b><small>DOG is right</small></span></div></div></figure></div>
+          </div>
         </div>
         <svg id="s3-cursor" viewBox="0 0 24 24"><path d="M5 3l14 8-6 1.5L10 19z" fill="#111" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/></svg>
       </div>
 
       <!-- 4. Built with Formelab -->
-      <div id="s4" class="scene clip" data-start="9.52" data-duration="5.26" data-track-index="1" data-track-kind="graphics">
+      <div id="s4" class="scene clip" data-start="13.71" data-duration="5.26" data-track-index="1" data-track-kind="graphics">
         <div id="s4-label">Built with Formelab</div>
         <div class="wall" id="s4-row1"><div class="cell" id="s4-c1"><figure>
   <div class="stage bg-peach"><div class="shot" data-layout-allow-overlap><div class="asa">
@@ -246,7 +304,7 @@
       </div>
 
       <!-- 4b. Sharing and privacy -->
-      <div id="s6" class="scene clip" data-start="14.78" data-duration="4.71" data-track-index="1" data-track-kind="graphics">
+      <div id="s6" class="scene clip" data-start="18.97" data-duration="4.71" data-track-index="1" data-track-kind="graphics">
         <div id="s6-head"><h2 id="s6-h2" class="display">You decide who gets in</h2><p id="s6-sub">Every app starts private.</p></div>
         <div id="s6-card">
           <div class="srow" id="s6-r1"><i class="onfill"></i><span class="radio"><i class="ring"></i></span><span>Only you<small>The starting point for every app</small></span></div>
@@ -258,7 +316,7 @@
       </div>
 
       <!-- 5. End card -->
-      <div id="s5" class="scene clip" data-start="19.49" data-duration="3.16" data-track-index="1" data-track-kind="graphics">
+      <div id="s5" class="scene clip" data-start="23.68" data-duration="3.16" data-track-index="1" data-track-kind="graphics">
         <div id="s5-card"><div class="center">
           <h2 id="s5-h2" class="display">What would you make?</h2>
           <div id="s5-join"><span class="cta" id="s5-cta">Request early access</span></div>
@@ -268,33 +326,50 @@
       </div>
 
       <!-- Audio. Music: Sascha Ende, ende.app (CC BY 4.0). SFX: Kenney (CC0), keypresses by unicae_games (CC0). -->
-      <audio id="music" class="clip" data-start="0" data-duration="22.65" data-media-start="2.094" data-track-index="10" data-volume="0.8" data-fade-out="1.2" src="assets/music/happy-beats-business-moves-vol-11-by-ende-dot-app.mp3"></audio>
+      <audio id="music" class="clip" data-start="0" data-duration="26.84" data-media-start="2.094" data-track-index="10" data-volume="0.8" data-fade-out="1.2" src="assets/music/happy-beats-business-moves-vol-11-by-ende-dot-app.mp3"></audio>
       <audio id="sfx0" class="clip" data-start="1.6" data-duration="0.19" data-track-index="11" data-volume="0.9" src="assets/sfx/impactSoft_medium_001.ogg"></audio>
-      <audio id="sfx1" class="clip" data-start="3.98" data-duration="0.25" data-track-index="12" data-volume="0.35" src="assets/sfx/keypress-001.wav"></audio>
-      <audio id="sfx2" class="clip" data-start="4.1" data-duration="0.25" data-track-index="13" data-volume="0.35" src="assets/sfx/keypress-002.wav"></audio>
-      <audio id="sfx3" class="clip" data-start="4.22" data-duration="0.25" data-track-index="14" data-volume="0.35" src="assets/sfx/keypress-003.wav"></audio>
-      <audio id="sfx4" class="clip" data-start="4.34" data-duration="0.25" data-track-index="15" data-volume="0.35" src="assets/sfx/keypress-004.wav"></audio>
-      <audio id="sfx5" class="clip" data-start="4.46" data-duration="0.25" data-track-index="16" data-volume="0.35" src="assets/sfx/keypress-005.wav"></audio>
-      <audio id="sfx6" class="clip" data-start="4.58" data-duration="0.25" data-track-index="17" data-volume="0.35" src="assets/sfx/keypress-006.wav"></audio>
-      <audio id="sfx7" class="clip" data-start="4.7" data-duration="0.25" data-track-index="18" data-volume="0.35" src="assets/sfx/keypress-001.wav"></audio>
-      <audio id="sfx8" class="clip" data-start="4.82" data-duration="0.25" data-track-index="19" data-volume="0.35" src="assets/sfx/keypress-002.wav"></audio>
-      <audio id="sfx9" class="clip" data-start="4.94" data-duration="0.25" data-track-index="20" data-volume="0.35" src="assets/sfx/keypress-003.wav"></audio>
-      <audio id="sfx10" class="clip" data-start="5.06" data-duration="0.25" data-track-index="21" data-volume="0.35" src="assets/sfx/keypress-004.wav"></audio>
-      <audio id="sfx11" class="clip" data-start="5.24" data-duration="0.05" data-track-index="22" data-volume="0.8" src="assets/sfx/click_003.ogg"></audio>
-      <audio id="sfx12" class="clip" data-start="5.32" data-duration="0.6" data-track-index="23" data-volume="0.5" src="assets/sfx/card-slide-1.ogg"></audio>
-      <audio id="sfx13" class="clip" data-start="7.4" data-duration="0.05" data-track-index="24" data-volume="0.8" src="assets/sfx/click_002.ogg"></audio>
-      <audio id="sfx14" class="clip" data-start="7.96" data-duration="0.11" data-track-index="25" data-volume="0.7" src="assets/sfx/drop_001.ogg"></audio>
-      <audio id="sfx15" class="clip" data-start="10.06" data-duration="0.6" data-track-index="26" data-volume="0.4" src="assets/sfx/card-slide-1.ogg"></audio>
-      <audio id="sfx16" class="clip" data-start="10.58" data-duration="0.2" data-track-index="27" data-volume="0.45" src="assets/sfx/drop_003.ogg"></audio>
-      <audio id="sfx17" class="clip" data-start="11.12" data-duration="0.6" data-track-index="28" data-volume="0.4" src="assets/sfx/card-slide-1.ogg"></audio>
-      <audio id="sfx18" class="clip" data-start="11.64" data-duration="0.2" data-track-index="29" data-volume="0.45" src="assets/sfx/drop_003.ogg"></audio>
-      <audio id="sfx19" class="clip" data-start="12.17" data-duration="0.6" data-track-index="30" data-volume="0.4" src="assets/sfx/card-slide-1.ogg"></audio>
-      <audio id="sfx20" class="clip" data-start="15.06" data-duration="0.6" data-track-index="31" data-volume="0.4" src="assets/sfx/card-slide-1.ogg"></audio>
-      <audio id="sfx21" class="clip" data-start="16.35" data-duration="0.05" data-track-index="32" data-volume="0.8" src="assets/sfx/click_002.ogg"></audio>
-      <audio id="sfx22" class="clip" data-start="17.4" data-duration="0.05" data-track-index="33" data-volume="0.8" src="assets/sfx/click_003.ogg"></audio>
-      <audio id="sfx23" class="clip" data-start="17.68" data-duration="0.11" data-track-index="34" data-volume="0.7" src="assets/sfx/drop_001.ogg"></audio>
-      <audio id="sfx24" class="clip" data-start="19.51" data-duration="1.48" data-track-index="35" data-volume="0.55" src="assets/sfx/impactBell_heavy_000.ogg"></audio>
-      <audio id="sfx25" class="clip" data-start="20.55" data-duration="0.05" data-track-index="36" data-volume="0.8" src="assets/sfx/click_003.ogg"></audio>
+      <audio id="sfx1" class="clip" data-start="9.5" data-duration="0.25" data-track-index="12" data-volume="0.3" src="assets/sfx/keypress-001.wav"></audio>
+      <audio id="sfx2" class="clip" data-start="9.59" data-duration="0.25" data-track-index="13" data-volume="0.3" src="assets/sfx/keypress-002.wav"></audio>
+      <audio id="sfx3" class="clip" data-start="9.68" data-duration="0.25" data-track-index="14" data-volume="0.3" src="assets/sfx/keypress-003.wav"></audio>
+      <audio id="sfx4" class="clip" data-start="9.77" data-duration="0.25" data-track-index="15" data-volume="0.3" src="assets/sfx/keypress-004.wav"></audio>
+      <audio id="sfx5" class="clip" data-start="9.86" data-duration="0.25" data-track-index="16" data-volume="0.3" src="assets/sfx/keypress-005.wav"></audio>
+      <audio id="sfx6" class="clip" data-start="11.6" data-duration="0.25" data-track-index="17" data-volume="0.3" src="assets/sfx/keypress-004.wav"></audio>
+      <audio id="sfx7" class="clip" data-start="11.68" data-duration="0.25" data-track-index="18" data-volume="0.3" src="assets/sfx/keypress-005.wav"></audio>
+      <audio id="sfx8" class="clip" data-start="11.76" data-duration="0.25" data-track-index="19" data-volume="0.3" src="assets/sfx/keypress-006.wav"></audio>
+      <audio id="sfx9" class="clip" data-start="11.84" data-duration="0.25" data-track-index="20" data-volume="0.3" src="assets/sfx/keypress-001.wav"></audio>
+      <audio id="sfx10" class="clip" data-start="11.92" data-duration="0.25" data-track-index="21" data-volume="0.3" src="assets/sfx/keypress-002.wav"></audio>
+      <audio id="sfx11" class="clip" data-start="9.96" data-duration="0.05" data-track-index="22" data-volume="0.8" src="assets/sfx/click_003.ogg"></audio>
+      <audio id="sfx12" class="clip" data-start="10" data-duration="0.6" data-track-index="23" data-volume="0.45" src="assets/sfx/card-slide-1.ogg"></audio>
+      <audio id="sfx13" class="clip" data-start="10.52" data-duration="0.2" data-track-index="24" data-volume="0.6" src="assets/sfx/drop_002.ogg"></audio>
+      <audio id="sfx14" class="clip" data-start="12.05" data-duration="0.05" data-track-index="25" data-volume="0.8" src="assets/sfx/click_002.ogg"></audio>
+      <audio id="sfx15" class="clip" data-start="12.09" data-duration="0.6" data-track-index="26" data-volume="0.45" src="assets/sfx/card-slide-1.ogg"></audio>
+      <audio id="sfx16" class="clip" data-start="12.52" data-duration="0.11" data-track-index="27" data-volume="0.6" src="assets/sfx/drop_001.ogg"></audio>
+      <audio id="sfx17" class="clip" data-start="12.62" data-duration="0.2" data-track-index="28" data-volume="0.6" src="assets/sfx/drop_002.ogg"></audio>
+      <audio id="sfx18" class="clip" data-start="3.98" data-duration="0.25" data-track-index="29" data-volume="0.35" src="assets/sfx/keypress-001.wav"></audio>
+      <audio id="sfx19" class="clip" data-start="4.1" data-duration="0.25" data-track-index="30" data-volume="0.35" src="assets/sfx/keypress-002.wav"></audio>
+      <audio id="sfx20" class="clip" data-start="4.22" data-duration="0.25" data-track-index="31" data-volume="0.35" src="assets/sfx/keypress-003.wav"></audio>
+      <audio id="sfx21" class="clip" data-start="4.34" data-duration="0.25" data-track-index="32" data-volume="0.35" src="assets/sfx/keypress-004.wav"></audio>
+      <audio id="sfx22" class="clip" data-start="4.46" data-duration="0.25" data-track-index="33" data-volume="0.35" src="assets/sfx/keypress-005.wav"></audio>
+      <audio id="sfx23" class="clip" data-start="4.58" data-duration="0.25" data-track-index="34" data-volume="0.35" src="assets/sfx/keypress-006.wav"></audio>
+      <audio id="sfx24" class="clip" data-start="4.7" data-duration="0.25" data-track-index="35" data-volume="0.35" src="assets/sfx/keypress-001.wav"></audio>
+      <audio id="sfx25" class="clip" data-start="4.82" data-duration="0.25" data-track-index="36" data-volume="0.35" src="assets/sfx/keypress-002.wav"></audio>
+      <audio id="sfx26" class="clip" data-start="4.94" data-duration="0.25" data-track-index="37" data-volume="0.35" src="assets/sfx/keypress-003.wav"></audio>
+      <audio id="sfx27" class="clip" data-start="5.06" data-duration="0.25" data-track-index="38" data-volume="0.35" src="assets/sfx/keypress-004.wav"></audio>
+      <audio id="sfx28" class="clip" data-start="5.24" data-duration="0.05" data-track-index="39" data-volume="0.8" src="assets/sfx/click_003.ogg"></audio>
+      <audio id="sfx29" class="clip" data-start="5.32" data-duration="0.6" data-track-index="40" data-volume="0.5" src="assets/sfx/card-slide-1.ogg"></audio>
+      <audio id="sfx30" class="clip" data-start="7.4" data-duration="0.05" data-track-index="41" data-volume="0.8" src="assets/sfx/click_002.ogg"></audio>
+      <audio id="sfx31" class="clip" data-start="7.96" data-duration="0.11" data-track-index="42" data-volume="0.7" src="assets/sfx/drop_001.ogg"></audio>
+      <audio id="sfx32" class="clip" data-start="14.25" data-duration="0.6" data-track-index="43" data-volume="0.4" src="assets/sfx/card-slide-1.ogg"></audio>
+      <audio id="sfx33" class="clip" data-start="14.77" data-duration="0.2" data-track-index="44" data-volume="0.45" src="assets/sfx/drop_003.ogg"></audio>
+      <audio id="sfx34" class="clip" data-start="15.31" data-duration="0.6" data-track-index="45" data-volume="0.4" src="assets/sfx/card-slide-1.ogg"></audio>
+      <audio id="sfx35" class="clip" data-start="15.83" data-duration="0.2" data-track-index="46" data-volume="0.45" src="assets/sfx/drop_003.ogg"></audio>
+      <audio id="sfx36" class="clip" data-start="16.36" data-duration="0.6" data-track-index="47" data-volume="0.4" src="assets/sfx/card-slide-1.ogg"></audio>
+      <audio id="sfx37" class="clip" data-start="19.25" data-duration="0.6" data-track-index="48" data-volume="0.4" src="assets/sfx/card-slide-1.ogg"></audio>
+      <audio id="sfx38" class="clip" data-start="20.54" data-duration="0.05" data-track-index="49" data-volume="0.8" src="assets/sfx/click_002.ogg"></audio>
+      <audio id="sfx39" class="clip" data-start="21.59" data-duration="0.05" data-track-index="50" data-volume="0.8" src="assets/sfx/click_003.ogg"></audio>
+      <audio id="sfx40" class="clip" data-start="21.87" data-duration="0.11" data-track-index="51" data-volume="0.7" src="assets/sfx/drop_001.ogg"></audio>
+      <audio id="sfx41" class="clip" data-start="23.7" data-duration="1.48" data-track-index="52" data-volume="0.55" src="assets/sfx/impactBell_heavy_000.ogg"></audio>
+      <audio id="sfx42" class="clip" data-start="24.74" data-duration="0.05" data-track-index="53" data-volume="0.8" src="assets/sfx/click_003.ogg"></audio>
     </div>
     <script>
       const RMS = [0.781, 0.749, 0.487, 0.436, 0.369, 0.335, 0.342, 0.358, 0.481, 0.439, 0.445, 0.431, 0.437, 0.373, 0.339, 0.327, 1.0, 0.61, 0.419, 0.331, 0.322, 0.307, 0.303, 0.289, 0.323, 0.324, 0.301, 0.283, 0.269, 0.266, 0.262, 0.423, 0.883, 0.559, 0.418, 0.392, 0.31, 0.286, 0.271, 0.277, 0.283, 0.268, 0.262, 0.265, 0.348, 0.31, 0.246, 0.666, 0.774, 0.55, 0.404, 0.31, 0.242, 0.241, 0.215, 0.347, 0.49, 0.436, 0.423, 0.388, 0.314, 0.22, 0.178, 0.744, 0.715, 0.546, 0.41, 0.347, 0.346, 0.334, 0.326, 0.445, 0.388, 0.351, 0.328, 0.275, 0.274, 0.253, 0.238, 0.807, 0.695, 0.411, 0.325, 0.294, 0.321, 0.287, 0.324, 0.248, 0.258, 0.235, 0.252, 0.246, 0.269, 0.238, 0.278, 0.836, 0.637, 0.472, 0.394, 0.276, 0.29, 0.26, 0.249, 0.278, 0.223, 0.202, 0.192, 0.295, 0.244, 0.187, 0.489, 0.865, 0.549, 0.425, 0.278, 0.179, 0.197, 0.158, 0.272, 0.403, 0.383, 0.355, 0.304, 0.287, 0.204, 0.168, 0.687, 0.672, 0.532, 0.457, 0.373, 0.376, 0.372, 0.344, 0.442, 0.482, 0.429, 0.422, 0.399, 0.379, 0.315, 0.313, 0.768, 0.594, 0.425, 0.378, 0.347, 0.386, 0.368, 0.415, 0.43, 0.337, 0.294, 0.278, 0.291, 0.307, 0.292, 0.247, 0.835, 0.644, 0.456, 0.47, 0.315, 0.305, 0.306, 0.264, 0.305, 0.302, 0.256, 0.218, 0.315, 0.279, 0.236, 0.359, 0.916, 0.662, 0.395, 0.381, 0.2, 0.224, 0.21, 0.267, 0.391, 0.395, 0.37, 0.333, 0.331, 0.222, 0.16, 0.531, 0.823, 0.511, 0.477, 0.345, 0.353, 0.342, 0.322, 0.41, 0.474, 0.459, 0.457, 0.379, 0.317, 0.313, 0.281, 0.759, 0.719, 0.384, 0.332, 0.358, 0.278, 0.273, 0.241, 0.335, 0.315, 0.312, 0.302, 0.307, 0.37, 0.31, 0.29, 0.742, 0.726, 0.405, 0.367, 0.314, 0.215, 0.214, 0.198, 0.245, 0.318, 0.255, 0.283, 0.307, 0.373, 0.315, 0.304, 0.9, 0.658, 0.492, 0.299, 0.333, 0.234, 0.296, 0.222, 0.368, 0.298, 0.308, 0.349, 0.193, 0.205, 0.162, 0.394, 0.834, 0.662, 0.43, 0.388, 0.359, 0.355, 0.364, 0.4, 0.482, 0.415, 0.402, 0.394, 0.392, 0.333, 0.274, 0.589, 0.895, 0.414, 0.383, 0.323, 0.33, 0.314, 0.287, 0.295, 0.35, 0.337, 0.333, 0.3, 0.3, 0.275, 0.263, 0.698, 0.735, 0.546, 0.43, 0.344, 0.318, 0.29, 0.25, 0.281, 0.287, 0.286, 0.256, 0.312, 0.381, 0.339, 0.38, 0.802, 0.664, 0.465, 0.427, 0.288, 0.262, 0.234, 0.223, 0.416, 0.47, 0.421, 0.37, 0.338, 0.239, 0.215, 0.213, 0.888, 0.619, 0.478, 0.414, 0.379, 0.368, 0.385, 0.381, 0.496, 0.426, 0.373, 0.354, 0.307, 0.284, 0.266, 0.408, 0.861, 0.478, 0.405, 0.272, 0.327, 0.32, 0.291, 0.296, 0.288, 0.259, 0.264, 0.231, 0.288, 0.273, 0.281, 0.582, 0.824, 0.519, 0.481, 0.366, 0.261, 0.27, 0.252, 0.275, 0.299, 0.216, 0.194, 0.22, 0.3, 0.232, 0.182, 0.754, 0.714, 0.463, 0.378, 0.251, 0.22, 0.193, 0.189, 0.329, 0.43, 0.366, 0.334, 0.333, 0.234, 0.2, 0.167, 0.814, 0.62, 0.555, 0.419, 0.407, 0.36, 0.349, 0.373, 0.509, 0.47, 0.436, 0.435, 0.358, 0.354, 0.334, 0.361, 0.787, 0.509, 0.42, 0.323, 0.399, 0.334, 0.347, 0.339, 0.315, 0.286, 0.267, 0.262, 0.284, 0.262, 0.276, 0.505, 0.817, 0.558, 0.477, 0.398, 0.351, 0.321, 0.318, 0.296, 0.301, 0.266, 0.254, 0.242, 0.339, 0.285, 0.232, 0.7, 0.795, 0.475, 0.36, 0.312, 0.258, 0.203, 0.206, 0.31, 0.453, 0.39, 0.41, 0.412, 0.272, 0.206, 0.159, 0.255, 0.319, 0.328, 0.315, 0.362, 0.374, 0.351, 0.469, 0.491, 0.51, 0.512, 0.442, 0.348, 0.368, 0.374, 0.364, 0.337, 0.328, 0.291, 0.276, 0.351, 0.334, 0.305, 0.33, 0.288, 0.3, 0.279, 0.237, 0.301, 0.316, 0.311, 0.355, 0.369, 0.385, 0.278, 0.333, 0.2, 0.2, 0.114, 0.113, 0.153, 0.087, 0.084, 0.074, 0.268, 0.197, 0.158, 0.171, 0.201, 0.168, 0.153, 0.121, 0.16, 0.158, 0.139, 0.161, 0.189, 0.195, 0.198, 0.198, 0.179, 0.203, 0.159, 0.79, 0.594, 0.445, 0.468, 0.432, 0.407, 0.396, 0.393, 0.486, 0.559, 0.492, 0.491, 0.433, 0.389, 0.368, 0.341, 0.861, 0.547, 0.393, 0.392, 0.451, 0.492, 0.452, 0.384, 0.394, 0.389, 0.384, 0.37, 0.385, 0.42, 0.384, 0.46, 0.837, 0.6, 0.498, 0.396, 0.34, 0.362, 0.345, 0.291, 0.349, 0.353, 0.356, 0.367, 0.52, 0.497, 0.417, 0.618, 0.729, 0.488, 0.383, 0.335, 0.317, 0.331, 0.332, 0.316, 0.613, 0.576, 0.517, 0.54, 0.504, 0.476, 0.411, 0.796, 0.632, 0.453, 0.373, 0.343, 0.364, 0.422, 0.369, 0.443, 0.543, 0.478, 0.361, 0.335, 0.345, 0.322, 0.342, 0.796, 0.589, 0.424, 0.318, 0.42, 0.475, 0.476, 0.435, 0.4, 0.389, 0.374, 0.334, 0.353, 0.33, 0.318, 0.333, 0.818, 0.636, 0.465, 0.423, 0.352, 0.394, 0.406, 0.374, 0.333, 0.358, 0.351, 0.335, 0.493, 0.498, 0.394, 0.444, 0.8, 0.624, 0.382, 0.378, 0.326, 0.358, 0.337, 0.335, 0.527, 0.471, 0.477, 0.414, 0.431, 0.443, 0.388, 0.706, 0.659, 0.397, 0.412, 0.331, 0.351, 0.34, 0.36, 0.457, 0.558, 0.551, 0.498, 0.474, 0.454, 0.423, 0.385, 0.795, 0.555, 0.288, 0.384, 0.395, 0.505, 0.472, 0.416, 0.437, 0.424, 0.408, 0.373, 0.38];
@@ -311,63 +386,97 @@
 
       // 3. Flow
       blurIn("#s3-label", 3.72, 0.25);
-      tl.fromTo("#s3-left", { x: 0, y: 470 }, { x: 0, y: 0, duration: 0.55, ease: "power3.inOut" }, 5.30);
+      tl.fromTo("#s3-left", { x: 0, y: 430 }, { x: 0, y: 0, duration: 0.55, ease: "power3.inOut" }, 5.30);
       tl.fromTo("#s3-prompt", { opacity: 0, scaleX: 0.6, filter: "blur(12px)" }, { opacity: 1, scaleX: 1, filter: "blur(0px)", duration: 0.3, ease: "power3.out" }, 3.72);
-      const chars = gsap.utils.toArray("#s3-prompt .c");
+      const chars = gsap.utils.toArray("#s3-p1 .c");
       chars.forEach((c, i) => tl.set(c, { display: "inline" }, 3.96 + i * (1.2 / chars.length)));
       tl.fromTo("#s3-caret", { opacity: 1 }, { opacity: 0, duration: 0.01 }, 5.24);
-      tl.fromTo("#s3-cursor", { x: 1500, y: 980, opacity: 0 }, { x: 926, y: 1051, opacity: 1, duration: 0.6, ease: "power3.inOut" }, 4.59);
+      tl.fromTo("#s3-cursor", { x: 1500, y: 980, opacity: 0 }, { x: 926, y: 1091, opacity: 1, duration: 0.6, ease: "power3.inOut" }, 4.59);
       tl.fromTo("#s3-send", { scale: 1 }, { scale: 0.86, duration: 0.06, yoyo: true, repeat: 1, ease: "power2.out" }, 5.22);
       tl.fromTo("#s3-appwrap", { opacity: 0, y: 80, scale: 0.92, filter: "blur(14px)" }, { opacity: 1, y: 0, scale: 1, filter: "blur(0px)", duration: 0.55, ease: IN }, 5.30); // beat-locked: 5.30s
       tl.fromTo("#s3-live", { opacity: 0, scale: 0.6 }, { opacity: 1, scale: 1, duration: 0.35, ease: "back.out(2)" }, 5.84); // beat: 5.84s
-      tl.fromTo("#s3-cursor", { x: 926, y: 1051 }, { x: 770, y: 1323, duration: 0.7, ease: "power3.inOut", immediateRender: false }, 6.64);
+      tl.fromTo("#s3-cursor", { x: 926, y: 1091 }, { x: 770, y: 1323, duration: 0.7, ease: "power3.inOut", immediateRender: false }, 6.64);
       tl.fromTo("#s3-app .slots span:nth-child(2)", { backgroundColor: "#ffffff", color: "#006bff" }, { backgroundColor: "#006bff", color: "#ffffff", duration: 0.12 }, 7.40); // beat: 7.40s
       tl.fromTo("#s3-app .toast", { opacity: 0, y: 30, scale: 0.9 }, { opacity: 1, y: 0, scale: 1, duration: 0.4, ease: "back.out(1.8)" }, 7.94); // beat: 7.94s
       tl.fromTo("#s3-cursor", { opacity: 1 }, { opacity: 0, duration: 0.2, immediateRender: false }, 8.74);
+      const typeIn = (sel, t0, d) => { const cs = gsap.utils.toArray(sel); cs.forEach((c, i) => tl.set(c, { display: "inline" }, t0 + i * (d / cs.length))); };
+      const swap = (from, to, t) => { // the previous app leaves left as the new one lands from the right
+        tl.fromTo(from, { opacity: 1, x: 0, filter: "blur(0px)" }, { opacity: 0, x: -90, filter: "blur(8px)", duration: 0.22, ease: OUT, immediateRender: false }, t - 0.22);
+        tl.fromTo(to, { opacity: 0, x: 120, filter: "blur(10px)" }, { opacity: 1, x: 0, filter: "blur(0px)", duration: 0.45, ease: IN }, t);
+      };
+      tl.set("#s3-card2, #s3-card3", { opacity: 0 }, 0);
+      tl.set("#s3-ai2, #s3-ai3", { opacity: 0 }, 0);
+      const roll = (from, to, t) => { // the AI name rolls over to the next one
+        tl.fromTo(from, { y: 0, opacity: 1 }, { y: -30, opacity: 0, duration: 0.2, ease: OUT, immediateRender: false }, t);
+        tl.fromTo(to, { y: 30, opacity: 0 }, { y: 0, opacity: 1, duration: 0.3, ease: IN, immediateRender: false }, t + 0.08);
+      };
+      roll("#s3-ai1", "#s3-ai2", 9.45);
+      roll("#s3-ai2", "#s3-ai3", 11.55);
+      // example 2: budget tracker
+      tl.set("#s3-p1 .c", { display: "none" }, 9.45); // beat: 9.45s
+      tl.fromTo("#s3-caret", { opacity: 0 }, { opacity: 1, duration: 0.01, immediateRender: false }, 9.45);
+      typeIn("#s3-p2 .c", 9.5, 0.45);
+      tl.fromTo("#s3-caret", { opacity: 1 }, { opacity: 0, duration: 0.01, immediateRender: false }, 9.98);
+      tl.fromTo("#s3-send", { scale: 1 }, { scale: 0.86, duration: 0.06, yoyo: true, repeat: 1, ease: "power2.out", immediateRender: false }, 9.96);
+      swap("#s3-card1", "#s3-card2", 9.98); // beat-locked: 9.98s
+      tl.fromTo("#s3-live2", { opacity: 0, scale: 0.6 }, { opacity: 1, scale: 1, duration: 0.35, ease: "back.out(2)" }, 10.25);
+      tl.fromTo("#s3-card2 .br i b", { scaleX: 0 }, { scaleX: 1, duration: 0.5, ease: "power3.out", stagger: 0.06 }, 10.15);
+      tl.fromTo("#s3-btoast", { opacity: 0, y: 30, scale: 0.9 }, { opacity: 1, y: 0, scale: 1, duration: 0.4, ease: "back.out(1.8)" }, 10.5); // beat: 10.50s
+      // example 3: spelling game for kids
+      tl.set("#s3-p2 .c", { display: "none" }, 11.55); // beat: 11.55s
+      tl.fromTo("#s3-caret", { opacity: 0 }, { opacity: 1, duration: 0.01, immediateRender: false }, 11.55);
+      typeIn("#s3-p3 .c", 11.6, 0.4);
+      tl.fromTo("#s3-caret", { opacity: 1 }, { opacity: 0, duration: 0.01, immediateRender: false }, 12.07);
+      tl.fromTo("#s3-send", { scale: 1 }, { scale: 0.86, duration: 0.06, yoyo: true, repeat: 1, ease: "power2.out", immediateRender: false }, 12.05);
+      swap("#s3-card2", "#s3-card3", 12.07); // beat-locked: 12.07s
+      tl.fromTo("#s3-live3", { opacity: 0, scale: 0.6 }, { opacity: 1, scale: 1, duration: 0.35, ease: "back.out(2)" }, 12.3);
+      tl.fromTo("#s3-gtile", { opacity: 1, y: 0 }, { opacity: 0, y: -40, duration: 0.2, ease: OUT }, 12.45);
+      tl.fromTo("#s3-gl", { opacity: 0, y: 30 }, { opacity: 1, y: 0, duration: 0.3, ease: "back.out(2)" }, 12.5);
+      tl.fromTo("#s3-gtoast", { opacity: 0, y: 30, scale: 0.9 }, { opacity: 1, y: 0, scale: 1, duration: 0.4, ease: "back.out(1.8)" }, 12.6); // beat: 12.60s
       // audio-reactive: the glow behind the live app breathes with the music's loudness (per-frame RMS)
       const glow = document.querySelector("#s3-glow");
-      tl.fromTo({ v: 0 }, { v: 0 }, { v: 1, duration: 5.8, ease: "none", onUpdate() {
-        const t = 3.72 + this.progress() * 5.8, r = RMS[Math.min(RMS.length - 1, Math.round((t + 2.094) * 30))];
+      tl.fromTo({ v: 0 }, { v: 0 }, { v: 1, duration: 9.99, ease: "none", onUpdate() {
+        const t = 3.72 + this.progress() * 9.99, r = RMS[Math.min(RMS.length - 1, Math.round((t + 2.094) * 30))];
         glow.style.opacity = (0.45 + 0.55 * r).toFixed(3); glow.style.scale = (0.96 + 0.06 * r).toFixed(3);
       } }, 3.72);
-      blurOut("#s3-left", 9.29, 0.22);
-      tl.fromTo("#s3-appwrap", { opacity: 1, scale: 1 }, { opacity: 0, scale: 0.7, x: -300, filter: "blur(8px)", duration: 0.25, ease: OUT, immediateRender: false }, 9.28);
+      blurOut("#s3-left", 13.48, 0.22);
+      tl.fromTo("#s3-appwrap", { opacity: 1, scale: 1 }, { opacity: 0, scale: 0.7, x: -300, filter: "blur(8px)", duration: 0.25, ease: OUT, immediateRender: false }, 13.47);
 
       // 4. Wall
-      blurIn("#s4-label", 9.52, 0.25);
-      [10.04, 10.56, 11.10, 11.62, 12.15].forEach((t, i) => // beat-grid: cards 1-5 at 10.04 10.56 11.10 11.62 12.15, full set holds to 14.54
+      blurIn("#s4-label", 13.71, 0.25);
+      [14.23, 14.75, 15.29, 15.81, 16.34].forEach((t, i) => // beat-grid: cards 1-5 at 14.23 14.75 15.29 15.81 16.34, full set holds to 18.73
         tl.fromTo(`#s4-c${i + 1}`, { opacity: 0, y: 60, scale: 0.94, filter: "blur(10px)" }, { opacity: 1, y: 0, scale: 1, filter: "blur(0px)", duration: 0.5, ease: IN }, t));
-      tl.fromTo(".wall", { opacity: 1, filter: "blur(0px)" }, { opacity: 0, filter: "blur(10px)", duration: 0.22, ease: OUT, immediateRender: false }, 14.54);
-      blurOut("#s4-label", 14.54, 0.22);
+      tl.fromTo(".wall", { opacity: 1, filter: "blur(0px)" }, { opacity: 0, filter: "blur(10px)", duration: 0.22, ease: OUT, immediateRender: false }, 18.73);
+      blurOut("#s4-label", 18.73, 0.22);
 
-      // 4b. Sharing and privacy (beats: 14.78 15.30 15.83 16.35 16.88 17.40 17.92 18.45 18.97 19.49)
-      blurIn("#s6-h2", 14.78, 0.25);
-      blurIn("#s6-sub", 15.04, 0.25);
-      tl.fromTo("#s6-card", { opacity: 0, y: 60, scale: 0.94 }, { opacity: 1, y: 0, scale: 1, duration: 0.5, ease: IN }, 15.04);
-      tl.fromTo("#s6-card .srow", { opacity: 0, y: 20 }, { opacity: 1, y: 0, duration: 0.35, ease: IN, stagger: 0.08 }, 15.3);
-      tl.fromTo("#s6-link", { opacity: 0, y: 20 }, { opacity: 0, y: 20, duration: 0.01 }, 15.3);
-      tl.fromTo("#s6-cursor", { x: 880, y: 1840, opacity: 0 }, { x: 156, y: 1194, opacity: 1, duration: 0.6, ease: "power3.inOut" }, 15.7);
+      // 4b. Sharing and privacy (beats: 18.97 19.49 20.02 20.54 21.07 21.59 22.11 22.64 23.16 23.68)
+      blurIn("#s6-h2", 18.97, 0.25);
+      blurIn("#s6-sub", 19.23, 0.25);
+      tl.fromTo("#s6-card", { opacity: 0, y: 60, scale: 0.94 }, { opacity: 1, y: 0, scale: 1, duration: 0.5, ease: IN }, 19.23);
+      tl.fromTo("#s6-card .srow", { opacity: 0, y: 20 }, { opacity: 1, y: 0, duration: 0.35, ease: IN, stagger: 0.08 }, 19.49);
+      tl.fromTo("#s6-link", { opacity: 0, y: 20 }, { opacity: 0, y: 20, duration: 0.01 }, 19.49);
+      tl.fromTo("#s6-cursor", { x: 880, y: 1840, opacity: 0 }, { x: 156, y: 1194, opacity: 1, duration: 0.6, ease: "power3.inOut" }, 19.89);
       const pick = (from, to, t) => { // the cursor's click moves the selection, as on the site
         tl.fromTo(`${from} .onfill, ${from} .ring`, { opacity: 1 }, { opacity: 0, duration: 0.14, immediateRender: false }, t);
         tl.fromTo(`${to} .onfill, ${to} .ring`, { opacity: 0 }, { opacity: 1, duration: 0.14, immediateRender: false }, t);
         tl.fromTo(to, { scale: 1 }, { scale: 0.97, duration: 0.07, yoyo: true, repeat: 1, ease: "power2.out", immediateRender: false }, t);
       };
-      pick("#s6-r1", "#s6-r2", 16.35); // beat: 16.35s
-      tl.fromTo("#s6-cursor", { x: 156, y: 1194 }, { x: 156, y: 1360, duration: 0.5, ease: "power3.inOut", immediateRender: false }, 16.85);
-      pick("#s6-r2", "#s6-r3", 17.40); // beat: 17.40s
-      tl.fromTo("#s6-link", { opacity: 0, y: 20 }, { opacity: 1, y: 0, duration: 0.4, ease: "back.out(1.8)", immediateRender: false }, 17.66);
-      tl.fromTo("#s6-cursor", { opacity: 1 }, { opacity: 0, duration: 0.2, immediateRender: false }, 18.45);
-      blurOut("#s6-head", 19.27, 0.22);
-      blurOut("#s6-card", 19.27, 0.22);
+      pick("#s6-r1", "#s6-r2", 20.54); // beat: 24.73s
+      tl.fromTo("#s6-cursor", { x: 156, y: 1194 }, { x: 156, y: 1360, duration: 0.5, ease: "power3.inOut", immediateRender: false }, 21.04);
+      pick("#s6-r2", "#s6-r3", 21.59); // beat: 25.78s
+      tl.fromTo("#s6-link", { opacity: 0, y: 20 }, { opacity: 1, y: 0, duration: 0.4, ease: "back.out(1.8)", immediateRender: false }, 21.85);
+      tl.fromTo("#s6-cursor", { opacity: 1 }, { opacity: 0, duration: 0.2, immediateRender: false }, 22.64);
+      blurOut("#s6-head", 23.46, 0.22);
+      blurOut("#s6-card", 23.46, 0.22);
 
       // 5. End card
-      tl.fromTo("#s5-card", { opacity: 0, scale: 0.86, y: 60 }, { opacity: 1, scale: 1, y: 0, duration: 0.5, ease: IN }, 19.45); // beat: 19.49s
-      blurIn("#s5-h2", 19.67, 0.22);
-      tl.fromTo("#s5-join", { opacity: 0, y: 30 }, { opacity: 1, y: 0, duration: 0.4, ease: IN }, 19.95);
-      blurIn("#s5-foot", 20.15, 0.3);
-      tl.fromTo("#s5-cursor", { x: 1500, y: 1000, opacity: 0 }, { x: 527, y: 1245, opacity: 1, duration: 0.55, ease: "power3.inOut" }, 19.95);
-      tl.fromTo("#s5-cta", { scale: 1 }, { scale: 0.94, duration: 0.07, yoyo: true, repeat: 1, ease: "power2.out", immediateRender: false }, 20.54); // beat: 20.54s
-      tl.fromTo("#s5-cursor", { opacity: 1 }, { opacity: 0, duration: 0.25, immediateRender: false }, 21.25);
+      tl.fromTo("#s5-card", { opacity: 0, scale: 0.86, y: 60 }, { opacity: 1, scale: 1, y: 0, duration: 0.5, ease: IN }, 23.64); // beat: 27.87s
+      blurIn("#s5-h2", 23.86, 0.22);
+      tl.fromTo("#s5-join", { opacity: 0, y: 30 }, { opacity: 1, y: 0, duration: 0.4, ease: IN }, 24.14);
+      blurIn("#s5-foot", 24.34, 0.3);
+      tl.fromTo("#s5-cursor", { x: 1500, y: 1000, opacity: 0 }, { x: 527, y: 1245, opacity: 1, duration: 0.55, ease: "power3.inOut" }, 24.14);
+      tl.fromTo("#s5-cta", { scale: 1 }, { scale: 0.94, duration: 0.07, yoyo: true, repeat: 1, ease: "power2.out", immediateRender: false }, 24.73); // beat: 28.92s
+      tl.fromTo("#s5-cursor", { opacity: 1 }, { opacity: 0, duration: 0.25, immediateRender: false }, 25.44);
 
       window.__timelines["main"] = tl;
       tl.seek(0);
