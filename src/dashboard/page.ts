@@ -310,6 +310,25 @@ function previewNote(s: SiteView): string {
 }
 
 /** An activity row as a sentence about who did it: "You turned on the public link". */
+/** Asked by uploads (dashboard.js publishChecked): rules a new app needs, and rules that let its users invite anyone. */
+const ACCESS_DIALOGS = `<dialog id="dlg-rules" class="howto-dialog" aria-labelledby="dlg-rules-title" aria-describedby="dlg-rules-reason">
+  <form method="dialog" class="dialog-close"><button aria-label="Close">×</button></form>
+  <div class="howto">
+    <h2 id="dlg-rules-title">This app can't be published yet</h2>
+    <p id="dlg-rules-reason" data-rules-reason></p>
+    <p><strong>To fix it,</strong> <span data-rules-fix></span> Or paste this into Claude, ChatGPT or your AI tool:</p>
+    <pre class="rules-prompt" data-rules-prompt></pre>
+    <div class="dialog-actions"><button type="button" class="secondary" data-close>Close</button><button type="button" data-rules-copy>Copy prompt</button></div>
+  </div>
+</dialog>
+<dialog id="dlg-public" class="howto-dialog confirm" aria-labelledby="dlg-public-title" aria-describedby="dlg-public-text">
+  <div class="howto">
+    <h2 id="dlg-public-title">People using this app can invite anyone</h2>
+    <p id="dlg-public-text">Treat it as public: anyone they invite can open it.</p>
+    <div class="dialog-actions"><button type="button" class="secondary" data-close>Cancel</button><button type="button" data-public-go>Publish anyway</button></div>
+  </div>
+</dialog>`;
+
 export function activitySentence(row: AuditRow, me: string): string {
   const s = describeActivity(row);
   const rest = s.slice(0, 1).toLowerCase() + s.slice(1);
@@ -533,6 +552,7 @@ ${
 </section>
 </div>
 
+${ACCESS_DIALOGS}
 <dialog id="dlg-reset" class="howto-dialog confirm" aria-labelledby="dlg-reset-title">
   <div class="howto">
     <h2 id="dlg-reset-title">Reset the link?</h2>
@@ -813,6 +833,7 @@ export async function newAppPage(c: Context<AppEnv>): Promise<Response> {
   <p class="muted">${builderOn ? "Building takes a minute or two." : "Claude: make sure Formelab is on under the <strong>+</strong> menu → Connectors. ChatGPT: pick <strong>Developer mode</strong> in the <strong>+</strong> menu and turn on Formelab."} New apps are private to you until you share them.</p>
 </section>
 ${keyDialogs}
+${ACCESS_DIALOGS}
 
 <section>
   <p class="eyebrow">Already have the files?</p>

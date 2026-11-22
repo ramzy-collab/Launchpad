@@ -197,11 +197,9 @@ export function rulesRequired(s: AccessScan, guideUrl: string) {
   }
   const ask = s.kv ? "Ask me who should see and change each kind of record before you write it." : "Ask me who should use them before you write it.";
   const prompt = `${promptStart} Write a formelab.json access rules file for it, following ${guideUrl}. ${ask}`;
-  const fix = s.kv
-    ? "To fix it, add a formelab.json that says who can see and change each kind of record."
-    : "To fix it, add a formelab.json that says who can use the app.";
+  const fix = s.kv ? "add a formelab.json that says who can see and change each kind of record." : "add a formelab.json that says who can use the app.";
   return err(400, "rules_required", `This app can't be published yet. It ${what} but has no access rules, so we can't tell who should see what.`,
-    `${fix} Or paste this into Claude, ChatGPT or your AI tool: ${prompt}`,
+    `To fix it, ${fix} Or paste this into Claude, ChatGPT or your AI tool: ${prompt}`,
     { title: "This app can't be published yet", reason: `It ${what} but has no access rules, so we can't tell who should see what.`, fix, prompt, prefixes: s.prefixes });
 }
 
