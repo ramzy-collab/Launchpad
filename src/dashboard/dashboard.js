@@ -51,16 +51,7 @@
     return api("POST", "/sites", fd).catch(function (e) {
       var d = e.details || {};
       if (e.code === "rules_required" && document.getElementById("dlg-rules")) {
-        var dlg = document.getElementById("dlg-rules");
-        dlg.querySelector("[data-rules-reason]").textContent = d.reason || e.message;
-        dlg.querySelector("[data-rules-fix]").textContent = d.fix || "";
-        dlg.querySelector("[data-rules-prompt]").textContent = d.prompt || "";
-        dlg.querySelector("[data-rules-copy]").onclick = function () {
-          if (navigator.clipboard && navigator.clipboard.writeText) {
-            navigator.clipboard.writeText(d.prompt || "").then(function () { toast("Prompt copied"); }, function () { toast("Couldn't copy it. Select the text and copy it instead.", true); });
-          } else toast("Couldn't copy it. Select the text and copy it instead.", true);
-        };
-        dlg.showModal();
+        openRulesDialog({ title: d.title, reason: d.reason || e.message, fix: d.fix, prompt: d.prompt });
         e.quiet = true;
       } else if (e.code === "confirm_public" && document.getElementById("dlg-public")) {
         var pub = document.getElementById("dlg-public");
@@ -79,6 +70,26 @@
       throw e;
     });
   }
+
+  // The access rules dialog: why rules are needed, the fix, and a prompt to copy into an AI tool.
+  function openRulesDialog(d) {
+    var dlg = document.getElementById("dlg-rules");
+    dlg.querySelector("[data-rules-title]").textContent = d.title || "This app can't be published yet";
+    dlg.querySelector("[data-rules-reason]").textContent = d.reason || "";
+    dlg.querySelector("[data-rules-fix]").textContent = d.fix || "";
+    dlg.querySelector("[data-rules-prompt]").textContent = d.prompt || "";
+    dlg.querySelector("[data-rules-copy]").onclick = function () {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(d.prompt || "").then(function () { toast("Prompt copied"); }, function () { toast("Couldn't copy it. Select the text and copy it instead.", true); });
+      } else toast("Couldn't copy it. Select the text and copy it instead.", true);
+    };
+    dlg.showModal();
+  }
+  // "Add rules" on an app's page, under the No access rules warning.
+  document.addEventListener("click", function (ev) {
+    var btn = ev.target.closest("[data-add-rules]");
+    if (btn) openRulesDialog(JSON.parse(btn.dataset.addRules));
+  });
 
   function busy(form, on) {
     var buttons = form.querySelectorAll("button");

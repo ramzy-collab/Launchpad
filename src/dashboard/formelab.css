@@ -450,6 +450,7 @@ button.cta { border: 0; cursor: pointer; font: inherit; font-weight: 600; }
 .dash main .seg button:disabled { cursor: not-allowed; }
 .note { font-size: .875rem; color: var(--fl-ink-soft); background: var(--fl-surface-2); border-radius: var(--fl-radius-sm); padding: 8px 12px; }
 .note[hidden], .pub-warn[hidden], .linkbox[hidden], .setting[hidden], .lp[hidden], .progress[hidden], .dropzone[hidden] { display: none; }
+.rules-warn { margin: 0 0 16px; }
 .pub-warn { display: flex; gap: 10px; align-items: flex-start; border: 1px solid var(--fl-warn-line); background: var(--fl-warn-bg); border-radius: var(--fl-radius-md); padding: 12px 14px; font-size: .875rem; color: var(--fl-ink); }
 .pub-warn svg { color: var(--fl-warn-ink); flex: none; margin-top: 1px; }
 .linkbox { margin-top: 12px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; background: var(--fl-surface-2); border: 1px solid var(--fl-line); border-radius: var(--fl-radius-md); padding: 10px 10px 10px 14px; }

@@ -2,7 +2,8 @@ import type { Context } from "hono";
 import { describeActivity, HIGH_VOLUME_ACTIONS, siteActivity, type AuditRow } from "../audit";
 import { canPublishTo, listTokens } from "../auth";
 import type { AppEnv, User } from "../env";
-import { getManageableSite, listNamespaces, listOwnSites, listSharedSites, type SiteView } from "../sites";
+import { accessOfSite, getManageableSite, listNamespaces, listOwnSites, listSharedSites, type SiteView } from "../sites";
+import { rulesRequired } from "../rules";
 import { ago, escapeHtml as e } from "../util";
 import { ApiError } from "../errors";
 import { notFoundPage } from "../serve";
@@ -314,7 +315,7 @@ function previewNote(s: SiteView): string {
 const ACCESS_DIALOGS = `<dialog id="dlg-rules" class="howto-dialog" aria-labelledby="dlg-rules-title" aria-describedby="dlg-rules-reason">
   <form method="dialog" class="dialog-close"><button aria-label="Close">×</button></form>
   <div class="howto">
-    <h2 id="dlg-rules-title">This app can't be published yet</h2>
+    <h2 id="dlg-rules-title" data-rules-title>This app can't be published yet</h2>
     <p id="dlg-rules-reason" data-rules-reason></p>
     <p><strong>To fix it,</strong> <span data-rules-fix></span> Or paste this into Claude, ChatGPT or your AI tool:</p>
     <pre class="rules-prompt" data-rules-prompt></pre>
@@ -428,6 +429,19 @@ export async function appSettingsPage(c: Context<AppEnv>, id: string): Promise<R
     : `<h2>Upload a new version</h2>
   <p class="muted">A single <code>.html</code> file, or a <code>.zip</code> with <code>index.html</code> at the top.</p>
   ${dropzone(true)}`;
+  // Apps without access rules, or whose rules let people invite anyone (see src/rules.ts).
+  const scan = await accessOfSite(c.env, row);
+  const services = scan.sheets || scan.connectors;
+  let rulesWarn = "";
+  if (!scan.rules && (scan.kv || services)) {
+    const said = scan.kv
+      ? `Everyone who can open this app can see all of its saved data, and its users can't connect their AI.${services ? " They can also use its connected services." : ""}`
+      : "Everyone who can open this app can use its connected services.";
+    const prompt = { ...rulesRequired(scan, `${aiOrigin(c.env, c.req.url)}/guide#access-rules`).details, title: "Add access rules" };
+    rulesWarn = `<strong>No access rules.</strong> ${said} <button type="button" class="linkish" data-add-rules="${e(JSON.stringify(prompt))}" aria-haspopup="dialog">Add rules</button>`;
+  } else if (scan.invites) {
+    rulesWarn = "<strong>Treated as public.</strong> People using this app can invite anyone, and anyone they invite can open it.";
+  }
   const acts = activity
     .map((a) => `<li><span class="act-what">${e(activitySentence(a, user.email))}</span><span class="act-when">${e(ago(a.at))}</span></li>`)
     .join("");
@@ -460,6 +474,7 @@ export async function appSettingsPage(c: Context<AppEnv>, id: string): Promise<R
     </div>
   </div>
 </section>
+${rulesWarn ? `<div class="pub-warn rules-warn" role="note">${ICON.alert()}<span>${rulesWarn}</span></div>` : ""}
 
 <div class="tabbar" role="tablist" aria-label="App settings">
   ${tab("sharing", "Sharing", true)}${conns ? tab("connected", `Connected apps <span class="tab-badge" data-conn-count>${conns.count}</span>`) : ""}${tab("update", "Update")}${tab("activity", "Activity")}

@@ -169,6 +169,9 @@ export function scanAccess(files: FileMap): AccessScan {
   return scan;
 }
 
+/** A scan as stored in sites.access: the rules reduced to whether the app has valid ones. */
+export type StoredAccess = Omit<AccessScan, "rules"> & { rules: boolean };
+
 /** What the app's settings page needs from a scan, stored in sites.access as JSON. */
 export const storedAccess = (s: AccessScan) =>
   JSON.stringify({ kv: s.kv, prefixes: s.prefixes, dynamic: s.dynamic, sheets: s.sheets, connectors: s.connectors, rules: !!s.rules, invites: s.invites });
@@ -180,7 +183,7 @@ const LISTED = 10;
 const listOf = (items: string[]) => (items.length < 3 ? items.join(" and ") : `${items.slice(0, -1).join(", ")} and ${items.at(-1)}`);
 
 /** The refusal for a new app that needs rules: the reason, the remedy and a prompt to paste into an AI tool. */
-export function rulesRequired(s: AccessScan, guideUrl: string) {
+export function rulesRequired(s: Pick<AccessScan, "kv" | "prefixes" | "sheets" | "connectors">, guideUrl: string) {
   const shown = s.prefixes.slice(0, LISTED);
   const more = s.prefixes.length > LISTED ? ` and ${s.prefixes.length - LISTED} more` : "";
   const services = [s.sheets && "Google Sheets", s.connectors && "connected services"].filter((x): x is string => !!x);
