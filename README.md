@@ -308,6 +308,12 @@ write a new forward migration if you need to undo a schema change.
 - [ ] Use your own Google OAuth client in WorkOS (1.7) so the consent screen shows Formelab.
 - [ ] Set up notification emails (1.8) so people hear when they're let in and when apps are
   shared with them.
+- [ ] Check against WorkOS staging that the login page doesn't reveal which emails have an
+  account. Hand Cowork the test plan `docs/test-plans/2026-11-22-signin-enumeration.md` (admin
+  panel, Test plans), or run `scripts/workos-enum-check.sh` (instructions at its top). The key
+  checks: whether unverified and two-factor accounts get their extra sign-in step even with a
+  wrong password (`PW-05`, `PW-07`), and whether asking for a code creates a WorkOS user for an
+  unknown email (`SC-04`).
 
 ## 3. Local development
 
