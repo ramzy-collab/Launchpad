@@ -364,20 +364,27 @@ in Formelab, or an AI sets them with `update_site` (`sheets: ["<id or link>"]`).
 change the list, and only the owner can `create()` a spreadsheet; one created through the app is
 added to its list automatically. Any other spreadsheet fails with `sheet_not_allowed`.
 
+**People using the app read values and add or change rows; only the owner and editors change the
+spreadsheet itself.** Everyone who can open the app may use `read`, `append` and `update`, plus
+`values:batchGet`, `values:batchUpdate` and the spreadsheet's tab names through `request()`. Other
+calls (`batchUpdate` on the spreadsheet, clearing, copying tabs, data filters, developer metadata
+and `includeGridData`) work only for the owner and editors, and fail with `sheets_editors_only`
+(403) for everyone else. Build those parts of an app for its owner and editors only.
+
 ```js
 const { connected } = await formelab.sheets.available();   // false: the owner hasn't connected it
 const rows = await formelab.sheets.read(id, "Sheet1!A1:C50");              // [["Name","Email"], ...]
 await formelab.sheets.append(id, "Sheet1!A:C", [["Ada", "ada@example.com", new Date().toISOString()]]);
 await formelab.sheets.update(id, "Sheet1!B2", [["done"]]);
 const sheet = await formelab.sheets.create("Lunch sign-ups");             // { id, url }: a new spreadsheet
-// Anything else in the Sheets API v4 (path relative to https://sheets.googleapis.com/v4/):
+// Anything else in the Sheets API v4 (path relative to https://sheets.googleapis.com/v4/), owner and editors only:
 await formelab.sheets.request("POST", `spreadsheets/${id}:batchUpdate`, { body: { requests: [...] } });
 ```
 
 Values are entered as if typed (`USER_ENTERED`), so numbers, dates and formulas work. Store the
 spreadsheet id in KV rather than hard-coding it.
 Errors: `sheets_not_connected` (409), `sheet_not_allowed` (403: not on the app's list),
-`sheets_owner_only` (403: only the owner can create), `sheets_reconnect` (the owner must reconnect),
+`sheets_owner_only` (403: only the owner can create), `sheets_editors_only` (403: owner and editors only), `sheets_reconnect` (the owner must reconnect),
 `sheets_forbidden`, `sheets_not_found`, `rate_limited`. Show `e.message` and `e.hint`.
 
 #### Combining several spreadsheets

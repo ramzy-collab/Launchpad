@@ -218,7 +218,7 @@ export function runtimeApi() {
   api.get("/sheets", async (c) => c.json(await sheetsAvailable(c.env, c.get("site"))));
   api.post("/sheets", async (c) => {
     const body = await objectBody(c, '{ "method": "GET", "path": "spreadsheets/..." }', "Use formelab.sheets.read/append/update/create.", ["The request to Google Sheets is larger than 1 MB.", "Send fewer rows at a time."]);
-    return c.json(await sheetsCall(c.env, c.get("site"), c.get("user"), body));
+    return c.json(await sheetsCall(c.env, c.get("site"), c.get("user"), body, !!c.get("manages")));
   });
 
   api.notFound(() => jsonError(err(404, "not_found", "No such API endpoint.", "Check the SDK reference in /_platform/guide.md.")));

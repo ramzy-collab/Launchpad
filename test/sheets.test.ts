@@ -204,6 +204,66 @@ describe("Google Sheets as a connected app (OAuth)", () => {
     expect((await allowSheets(editor, ns, [SHEET])).status).toBe(200);
   });
 
+  it("lets people using the app read and write rows, but not edit the spreadsheet itself", async () => {
+    mockGoogle();
+    const ns = uniq();
+    const friend = `sv-${uniq()}@example.com`;
+    const editor = `sve-${uniq()}@example.com`;
+    await publishHtml(OWNER, ns, "s", PAGE("x"), { allowed_emails: friend, editors: editor });
+    await connectSheets(OWNER);
+    expect((await allowSheets(OWNER, ns, [SHEET])).status).toBe(200);
+    const s = `spreadsheets/${SHEET}`;
+    const reachedGoogle = () => seen.some((x) => x.url.startsWith("https://sheets.googleapis.com/"));
+
+    // What formelab.sheets.read/append/update send, plus batch value reads and writes and tab names.
+    const allowed = [
+      { method: "GET", path: `${s}/values/Sheet1!A1:B2` },
+      { method: "GET", path: `${s}/values/Sheet1%21A1%3AB2` },
+      { method: "POST", path: `${s}/values/Sheet1!A:B:append`, body: { values: [["Bo"]] } },
+      { method: "PUT", path: `${s}/values/Sheet1!A2:B2`, body: { values: [["Bo"]] } },
+      { method: "GET", path: `${s}/values:batchGet`, query: { ranges: ["A1:B2"] } },
+      { method: "POST", path: `${s}/values:batchUpdate`, body: { data: [] } },
+      { method: "GET", path: s },
+      { method: "GET", path: s, query: { fields: "sheets.properties" } },
+    ];
+    for (const req of allowed) {
+      seen.length = 0;
+      const res = await sheets(friend, ns, req);
+      expect(res.status, `${req.method} ${req.path}`).not.toBe(403);
+      expect(reachedGoogle(), `${req.method} ${req.path}`).toBe(true);
+    }
+
+    // Structural edits, clearing, data filters and whole-grid reads: refused before reaching Google.
+    const refused = [
+      { method: "POST", path: `${s}:batchUpdate`, body: { requests: [{ deleteSheet: { sheetId: 0 } }] } },
+      { method: "POST", path: `${s}/values/Sheet1!A1:B2:clear` },
+      { method: "POST", path: `${s}/values:batchClear`, body: { ranges: ["A:Z"] } },
+      { method: "POST", path: `${s}/values:batchGetByDataFilter`, body: {} },
+      { method: "POST", path: `${s}:getByDataFilter`, body: { includeGridData: true } },
+      { method: "POST", path: `${s}/sheets/0:copyTo`, body: {} },
+      { method: "GET", path: `${s}/developerMetadata/1` },
+      { method: "DELETE", path: `${s}/values/Sheet1!A1` },
+      { method: "GET", path: s, query: { includeGridData: "true" } },
+      { method: "GET", path: s, query: { include_grid_data: "true" } },
+      { method: "GET", path: s, query: { fields: "sheets(data(rowData))" } },
+      { method: "GET", path: s, query: { fields: ["sheets.properties", "sheets.data"] } },
+    ];
+    for (const req of refused) {
+      seen.length = 0;
+      const res = await sheets(friend, ns, req);
+      expect(res.status, `${req.method} ${req.path}`).toBe(403);
+      expect((await res.json<{ error: { code: string } }>()).error.code).toBe("sheets_editors_only");
+      expect(reachedGoogle()).toBe(false);
+    }
+
+    // The owner and editors can still do all of it.
+    for (const as of [OWNER, editor]) {
+      seen.length = 0;
+      expect((await sheets(as, ns, refused[0]!)).status).not.toBe(403);
+      expect(reachedGoogle()).toBe(true);
+    }
+  });
+
   it("lets only the owner create a spreadsheet, and adds it to the app's list", async () => {
     mockGoogle();
     const created = "1NewlyCreatedSpreadsheetId_abcdefghijklmn";

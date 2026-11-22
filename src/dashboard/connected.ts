@@ -176,7 +176,7 @@ export async function connectorPage(c: Context<AppEnv>): Promise<Response> {
     ${appsPanel(apps, "request", `No app uses ${e(k.label)} yet. Ask your AI to build an app with it, or to add it to one you have, for example "text me when a new lead comes in, with ${e(k.label)}".`)}
     <p class="muted">An app uses ${e(k.label)} when it's built to. To stop an app using it, remove it on the app's Connected apps tab.</p>
     <h2>How apps use it</h2>
-    <p class="muted">The app names ${e(k.name)} in its code. Formelab adds the key on the way out, so it never reaches the app, its code or the people you share it with.</p>
+    <p class="muted">The app names ${e(k.name)} in its code. Formelab adds the key on the way out, so it never reaches the app, its code or the people you share it with. People who can open the app can still make their own calls with it to ${e(k.hosts.join(", "))}, not only the ones the app makes.</p>
     <pre class="cx-code">${e(sample)}</pre>
   </section>
   <section class="cx-panel">
@@ -346,7 +346,7 @@ ${outcome ? `<p class="cx-flash ${outcome[0] ? "ok" : "error"}" role="status">${
     <p><a class="cta" href="/services/google-sheets/connect">Connect with Google</a></p>
     <p class="muted">Google asks you to pick an account and allow access to your spreadsheets.</p>`
     }
-    <p class="muted">Apps use your Google account, also when people you share them with use them. Your sign-in is encrypted and never shown to apps or people.</p>
+    <p class="muted">Apps use your Google account, also when people you share them with use them. They can read and change the rows of the spreadsheets you list for an app, also outside the app's own screens. Only you and the app's editors can change a spreadsheet itself, like deleting a tab. Your sign-in is encrypted and never shown to apps or people.</p>
   </section>
 </div>
 ${
