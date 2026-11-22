@@ -14,6 +14,16 @@ each person seeing only what they are allowed to.
 Note: `formelab.kv` is stored in D1 (`kv` and `kv_user` tables, `src/kv.ts`), not Cloudflare KV.
 Storage is not the security question; who may read and write is.
 
+## Found while checking (Nov 22, 2026), to fix before step 1
+
+Two existing problems, each a small change of its own (details in step 6 and the open items):
+
+1. People an app is shared with can make any Sheets or connector call, with the owner's account
+   or key, beyond what the app's code does, and `data_writes` doesn't limit them. At minimum, make
+   non-GET Sheets calls and `batchUpdate` follow `data_writes`, and say in the Connected apps copy
+   that people who can open the app can use the key directly, not only through the app.
+2. Sign-in step one shows whether an email has a password set (account enumeration, low severity).
+
 ## Build order
 
 | Step | What | Requires | Delivers on its own |
@@ -50,7 +60,19 @@ Rules:
   (never the value), and the AI tool that made it (the OAuth client name or deploy key's
   `clientName`, falling back to "an AI tool"). The log shows "Ramzy, via ChatGPT".
 
-To check while building: that every OAuth connection passes its client name through to the tools.
+Checked (Nov 22, 2026): the client name reaches `handleMcp` but not the tools. `mcpApiHandler`
+(`src/oauth.ts`) works it out as the `initialize` message's `clientInfo.name`, else the grant's
+`props.client`, else the User-Agent, and passes it to `handleMcp` (`src/mcp.ts`), which uses it only
+for Metrics (`countToolCalls`). The `Ctx` the tools get (`env`, `user`, `waitUntil`, `requestUrl`)
+has no client. Step 1 adds `client` to `Ctx`. Gaps to handle:
+
+- OAuth grants approved before `props` carried `client` have none; the User-Agent fallback can
+  also be null. Hence "an AI tool".
+- Deploy keys have a name only once their app has sent an `initialize` (`noteTokenClient`), and
+  it is whatever that app said last.
+- Every source is self-reported: a client registers its own `client_name` (dynamic registration
+  or a client metadata document). The log line records what the tool called itself, not a
+  verified identity. The actor (the person's email) is the trustworthy part.
 
 ## Step 2: the rules file and publish checks
 
@@ -219,8 +241,47 @@ Builds on what exists (behind `connected_apps`): Google Sheets (`src/sheets.ts`)
   The owner sets up RLS once.
 - Any other connected API: role level only (`all` or `none`).
 
-To check before building: whether viewers can call Sheets and connectors through an app today, and
-whether Sheets reads come back as rows Formelab can filter by column.
+### Checked (Nov 22, 2026): what people an app is shared with can do today
+
+Yes, they can, and with more reach than the app's own code uses. In `src/runtime.ts`, every
+signed-in person who can open the app (`canViewSite`: owner, editors, share list, and every active
+Formelab member when visibility is "All Formelab members") may call:
+
+- `POST /_api/sheets` (`sheetsCall`, `src/sheets.ts`): any method (GET, POST, PUT, DELETE) and
+  any Sheets API path on the spreadsheets the owner listed for the app, with the owner's Google
+  token. Only creating a spreadsheet is owner-only. That includes `spreadsheets/<id>?includeGridData=true`
+  (every tab, every cell) and `spreadsheets/<id>:batchUpdate` (delete tabs, rewrite anything).
+- `POST /_api/connectors/<name>/fetch` and `/_api/secrets/<name>/proxy`: any method and path on
+  the connector's or secret's allowed hosts, with the owner's key.
+
+The app's `data_writes` setting ("only editors change shared data") applies to `formelab.kv` only,
+not to Sheets or connectors. Limits per viewer are rate limits (`viewerLimits`, `checkRate`).
+Public link guests are refused all of these (sign-in required). `test/sheets.test.ts` asserts that
+a share-list person can append rows, so this is intended behavior, not an accident.
+
+For step 6 this means filtering what the SDK helpers return is not enough: a person can skip the
+app's code and call the endpoint directly. Rules must be applied in `sheetsCall` and
+`connectorFetch` on the server, and for people below owner or editor the Sheets endpoint must only
+accept the operations the filter understands (values read, append, update), refusing
+`batchUpdate`, `includeGridData`, data filters and developer metadata.
+
+### Checked (Nov 22, 2026): the shape of Sheets reads
+
+`sheetsCall` returns Google's JSON unchanged as `{ status, data }`. A values read is
+`{ range, majorDimension, values }` with `values` an array of rows, each an array of cell strings;
+`formelab.sheets.read()` returns just `values` (`src/sdk.js`). There are no column names: row 1 is
+a header only by convention, and a range that starts below it (`Sheet1!A5:C10`) has none.
+
+So filtering by `owner_column` works, with these conditions:
+
+- Formelab reads the header row itself (row 1 of the tab) to find the column, rather than trusting
+  the requested range.
+- It forces `majorDimension=ROWS` and a known `valueRenderOption`, since the caller's `query` can
+  flip rows and columns or return formulas instead of values.
+- Matching is on the normalized email (`normEmail`), and rows with an empty owner cell are dropped.
+- Writes are allowed only by row: `append` with the person's email in the owner column, and
+  `update` only on ranges whose rows already belong to them. Ranges spanning other people's rows
+  are refused.
 
 ## Test plans
 
@@ -238,9 +299,22 @@ Thanksgiving Menu. Example cases:
 ## Open items to verify (not design questions)
 
 - How many live apps use a public link and read shared data (affects how loud the existing-app
-  warning should be).
-- Whether the current signup and sign-in pages answer differently for known and unknown emails. If
-  so, that leak exists today and should be fixed on its own.
+  warning should be). Not answerable from the code; needs a query on production D1 (`sites` with
+  `public_link` set, joined to `kv` by `site_id`).
+- ~~Whether the current signup and sign-in pages answer differently for known and unknown
+  emails.~~ Checked Nov 22, 2026:
+  - Waitlist signup (`POST /_api/waitlist`, `src/waitlist.ts`): same answer for every email. Only
+    the first join sends an email, and that email goes to the address itself.
+  - Forgot password (`forgotPost`, `src/signin.ts`): same answer for every email.
+  - Sign-in step one (`signInPost`, `src/signin.ts`): **differs.** After "Continue with email" the
+    password page adds "New here, or haven't set a password? Choose Email me a code." unless
+    `users.has_password` is 1. Anyone can learn whether an email has a Formelab account with a
+    password set. Unknown emails and accounts without a password look the same. Fix on its own:
+    show that hint to everyone (or no one), so the page no longer depends on the lookup.
+  - "Email me a code" and wrong passwords: Formelab's own copy is the same for every email, but
+    WorkOS's error message is shown as is when sending a code fails (`sent.message`). Whether
+    WorkOS words it differently for unknown emails can't be told from the code; check against
+    WorkOS once.
 - WorkOS cost for large numbers of app sign-ins.
 - Lawyer: processor terms, deletion deadlines (GDPR: one month), marketing consent.
 
