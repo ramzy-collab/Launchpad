@@ -5,7 +5,7 @@
 # a table of status, error code, message and median time per account kind and call, plus answers to
 # the three questions in the sign-in enumeration fix (see the PR that added this script).
 #
-# Needs: bash, curl, jq. A WorkOS *test* environment key (sk_test_...), never production.
+# Needs: bash (macOS's built-in 3.2 is fine), curl, jq. A WorkOS *test* environment key (sk_test_...), never production.
 #
 # Set up the accounts in the WorkOS staging environment first, then:
 #
@@ -28,7 +28,6 @@
 # email, the script records it and deletes that user (and only that one), so the next run still
 # tests an email with no account.
 set -euo pipefail
-(( BASH_VERSINFO[0] >= 4 )) || { echo "Needs bash 4 or later (on a Mac: brew install bash, then run it with that bash)." >&2; exit 2; }
 
 label="${1:-}"
 [[ "$label" =~ ^[a-z0-9-]+$ ]] || { echo "Usage: $0 <label, e.g. signup-on or signup-off>" >&2; exit 2; }
@@ -44,18 +43,19 @@ mkdir -p "$OUT/bodies"
 RESULTS="$OUT/results.tsv"
 printf 'kind\tcall\trun\tstatus\tcode\tmessage\ttime\n' >"$RESULTS"
 
-# Kind of account → email. Known kinds have a user; unknown_* kinds must not.
-declare -A EMAIL=(
-  [password]="${EMAIL_PASSWORD:?Set EMAIL_PASSWORD}"
-  [no_password]="${EMAIL_NO_PASSWORD:?Set EMAIL_NO_PASSWORD}"
-  [unverified]="${EMAIL_UNVERIFIED:?Set EMAIL_UNVERIFIED}"
-  [mfa]="${EMAIL_MFA:?Set EMAIL_MFA}"
-  [unknown_owned]="${EMAIL_UNKNOWN_OWNED:?Set EMAIL_UNKNOWN_OWNED}"
-  [unknown_invalid]="${EMAIL_UNKNOWN_INVALID:-enum-check@x.invalid}"
-  [unknown_sso]="${EMAIL_UNKNOWN_SSO:?Set EMAIL_UNKNOWN_SSO}"
-)
+# Kinds of account, and their emails in the same order. Known kinds have a user; unknown_* must not.
+# (Plain arrays rather than associative ones, so macOS's bash 3.2 runs it.)
 KINDS=(password no_password unverified mfa unknown_owned unknown_invalid unknown_sso)
-declare -A LAST=()
+EMAILS=(
+  "${EMAIL_PASSWORD:?Set EMAIL_PASSWORD}"
+  "${EMAIL_NO_PASSWORD:?Set EMAIL_NO_PASSWORD}"
+  "${EMAIL_UNVERIFIED:?Set EMAIL_UNVERIFIED}"
+  "${EMAIL_MFA:?Set EMAIL_MFA}"
+  "${EMAIL_UNKNOWN_OWNED:?Set EMAIL_UNKNOWN_OWNED}"
+  "${EMAIL_UNKNOWN_INVALID:-enum-check@x.invalid}"
+  "${EMAIL_UNKNOWN_SSO:?Set EMAIL_UNKNOWN_SSO}"
+)
+LAST=() # when each kind's email was last called, by the same index
 
 auth=(-H "Authorization: Bearer $WORKOS_API_KEY")
 json=(-H "Content-Type: application/json")
@@ -65,18 +65,15 @@ user_id() {
   curl -sS "${auth[@]}" --get --data-urlencode "email=$1" "$API/user_management/users" | jq -r '.data[0].id // ""'
 }
 
-# Seconds since 1970 with a fraction where bash has it (bash 5), whole seconds otherwise.
-clock() { echo "${EPOCHREALTIME:-$(date +%s)}"; }
-
-# Waits until GAP seconds have passed since the last call for this kind's email.
+# Waits until GAP seconds have passed since the last call for the email at index $1. The clock
+# counts whole seconds, so it waits one more to be sure.
 pace() {
-  local kind="$1" now wait
-  if [[ -n "${LAST[$kind]:-}" ]]; then
-    now=$(clock)
-    wait=$(awk -v l="${LAST[$kind]}" -v n="$now" -v g="$GAP" 'BEGIN { w = g - (n - l); print (w > 0 ? w : 0) }')
-    sleep "$wait"
+  local i="$1" wait
+  if [[ -n "${LAST[$i]:-}" ]]; then
+    wait=$(( GAP + 1 - ($(date +%s) - LAST[i]) ))
+    if (( wait > 0 )); then sleep "$wait"; fi
   fi
-  LAST[$kind]=$(clock)
+  LAST[$i]=$(date +%s)
 }
 
 # POSTs JSON to a WorkOS path and records one result row. Never records a one-time code.
@@ -99,19 +96,21 @@ record() {
 }
 
 # Before anything: the unknown emails must not have users yet, and the known ones must.
-for kind in "${KINDS[@]}"; do
-  id=$(user_id "${EMAIL[$kind]}")
-  if [[ "$kind" == unknown_* && -n "$id" ]]; then echo "Stop: ${EMAIL[$kind]} ($kind) already has a user ($id). Pick another email." >&2; exit 1; fi
-  if [[ "$kind" != unknown_* && -z "$id" ]]; then echo "Stop: ${EMAIL[$kind]} ($kind) has no user. Create it first." >&2; exit 1; fi
+for i in "${!KINDS[@]}"; do
+  kind="${KINDS[$i]}"
+  id=$(user_id "${EMAILS[$i]}")
+  if [[ "$kind" == unknown_* && -n "$id" ]]; then echo "Stop: ${EMAILS[$i]} ($kind) already has a user ($id). Pick another email." >&2; exit 1; fi
+  if [[ "$kind" != unknown_* && -z "$id" ]]; then echo "Stop: ${EMAILS[$i]} ($kind) has no user. Create it first." >&2; exit 1; fi
 done
 
 created_users=0
 echo "Label $label: $RUNS runs, $GAP s between calls per email. Results in $OUT."
 for run in $(seq 1 "$RUNS"); do
   for call in send_code wrong_password wrong_code; do
-    for kind in "${KINDS[@]}"; do
-      email="${EMAIL[$kind]}"
-      pace "$kind"
+    for i in "${!KINDS[@]}"; do
+      kind="${KINDS[$i]}"
+      email="${EMAILS[$i]}"
+      pace "$i"
       case "$call" in
         send_code)
           record "$kind" send_code "$run" /user_management/magic_auth "$(jq -nc --arg e "$email" '{email: $e}')"
