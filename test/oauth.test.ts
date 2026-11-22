@@ -183,7 +183,9 @@ describe("OAuth for MCP (Claude chat connector)", () => {
     const names = (await list.json<{ result: { tools: { name: string }[] } }>()).result.tools.map((t) => t.name);
     expect(names).toContain("read_file");
     expect(names).toContain("fetch");
-    for (const write of ["publish", "update_site", "delete_site"]) expect(names).not.toContain(write);
+    expect(names).toContain("kv_list");
+    expect(names).toContain("kv_get");
+    for (const write of ["publish", "update_site", "delete_site", "kv_set", "kv_delete"]) expect(names).not.toContain(write);
 
     const del = await (await mcpCall(tokens.access_token, "delete_site", { namespace: ns, mount_path: "r" })).json<{ result?: { isError?: boolean }; error?: unknown }>();
     expect(del.error ?? del.result?.isError).toBeTruthy();
@@ -195,6 +197,12 @@ describe("OAuth for MCP (Claude chat connector)", () => {
     const full = await connect(OWNER);
     const pub = await (await mcpCall(full.tokens.access_token, "update_site", { namespace: ns, mount_path: "r", title: "Changed" })).json<{ result: { isError?: boolean } }>();
     expect(pub.result.isError).toBeFalsy();
+
+    // A change to the app's data is logged with the AI app's name from its connection.
+    const set = await (await mcpCall(full.tokens.access_token, "kv_set", { namespace: ns, mount_path: "r", key: "k", value: 1 })).json<{ result: { isError?: boolean } }>();
+    expect(set.result.isError).toBeFalsy();
+    const site = await env.DB.prepare("SELECT id FROM sites WHERE namespace = ?").bind(ns).first<{ id: string }>();
+    expect(await (await call(`/app/apps/${site!.id}/activity`, { as: OWNER })).text()).toContain("Changed &quot;k&quot; in the app&#39;s data, via Claude");
   });
 
   it("requires an Access sign-in on /authorize", async () => {
