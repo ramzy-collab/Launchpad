@@ -527,6 +527,7 @@ button.cta { border: 0; cursor: pointer; font: inherit; font-weight: 600; }
 .act-what { flex: 1; min-width: 0; word-break: break-word; }
 .act-when { font-size: .8125rem; color: var(--fl-ink-soft); white-space: nowrap; }
 .howto-dialog.confirm { width: min(28rem, calc(100vw - 32px)); }
+.rules-prompt { background: var(--fl-surface); border: 1px solid var(--fl-line); border-radius: var(--fl-radius-md); padding: 12px 14px; margin: 0 0 16px; word-break: normal; overflow-wrap: anywhere; font-size: .875rem; }
 .howto-dialog h2 { font-size: 1.25rem; margin: 0 0 8px; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; margin-top: 16px; }
 .confirm-label { display: flex; flex-direction: column; gap: 6px; font-size: .875rem; color: var(--fl-ink-soft); }

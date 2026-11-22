@@ -507,7 +507,8 @@ export async function buildApp(ctx: Ctx, b: Builder, rawIdea: unknown, progress:
   const namespace = await homeNamespace(ctx);
   const mountPath = await freeMount(env, namespace, title);
   const dataWrites = choice === "auto" ? (writesSharedData(generated.html) ? "everyone" : "editors") : choice;
-  const published = await publishSite(ctx, { namespace, mountPath, files: filesFromHtml(generated.html), title, dataWrites });
+  // shortcut: the builder writes one HTML file and no formelab.json, so its apps skip access rules; teach it to write rules, then drop rulesRequired.
+  const published = await publishSite(ctx, { namespace, mountPath, files: filesFromHtml(generated.html), title, dataWrites, rulesRequired: false });
   await audit(env, user.email, "ai_build", `${namespace}/${mountPath}`, { siteId: published.site.id, builder: BUILDERS[b].name, model: generated.model, tokens: generated.tokens, dataWrites });
   return { url: published.url, title, namespace, mountPath, model: generated.model, dataWrites: { value: dataWrites, chosen: choice === "auto" ? "auto" : "you" }, siteId: published.site.id };
 }

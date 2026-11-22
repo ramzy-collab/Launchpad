@@ -9,9 +9,10 @@ import { contentTypeFor } from "./mime";
 import type { FileMap } from "./upload";
 import { base32, isEmail, normEmail, parseJsonArray, randomBytes, randomId, sha256Hex, sortableId } from "./util";
 import { appSharedEmail, namespaceSharedEmail, sendEach, shareEmailAllowance } from "./email";
-import { appOrigin, siteOrigin } from "./hosts";
+import { aiOrigin, appOrigin, siteOrigin } from "./hosts";
 import { flagOnForOwner } from "./flags";
 import { connectorNameList } from "./connectors";
+import { confirmPublic, needsRules, rulesRequired, scanAccess, storedAccess } from "./rules";
 
 /** Addresses in `next` that weren't in `prev` (both normalized). */
 const added = (next: string[], prev: string[]) => {
@@ -107,6 +108,10 @@ export interface SiteRow {
   sharers?: string;
   /** 0 once the app was handed to someone else: its namespace's owner no longer owns it (isAppOwner). */
   space_owner_powers?: number;
+  /** 1 for apps made once access rules shipped: they can't save data or use services without formelab.json. */
+  rules_required?: number;
+  /** JSON: what the last publish's scan found (storedAccess in src/rules.ts), or NULL before the first one. */
+  access?: string | null;
 }
 
 /** Everything a service call needs: bindings, the acting user, and a way to defer work. */
@@ -622,6 +627,10 @@ export interface PublishInput {
   requireIcon?: boolean;
   /** The version the files were built on (edits, partial uploads): refuse if the app has changed since. */
   expectedVersion?: string;
+  /** Whether a new app must have access rules (formelab.json); default true. Existing apps keep theirs. */
+  rulesRequired?: boolean;
+  /** The person accepted that rules allowing in-app invites make the app public (see confirmPublic). */
+  confirmPublic?: unknown;
 }
 
 /** Shown to AI apps whose publish was refused for lack of an icon. */
@@ -730,6 +739,13 @@ export async function publishSite(ctx: Ctx, input: PublishInput) {
     throw err(409, "namespace_taken", `The namespace "${label}" belongs to someone else.`, `Publish to your own namespace instead, or ask ${ns.owner_email} to add you as an editor.`);
   }
   if (!existing && editors) await requireAccounts(env, editors);
+  // Access rules (src/rules.ts): a broken formelab.json is refused for every app; a new app that
+  // saves data or uses connected services needs one; rules allowing invites are confirmed once.
+  const access = scanAccess(input.files);
+  const rulesRequiredHere = existing ? !!existing.rules_required : input.rulesRequired !== false;
+  if (rulesRequiredHere && needsRules(access)) throw rulesRequired(access, `${aiOrigin(env, ctx.requestUrl)}/guide#access-rules`);
+  const confirmedPublic = access.invites && !(existing?.access && JSON.parse(existing.access).invites);
+  if (confirmedPublic && input.confirmPublic !== true && input.confirmPublic !== "true") throw confirmPublic();
   // Publishing a new version never changes who can open or edit the app; that only happens
   // through update_site / the app's settings. Say so when the caller asked for something else.
   const sharingNote = existing && sharingDiffers(existing, visibility, allowed, editors)
@@ -758,7 +774,7 @@ export async function publishSite(ctx: Ctx, input: PublishInput) {
       // title (as a blank form field sends) keeps the current one.
       const res = await env.DB.prepare(
         `UPDATE sites SET current_version = ?, file_count = ?, total_bytes = ?, updated_at = ?,
-           title = COALESCE(?, title), spa = COALESCE(?, spa)
+           title = COALESCE(?, title), spa = COALESCE(?, spa), access = ?
          WHERE id = ? AND current_version = ?`,
       )
         .bind(
@@ -768,6 +784,7 @@ export async function publishSite(ctx: Ctx, input: PublishInput) {
           t,
           title ?? null,
           spa === undefined ? null : spa ? 1 : 0,
+          storedAccess(access),
           id,
           existing.current_version,
         )
@@ -776,8 +793,9 @@ export async function publishSite(ctx: Ctx, input: PublishInput) {
     } else {
       await env.DB.prepare(
         `INSERT INTO sites (id, namespace, mount_path, title, owner_email, editors, visibility, allowed_emails,
-                            hidden, spa, current_version, file_count, total_bytes, created_at, updated_at, kv_writes, host_label)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                            hidden, spa, current_version, file_count, total_bytes, created_at, updated_at, kv_writes, host_label,
+                            rules_required, access)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
         .bind(
           id,
@@ -796,6 +814,8 @@ export async function publishSite(ctx: Ctx, input: PublishInput) {
           t,
           dataWrites ?? "editors",
           hostLabel,
+          rulesRequiredHere ? 1 : 0,
+          storedAccess(access),
         )
         .run();
     }
@@ -817,6 +837,7 @@ export async function publishSite(ctx: Ctx, input: PublishInput) {
     version,
     files: input.files.size,
     bytes: totalBytes,
+    ...(confirmedPublic ? { confirmedPublic: true } : {}),
   });
   const held = existing ? [] : await notifyShared(ctx, row, allowed ?? [], editors ?? []);
   const site = siteView(env, row, ctx.requestUrl);
@@ -1078,6 +1099,10 @@ export async function copySite(ctx: Ctx, id: string) {
     visibility: "restricted",
     allowedEmails: [],
     dataWrites: site.kv_writes === "editors" ? "editors" : "everyone",
+    // A copy of an app made before access rules is no newer than the app itself.
+    rulesRequired: !!site.rules_required,
+    // Its rules were already accepted on the original.
+    confirmPublic: true,
   });
   await audit(ctx.env, ctx.user.email, "copy_site", `${ns.label}/${mount}`, { siteId: result.site.id, fromSiteId: id, from: `${site.namespace}/${site.mount_path}` });
   return result;

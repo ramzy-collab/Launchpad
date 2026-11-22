@@ -91,9 +91,11 @@ export function describeActivity(row: AuditRow): string {
   const t = row.target ?? "";
   switch (row.action) {
     case "publish":
-      return `Published the app (${plural(d.files, "file")}, ${size(d.bytes)})`;
-    case "replace":
-      return `Published a new version (${plural(d.files, "file")}, ${size(d.bytes)})`;
+    case "replace": {
+      const what = row.action === "publish" ? "Published the app" : "Published a new version";
+      const invites = d.confirmedPublic ? ", and accepted that people using it can invite anyone" : "";
+      return `${what} (${plural(d.files, "file")}, ${size(d.bytes)})${invites}`;
+    }
     case "update_site": {
       const parts: string[] = [];
       const explained = new Set<string>();

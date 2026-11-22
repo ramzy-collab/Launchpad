@@ -229,7 +229,7 @@ describe("share helpers", () => {
   });
 
   it("draws the guide's starter illustration", async () => {
-    const starter = GUIDE_MD.slice(GUIDE_MD.indexOf("## 5. Starter app"));
+    const starter = GUIDE_MD.slice(GUIDE_MD.indexOf("## 6. Starter app"));
     const share = findShareImage(["index.html"], starter, "");
     expect(share).toMatch(/^data:image\/svg\+xml,/);
     expect(pngSize(await svgToPng(decodeURIComponent(share.slice(share.indexOf(",") + 1))))).toEqual({ width: 1200, height: 630 });

@@ -139,6 +139,7 @@ export function managementApi(kind: "admin" | "deploy") {
       allowedEmails: fields.allowed_emails,
       editors: fields.editors,
       dataWrites: fields.data_writes,
+      confirmPublic: fields.confirm_public,
     });
     return c.json({ ...result, ...(publish.changed ? { changed: publish.changed } : {}) }, result.replaced ? 200 : 201);
   });

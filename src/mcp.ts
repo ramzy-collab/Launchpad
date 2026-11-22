@@ -79,7 +79,8 @@ export function buildServer(ctx: Ctx, beforeTools?: (server: McpServer) => void,
         ctx.env.APP_DOMAIN +
         "/ (publish returns it). You publish to a namespace (space) and mount_path, which name the app in Formelab. " +
         "Call get_guide before building an app for the first time, then publish with the publish tool. " +
-        "Every app needs an icon (a small SVG favicon linked from index.html); publish refuses apps without one." +
+        "Every app needs an icon (a small SVG favicon linked from index.html); publish refuses apps without one. " +
+        "An app that saves data (formelab.kv) or uses Google Sheets or connectors also needs access rules, a formelab.json saying who can see and change what (the guide's \"Access rules\"); publish refuses new ones without it." +
         (readOnly
           ? " This connection can only look: the user connected it read-only, so it can't publish, change or delete apps. To do that, they can reconnect Formelab and choose \"Make and change apps\"."
           : ""),
@@ -138,7 +139,10 @@ export function buildServer(ctx: Ctx, beforeTools?: (server: McpServer) => void,
         "Creates the namespace if it does not exist yet. The app MUST have an icon: a small SVG that fits the app, linked from " +
         "index.html's <head> as <link rel=\"icon\" href=\"data:image/svg+xml,...\"> (or an icon.svg file in the zip); without one, publish fails with icon_required. " +
         "Also give it a <meta name=\"description\"> and a share illustration for link previews (iMessage, Slack, WhatsApp): a 1200x630 SVG " +
-        "that shows what the app is, named by <meta property=\"og:image\" content=\"share.svg\"> (or an inline data:image/svg+xml URI); see the guide's \"Link previews\".",
+        "that shows what the app is, named by <meta property=\"og:image\" content=\"share.svg\"> (or an inline data:image/svg+xml URI); see the guide's \"Link previews\". " +
+        "If the app saves data or uses Google Sheets or connectors, include a formelab.json with its access rules (the guide's \"Access rules\"), asking the person who should see and change each kind of record first; " +
+        "a new app without one fails with rules_required, and a broken one with rules_invalid. If publish answers confirm_public, tell the person what it says and ask; " +
+        "publish again with confirm_public: true only if they say yes.",
       inputSchema: {
         html: z.string().optional().describe("Complete HTML document for a single-file app"),
         zip_base64: z.string().optional().describe("Base64-encoded .zip with index.html at its root"),
@@ -163,6 +167,10 @@ export function buildServer(ctx: Ctx, beforeTools?: (server: McpServer) => void,
         visibility: z.enum(["all", "restricted"]).optional().describe("Default \"restricted\": only the owner, editors and allowed_emails can open it. \"all\": every Formelab member (people let in, not those still on the waitlist)"),
         allowed_emails: emails,
         data_writes: dataWrites,
+        confirm_public: z
+          .boolean()
+          .optional()
+          .describe("Only after the person said yes to publishing anyway, when publish answered confirm_public. Never set it on your own."),
       },
     },
     (args) =>
@@ -179,6 +187,7 @@ export function buildServer(ctx: Ctx, beforeTools?: (server: McpServer) => void,
           allowedEmails: args.allowed_emails,
           dataWrites: args.data_writes,
           requireIcon: true,
+          confirmPublic: args.confirm_public,
         });
         return { url: r.url, replaced: r.replaced, ...(changed ? { changed } : {}), site: r.site, ...(r.note ? { note: r.note } : {}) };
       }),
@@ -398,7 +407,7 @@ export function buildServer(ctx: Ctx, beforeTools?: (server: McpServer) => void,
 
   server.registerTool(
     "get_guide",
-    { description: "Return the Formelab app-building guide (markdown): URL model, SDK reference, patterns, starter app, checklist.", annotations: { readOnlyHint: true } },
+    { description: "Return the Formelab app-building guide (markdown): URL model, SDK reference, access rules, patterns, starter app, checklist.", annotations: { readOnlyHint: true } },
     () => run(async () => withFlags(GUIDE_MD, await enabledFlags(ctx.env, ctx.user))),
   );
 

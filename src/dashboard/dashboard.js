@@ -37,10 +37,46 @@
           var err = (data && data.error) || { message: "Request failed (" + res.status + ")", hint: "" };
           var error = new Error(err.message + (err.hint ? " " + err.hint : ""));
           error.code = err.code;
+          error.details = err.details;
           throw error;
         }
         return data;
       });
+    });
+  }
+
+  // Publishing an upload: a new app that saves data needs access rules, and rules that let its users
+  // invite anyone are confirmed first (src/rules.ts). Rejects with e.quiet once a dialog has said why.
+  function publishChecked(fd) {
+    return api("POST", "/sites", fd).catch(function (e) {
+      var d = e.details || {};
+      if (e.code === "rules_required" && document.getElementById("dlg-rules")) {
+        var dlg = document.getElementById("dlg-rules");
+        dlg.querySelector("[data-rules-reason]").textContent = d.reason || e.message;
+        dlg.querySelector("[data-rules-fix]").textContent = d.fix || "";
+        dlg.querySelector("[data-rules-prompt]").textContent = d.prompt || "";
+        dlg.querySelector("[data-rules-copy]").onclick = function () {
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(d.prompt || "").then(function () { toast("Prompt copied"); }, function () { toast("Couldn't copy it. Select the text and copy it instead.", true); });
+          } else toast("Couldn't copy it. Select the text and copy it instead.", true);
+        };
+        dlg.showModal();
+        e.quiet = true;
+      } else if (e.code === "confirm_public" && document.getElementById("dlg-public")) {
+        var pub = document.getElementById("dlg-public");
+        return new Promise(function (resolve, reject) {
+          var go = pub.querySelector("[data-public-go]");
+          var chosen = false;
+          go.onclick = function () { chosen = true; pub.close(); };
+          pub.addEventListener("close", function () {
+            if (!chosen) { e.quiet = true; reject(e); return; }
+            fd.set("confirm_public", "true");
+            resolve(publishChecked(fd));
+          }, { once: true });
+          pub.showModal();
+        });
+      }
+      throw e;
     });
   }
 
@@ -69,7 +105,7 @@
       // Unchecked means "leave as is" when publishing a new version of an existing app.
       if (form.elements.spa.checked) fd.set("spa", "true");
       else fd.delete("spa");
-      return api("POST", "/sites", fd).then(function (r) {
+      return publishChecked(fd).then(function (r) {
         show((r.replaced ? "Published a new version: " : "It's live: ") + r.url + (r.replaced ? " (sharing settings kept)" : ""));
         var next = form.dataset.next;
         setTimeout(function () { if (next) location.href = next; else location.reload(); }, 1200);
@@ -191,7 +227,7 @@
     busy(form, true);
     Promise.resolve()
       .then(function () { return h(form); })
-      .catch(function (e) { show(e.message, true); })
+      .catch(function (e) { if (!e.quiet) show(e.message, true); })
       .then(function () { busy(form, false); });
   });
 
@@ -1446,10 +1482,10 @@
       fd.set("namespace", S.namespace);
       fd.set("mount_path", S.mountPath);
       zone.classList.add("busy");
-      api("POST", "/sites", fd).then(function () {
+      publishChecked(fd).then(function () {
         toast("New version published");
         $("[data-updated]").textContent = "Updated just now";
-      }, function (e) { toast(e.message, true); }).then(function () {
+      }, function (e) { if (!e.quiet) toast(e.message, true); }).then(function () {
         zone.classList.remove("busy");
         fileInput.value = "";
       });

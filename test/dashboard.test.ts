@@ -128,8 +128,15 @@ describe("dashboard", () => {
       const res = await call(url, { as: OWNER });
       expect(res.status).toBe(200);
       expect(res.headers.get("content-type")).toContain("text/markdown");
-      expect(await res.text()).toContain("## 7. Agent checklist");
+      expect(await res.text()).toContain("## 8. Agent checklist");
     }
+  });
+
+  it("serves the guide at /guide for the link in access-rule refusals", async () => {
+    const res = await call("https://example.com/guide", { as: OWNER });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("text/markdown");
+    expect(await res.text()).toContain("## 4. Access rules");
   });
 
   it("serves the SDK under 7 KB, defining formelab and archie", async () => {
