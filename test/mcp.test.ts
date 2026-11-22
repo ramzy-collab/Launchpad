@@ -112,6 +112,29 @@ describe("MCP server", () => {
     expect((await publishHtmlPlain(ns)).status).toBe(201);
   });
 
+  it("refuses new apps that save data without access rules, and leaves confirming invites to the person", async () => {
+    const t = await token();
+    const ns = uniq();
+    const html = ICON_PAGE(`<script>formelab.kv.set("vote:" + me, 1)</script>`);
+    const r = await tool(t, "publish", { html, namespace: ns, mount_path: "poll" });
+    expect(r.isError).toBe(true);
+    expect(r.data.error.code).toBe("rules_required");
+    expect(r.data.error.hint).toContain("My Formelab app saves data under these keys: vote:.");
+    expect(r.data.error.details.prompt).toContain("/guide#access-rules");
+
+    const rules = JSON.stringify({ manage_roles: ["host"], records: { vote: { prefix: "vote:", read: { host: "all" } } } });
+    const ask = await tool(t, "publish", { namespace: ns, mount_path: "poll", files: { "index.html": html, "formelab.json": rules } });
+    expect(ask.data.error.code).toBe("confirm_public");
+    expect(ask.data.error.hint).toContain("Only if they say yes");
+    const yes = await tool(t, "publish", { namespace: ns, mount_path: "poll", files: { "index.html": html, "formelab.json": rules }, confirm_public: true });
+    expect(yes.isError).toBe(false);
+
+    const { result } = await rpc(t, "tools/list");
+    const publish = result.tools.find((x: { name: string }) => x.name === "publish");
+    expect(publish.description).toContain("formelab.json");
+    expect(publish.inputSchema.properties.confirm_public.description).toContain("Never set it on your own");
+  });
+
   it("publishes a zip and requires exactly one of html / zip_base64", async () => {
     const t = await token();
     const { makeZip } = await import("./helpers");
