@@ -840,7 +840,7 @@ ${ACCESS_DIALOGS}
   <h2>Upload an app</h2>
   <p class="muted">A single <code>.html</code> file, or a <code>.zip</code> with <code>index.html</code> at the top.</p>
   <form class="grid" data-action="upload" data-next="/">
-    <label>Space <input name="namespace" list="ns-list" required placeholder="${e(own[0]?.label ?? "yourname")}" value="${e(own[0]?.label ?? "")}" pattern="[a-z0-9\-]+"></label>
+    <label>Space <input name="namespace" list="ns-list" required placeholder="${e(own[0]?.label ?? "yourname")}" value="${e(own[0]?.label ?? "")}" pattern="[a-z0-9\\-]+"></label>
     <datalist id="ns-list">${nsOptions}</datalist>
     <label>Path (optional) <input name="mount_path" placeholder="budget"></label>
     <label>File <input type="file" name="file" accept=".html,.htm,.zip" required></label>
@@ -884,7 +884,7 @@ export async function spacesPage(c: Context<AppEnv>): Promise<Response> {
   }
   <h3>New space</h3>
   <form class="inline" data-action="ns-create">
-    <input name="label" required placeholder="new-space" pattern="[a-z0-9\-]+" aria-label="New space">
+    <input name="label" required placeholder="new-space" pattern="[a-z0-9\\-]+" aria-label="New space">
     <button>Create space</button>
   </form>
 </section>`;
