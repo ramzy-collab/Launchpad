@@ -647,8 +647,11 @@ describe("Formelab's own sign-in page", () => {
     expect(stepHtml).toContain("Enter your password");
     expect(stepHtml).toContain('autocomplete="current-password"');
     expect(stepHtml).toContain(`value="${email}"`);
-    expect(stepHtml).not.toContain("set a password");
     expect(calls).toHaveLength(0);
+    // The same page as for an email with no account, so it doesn't tell anyone who has a password.
+    const unknown = `nobody-${uniq()}@example.com`;
+    const unknownHtml = await (await post("/login", { email: unknown, action: "email", return: "/app/shared" })).text();
+    expect(unknownHtml.replaceAll(unknown, "EMAIL")).toBe(stepHtml.replaceAll(email, "EMAIL"));
 
     const res = await post("/login", { email, password: "right password!", action: "password", return: "/app/shared" });
     // Straight on, no page in between: the login page's CSP lets the form lead to the web app.

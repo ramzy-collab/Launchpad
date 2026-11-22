@@ -27,7 +27,8 @@ Two existing problems, each a small change of its own (details in step 6 and the
    checks `formelab.kv` writes, so it would break apps whose users add rows. They can still read
    any range and overwrite rows; step 6's rules close that. Connectors are unchanged apart from
    copy saying people who can open the app can make their own calls with them.
-2. Sign-in step one shows whether an email has a password set (account enumeration, low severity).
+2. ~~Sign-in step one shows whether an email has a password set (account enumeration, low
+   severity).~~ Fixed Nov 22, 2026: the step looks the same for every email.
 
 ## Build order
 
@@ -314,8 +315,8 @@ Thanksgiving Menu. Example cases:
   - Sign-in step one (`signInPost`, `src/signin.ts`): **differs.** After "Continue with email" the
     password page adds "New here, or haven't set a password? Choose Email me a code." unless
     `users.has_password` is 1. Anyone can learn whether an email has a Formelab account with a
-    password set. Unknown emails and accounts without a password look the same. Fix on its own:
-    show that hint to everyone (or no one), so the page no longer depends on the lookup.
+    password set. Unknown emails and accounts without a password look the same. Fixed Nov 22,
+    2026: the hint is shown to everyone and the lookup is gone.
   - "Email me a code" and wrong passwords: Formelab's own copy is the same for every email, but
     WorkOS's error message is shown as is when sending a code fails (`sent.message`). Whether
     WorkOS words it differently for unknown emails can't be told from the code; check against

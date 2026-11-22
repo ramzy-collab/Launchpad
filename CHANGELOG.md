@@ -4,6 +4,7 @@ Everything that has changed in Formelab, newest first. Shown in the admin panel 
 
 ## 2026-11-22
 
+- **Fix: the login page no longer shows who has a password.** After you enter your email, the password step used to show a tip about emailed codes only when the email had no password set, so anyone could tell which emails have a Formelab account with a password. Everyone now sees the same page, tip included.
 - **Fix: people using an app can't edit its spreadsheets' structure.** People an app is shared with could make any Google Sheets call with the owner's Google account, also outside the app's own screens, including deleting tabs or clearing a sheet. They can still read values and add or change rows, which is all `formelab.sheets.read`, `append` and `update` need. Everything else (changing the spreadsheet itself, clearing, copying tabs, data filters, full grid reads) now works only for the app's owner and editors, and fails with `sheets_editors_only` for everyone else. The Google Sheets and custom connector pages now say that people who can open an app can make their own calls with its connections.
 
 ## 2026-10-24
