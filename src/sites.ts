@@ -12,7 +12,7 @@ import { appSharedEmail, namespaceSharedEmail, sendEach, shareEmailAllowance } f
 import { aiOrigin, appOrigin, siteOrigin } from "./hosts";
 import { flagOnForOwner } from "./flags";
 import { connectorNameList } from "./connectors";
-import { confirmPublic, needsRules, rulesRequired, scanAccess, storedAccess } from "./rules";
+import { confirmPublic, needsRules, RULES_FILE, rulesRequired, scanAccess, storedAccess, type StoredAccess } from "./rules";
 
 /** Addresses in `next` that weren't in `prev` (both normalized). */
 const added = (next: string[], prev: string[]) => {
@@ -683,6 +683,26 @@ export async function currentFiles(env: Env, site: SiteRow): Promise<FileMap> {
     if (obj) files.set(key.slice(prefix.length), new Uint8Array(await obj.arrayBuffer()));
   });
   return files;
+}
+
+/**
+ * What the app's code uses and whether it has rules, for its settings page. Apps published before
+ * access rules have no stored scan: their live files are scanned once and the result kept.
+ */
+export async function accessOfSite(env: Env, site: SiteRow): Promise<StoredAccess> {
+  if (site.access) return JSON.parse(site.access) as StoredAccess;
+  const files = await currentFiles(env, site);
+  let scan;
+  try {
+    scan = scanAccess(files);
+  } catch {
+    // A formelab.json published before rules were checked, and broken: the app has no rules.
+    files.delete(RULES_FILE);
+    scan = scanAccess(files);
+  }
+  const json = storedAccess(scan);
+  await env.DB.prepare("UPDATE sites SET access = ? WHERE id = ? AND current_version = ?").bind(json, site.id, site.current_version).run();
+  return JSON.parse(json) as StoredAccess;
 }
 
 /** The live version's files with their sizes and SHA-256 (null for files written before hashes were kept). */

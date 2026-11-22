@@ -97,3 +97,55 @@ describe("access rules on publish", () => {
     expect((await publishZip(OWNER, ns, "team", files)).status).toBe(200);
   });
 });
+
+describe("the settings page warning", () => {
+  const page = async (id: string, as = OWNER) => (await call(`/app/apps/${id}`, { as })).text();
+  /** An app published before access rules: not required, never scanned. */
+  async function olderApp(html: string, extra: Record<string, string> = {}) {
+    const ns = uniq();
+    const id = (await (await publishHtml(OWNER, ns, "old", PAGE("hi"), extra)).json<Published>()).site.id;
+    await env.DB.prepare("UPDATE sites SET rules_required = 0 WHERE id = ?").bind(id).run();
+    await publishHtml(OWNER, ns, "old", html);
+    await env.DB.prepare("UPDATE sites SET access = NULL WHERE id = ?").bind(id).run();
+    return { ns, id };
+  }
+
+  it("warns about an older app that saves data without rules, scanning it once, and offers the prompt", async () => {
+    const editor = `ed-${uniq()}@example.com`;
+    const { id } = await olderApp(DATA_APP, { editors: editor });
+    const html = await page(id);
+    expect(html).toContain("<strong>No access rules.</strong> Everyone who can open this app can see all of its saved data");
+    expect(html).not.toContain("connected services");
+    const stored = (await row(id))!.access;
+    expect(JSON.parse(stored)).toMatchObject({ kv: true, prefixes: ["lead:", "settings"], rules: false });
+    const attr = /data-add-rules="([^"]+)"/.exec(html)![1]!.replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, "&");
+    expect(JSON.parse(attr)).toMatchObject({ title: "Add access rules", prompt: expect.stringContaining("My Formelab app saves data under these keys: lead:, settings.") });
+    // Editors see it too.
+    expect(await page(id, editor)).toContain("No access rules.");
+  });
+
+  it("says what connected services mean, and goes away once rules are published", async () => {
+    const { ns, id } = await olderApp(PAGE(`<script>formelab.sheets.read(id, "A1")</script>`));
+    const html = await page(id);
+    expect(html).toContain("<strong>No access rules.</strong> Everyone who can open this app can use its connected services.");
+    await publishZip(OWNER, ns, "old", { "index.html": PAGE(`<script>formelab.sheets.read(id, "A1")</script>`), "formelab.json": '{"everyone":"all"}' });
+    expect(await page(id)).not.toContain("No access rules.");
+  });
+
+  it("treats a broken formelab.json published before rules as no rules", async () => {
+    const { id } = await olderApp(DATA_APP);
+    const v = (await env.DB.prepare("SELECT current_version FROM sites WHERE id = ?").bind(id).first<{ current_version: string }>())!.current_version;
+    await env.BUCKET.put(`sites/${id}/${v}/formelab.json`, "{");
+    expect(await page(id)).toContain("No access rules.");
+  });
+
+  it("shows nothing for apps that save nothing or have rules, and the public line for invites", async () => {
+    const ns = uniq();
+    const plain = (await (await publishHtml(OWNER, ns, "plain", PAGE("hi"))).json<Published>()).site.id;
+    expect(await page(plain)).not.toContain("rules-warn");
+    const open = (await (await publishZip(OWNER, ns, "open", { "index.html": DATA_APP, "formelab.json": '{"everyone":"all"}' })).json<Published>()).site.id;
+    expect(await page(open)).not.toContain("rules-warn");
+    const team = (await (await publishZip(OWNER, ns, "team", { "index.html": DATA_APP, "formelab.json": INVITES }, { confirm_public: "true" })).json<Published>()).site.id;
+    expect(await page(team)).toContain("<strong>Treated as public.</strong> People using this app can invite anyone");
+  });
+});
