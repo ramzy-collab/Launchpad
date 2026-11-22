@@ -116,6 +116,8 @@ export interface Ctx {
   waitUntil: (p: Promise<unknown>) => void;
   /** The incoming request URL; in dev it decides the scheme and port of returned URLs. */
   requestUrl?: string;
+  /** The AI tool making an MCP call, as it names itself (OAuth client or access key's app), if known. */
+  client?: string | null;
 }
 
 // ---------------------------------------------------------------------------

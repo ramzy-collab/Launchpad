@@ -129,6 +129,12 @@ the app's `data_writes` setting: `"editors"` (the default for new apps) lets onl
 editors write; `"everyone"` lets every viewer write. Writing without permission fails with
 `read_only_data` (403). Set it with `publish` (new apps) or `update_site`.
 
+**Reading and changing it from an AI.** The app's owner and editors can ask their AI about an app's
+saved data, or to change it, through the Formelab connector: `kv_list` (with `prefix` and paging
+by `after`), `kv_get`, `kv_set` and `kv_delete`. They reach shared data only, never
+`formelab.kv.mine`. Each change is logged in the app's activity under the person, naming the AI
+tool, but never the value. Keep a key's value in the shape the app's code expects.
+
 **`formelab.kv.mine`: each person's private data.** The same calls (`get`, `set`, `list`,
 `delete`), but the data belongs to the person using the app: nobody else, not even the owner, can
 read or change it, whatever `data_writes` says. Up to 200 keys per person per app.

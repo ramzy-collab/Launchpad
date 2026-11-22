@@ -171,6 +171,10 @@ export function describeActivity(row: AuditRow): string {
       return `Made ${d.to} the owner${d.from ? ` (${d.from} stays on as an Admin)` : ""}`;
     case "copy_site":
       return `Made a copy of ${d.from ?? "an app"}`;
+    case "kv_set":
+      return `Changed "${d.key}" in the app's data, via ${d.client || "an AI tool"}`;
+    case "kv_delete":
+      return `Deleted "${d.key}" from the app's data, via ${d.client || "an AI tool"}`;
     case "secret_set":
       return `Saved the secret ${d.name}`;
     case "secret_delete":
