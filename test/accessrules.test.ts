@@ -36,13 +36,13 @@ describe("access rules on publish", () => {
 
   it("publishes a new app with valid rules, or one that saves nothing, and remembers the scan", async () => {
     const ns = uniq();
-    const ok = await publishZip(OWNER, ns, "crm", { "index.html": DATA_APP, "formelab.json": '{"everyone":"all"}' });
+    const ok = await publishZip(OWNER, ns, "crm", { "index.html": DATA_APP, "formelab.json": '{"everyone":"all"}' }, {}, { newApp: true });
     expect(ok.status).toBe(201);
     const r = (await row((await ok.json<Published>()).site.id))!;
     expect(r.rules_required).toBe(1);
     expect(JSON.parse(r.access)).toEqual({ kv: true, prefixes: ["lead:", "settings"], dynamic: false, sheets: false, connectors: false, rules: true, invites: false });
 
-    const plain = await publishHtml(OWNER, ns, "plain", PAGE("hi"));
+    const plain = await publishHtml(OWNER, ns, "plain", PAGE("hi"), {}, { newApp: true });
     expect(plain.status).toBe(201);
     // Still marked new: adding data later needs rules.
     const again = await publishHtml(OWNER, ns, "plain", DATA_APP);

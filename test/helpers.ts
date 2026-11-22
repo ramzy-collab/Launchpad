@@ -121,25 +121,39 @@ export async function accounts(...emails: string[]) {
   }
 }
 
+/**
+ * Test apps count as made before access rules (rules_required = 0), so tests of data, Sheets and
+ * connectors keep testing how those apps work. Pass { newApp: true } to test apps made since.
+ */
+export interface PublishOpts {
+  newApp?: boolean;
+}
+async function asOlderApp(res: Response, opts: PublishOpts) {
+  if (res.status !== 201 || opts.newApp) return res;
+  const { site } = await res.clone().json<{ site: { id: string } }>();
+  await env.DB.prepare("UPDATE sites SET rules_required = 0 WHERE id = ?").bind(site.id).run();
+  return res;
+}
+
 /** Publishes `html`. Editors named in `extra.editors` get accounts first, like real editors have. */
-export async function publishHtml(as: string, namespace: string, mountPath: string, html: string, extra: Record<string, string> = {}) {
+export async function publishHtml(as: string, namespace: string, mountPath: string, html: string, extra: Record<string, string> = {}, opts: PublishOpts = {}) {
   if (extra.editors) await accounts(extra.editors);
   const fd = new FormData();
   fd.set("file", new File([html], "index.html", { type: "text/html" }));
   fd.set("namespace", namespace);
   fd.set("mount_path", mountPath);
   for (const [k, v] of Object.entries(extra)) fd.set(k, v);
-  return call("/_api/admin/sites", { as, method: "POST", body: fd });
+  return asOlderApp(await call("/_api/admin/sites", { as, method: "POST", body: fd }), opts);
 }
 
-export async function publishZip(as: string, namespace: string, mountPath: string, files: Record<string, string | Uint8Array>, extra: Record<string, string> = {}) {
+export async function publishZip(as: string, namespace: string, mountPath: string, files: Record<string, string | Uint8Array>, extra: Record<string, string> = {}, opts: PublishOpts = {}) {
   if (extra.editors) await accounts(extra.editors);
   const fd = new FormData();
   fd.set("file", new File([makeZip(files)], "site.zip", { type: "application/zip" }));
   fd.set("namespace", namespace);
   fd.set("mount_path", mountPath);
   for (const [k, v] of Object.entries(extra)) fd.set(k, v);
-  return call("/_api/admin/sites", { as, method: "POST", body: fd });
+  return asOlderApp(await call("/_api/admin/sites", { as, method: "POST", body: fd }), opts);
 }
 
 export function makeZip(files: Record<string, string | Uint8Array>): Uint8Array {

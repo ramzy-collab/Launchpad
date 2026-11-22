@@ -1,6 +1,6 @@
 import { Hono, type Context } from "hono";
 import type { AppEnv } from "./env";
-import { badRequest, err, forbidden, jsonError, onError } from "./errors";
+import { ApiError, badRequest, err, forbidden, jsonError, notFound, onError } from "./errors";
 import { kvDelete, kvGet, kvList, kvSet, type KvScope } from "./kv";
 import { proxy, secretDelete, secretList, secretSet } from "./secrets";
 import { connectorFetch } from "./connectors";
@@ -9,6 +9,8 @@ import { flagOnForOwner } from "./flags";
 import { sheetsAvailable, sheetsCall } from "./sheets";
 import { deleteResponse, listResponses, submitResponse } from "./responses";
 import { parseJsonArray } from "./util";
+import { checkWrite, mayRead, rulesMissing, type Rules, type Who } from "./rules";
+import { rulesOfSite } from "./sites";
 
 /**
  * The per-app runtime API on an app's own host, <host_label>.APP_DOMAIN/_api/*. The parent sets
@@ -65,6 +67,18 @@ export function runtimeApi() {
     await next();
   });
 
+  // Backstop (spec step 3): an app made after access rules shipped that has none can't use saved
+  // data or the owner's services, whoever asks, even if the publish scan missed its calls.
+  const DATA_PATHS = /^\/_api\/(?:kv(?:\/|$)|sheets$|connectors\/[^/]+\/fetch$|secrets\/[^/]+\/proxy$|ai\/gemini$)/;
+  api.use("*", async (c, next) => {
+    const path = new URL(c.req.url).pathname;
+    const site = c.get("site");
+    if (site.rules_required && DATA_PATHS.test(path) && (path.startsWith("/_api/kv") || c.req.method === "POST") && !(await rulesOfSite(c.env, site))) {
+      throw rulesMissing();
+    }
+    await next();
+  });
+
   api.get("/me", (c) => {
     if (c.get("guest")) return c.json(null);
     const u = c.get("user");
@@ -105,20 +119,59 @@ export function runtimeApi() {
   };
 
   // A list too large for one response comes in pages: x-formelab-next names the key to continue after.
-  const listKv = async (c: Ctx, scope: KvScope) => {
+  const listKv = async (c: Ctx, scope: KvScope, keep?: (row: { key: string; value: unknown }) => boolean) => {
     const { rows, next } = await kvList(c.env, scope, c.req.query("prefix") ?? "", c.req.query("after") ?? "");
     if (next !== null) c.header("x-formelab-next", encodeURIComponent(next));
-    return c.json(rows);
+    return c.json(keep ? rows.filter(keep) : rows);
   };
-  api.get("/kv", (c) => listKv(c, shared(c)));
-  api.get("/kv/*", async (c) => c.json(await kvGet(c.env, shared(c), sharedKey(c))));
+
+  // Apps with access rules (formelab.json): each person reads and changes only what the rules allow.
+  // Records they may not see look like missing keys, so the app's code just gets null.
+  const who = (c: Ctx): Who => ({ manages: !!c.get("manages"), guest: !!c.get("guest"), email: c.get("guest") ? null : c.get("user").email });
+  const rulesOf = (c: Ctx): Promise<Rules | null> => rulesOfSite(c.env, c.get("site"));
+  const existing = async (c: Ctx, key: string) => {
+    try {
+      return (await kvGet(c.env, shared(c), key)).value;
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 404) return undefined;
+      throw e;
+    }
+  };
+  /** The value being written, for the rules to read; invalid JSON is left for kvSet to refuse. */
+  const parsed = (raw: string) => {
+    try {
+      return JSON.parse(raw) as unknown;
+    } catch {
+      return null;
+    }
+  };
+
+  api.get("/kv", async (c) => {
+    const rules = await rulesOf(c);
+    return listKv(c, shared(c), rules ? (r) => mayRead(rules, who(c), r.key, r.value) : undefined);
+  });
+  api.get("/kv/*", async (c) => {
+    const key = sharedKey(c);
+    const found = await kvGet(c.env, shared(c), key);
+    const rules = await rulesOf(c);
+    if (rules && !mayRead(rules, who(c), key, found.value)) throw notFound(`Key "${key.slice(0, 80)}"`);
+    return c.json(found);
+  });
   api.put("/kv/*", async (c) => {
-    requireDataWrite(c);
-    return c.json(await kvSet(c.env, shared(c), sharedKey(c), await readValue(c)));
+    const key = sharedKey(c);
+    const raw = await readValue(c);
+    const rules = await rulesOf(c);
+    // shortcut: the check and the write are two statements, so a record created between them by someone else can be overwritten; make it one statement if "own" apps see contention.
+    if (rules) checkWrite(rules, who(c), key, await existing(c, key), parsed(raw));
+    else requireDataWrite(c);
+    return c.json(await kvSet(c.env, shared(c), key, raw));
   });
   api.delete("/kv/*", async (c) => {
-    requireDataWrite(c);
-    return c.json(await kvDelete(c.env, shared(c), sharedKey(c)));
+    const key = sharedKey(c);
+    const rules = await rulesOf(c);
+    if (rules) checkWrite(rules, who(c), key, await existing(c, key), undefined);
+    else requireDataWrite(c);
+    return c.json(await kvDelete(c.env, shared(c), key));
   });
 
   // Each person's private data in this app: only they can read or change it.

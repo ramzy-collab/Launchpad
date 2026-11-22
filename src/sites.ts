@@ -12,7 +12,7 @@ import { appSharedEmail, namespaceSharedEmail, sendEach, shareEmailAllowance } f
 import { aiOrigin, appOrigin, siteOrigin } from "./hosts";
 import { flagOnForOwner } from "./flags";
 import { connectorNameList } from "./connectors";
-import { confirmPublic, needsRules, RULES_FILE, rulesRequired, scanAccess, storedAccess, type StoredAccess } from "./rules";
+import { confirmPublic, needsRules, parseRules, RULES_FILE, rulesRequired, scanAccess, storedAccess, type Rules, type StoredAccess } from "./rules";
 
 /** Addresses in `next` that weren't in `prev` (both normalized). */
 const added = (next: string[], prev: string[]) => {
@@ -112,6 +112,8 @@ export interface SiteRow {
   rules_required?: number;
   /** JSON: what the last publish's scan found (storedAccess in src/rules.ts), or NULL before the first one. */
   access?: string | null;
+  /** JSON: the app's parsed access rules, or NULL (see rulesOfSite). */
+  rules?: string | null;
 }
 
 /** Everything a service call needs: bindings, the acting user, and a way to defer work. */
@@ -705,6 +707,21 @@ export async function accessOfSite(env: Env, site: SiteRow): Promise<StoredAcces
   return JSON.parse(json) as StoredAccess;
 }
 
+/**
+ * The app's access rules, or null when it has none. Apps published with rules before they were
+ * kept in sites.rules have them read from the live formelab.json once.
+ */
+export async function rulesOfSite(env: Env, site: SiteRow): Promise<Rules | null> {
+  if (site.rules) return JSON.parse(site.rules) as Rules;
+  if (!site.access || !(JSON.parse(site.access) as StoredAccess).rules) return null;
+  const obj = await env.BUCKET.get(versionPrefix(site) + RULES_FILE);
+  if (!obj) return null;
+  const rules = parseRules(new Uint8Array(await obj.arrayBuffer()));
+  site.rules = JSON.stringify(rules);
+  await env.DB.prepare("UPDATE sites SET rules = ? WHERE id = ? AND current_version = ?").bind(site.rules, site.id, site.current_version).run();
+  return rules;
+}
+
 /** The live version's files with their sizes and SHA-256 (null for files written before hashes were kept). */
 export async function siteManifest(env: Env, site: SiteRow) {
   const prefix = versionPrefix(site);
@@ -794,7 +811,7 @@ export async function publishSite(ctx: Ctx, input: PublishInput) {
       // title (as a blank form field sends) keeps the current one.
       const res = await env.DB.prepare(
         `UPDATE sites SET current_version = ?, file_count = ?, total_bytes = ?, updated_at = ?,
-           title = COALESCE(?, title), spa = COALESCE(?, spa), access = ?
+           title = COALESCE(?, title), spa = COALESCE(?, spa), access = ?, rules = ?
          WHERE id = ? AND current_version = ?`,
       )
         .bind(
@@ -805,6 +822,7 @@ export async function publishSite(ctx: Ctx, input: PublishInput) {
           title ?? null,
           spa === undefined ? null : spa ? 1 : 0,
           storedAccess(access),
+          access.rules ? JSON.stringify(access.rules) : null,
           id,
           existing.current_version,
         )
@@ -814,8 +832,8 @@ export async function publishSite(ctx: Ctx, input: PublishInput) {
       await env.DB.prepare(
         `INSERT INTO sites (id, namespace, mount_path, title, owner_email, editors, visibility, allowed_emails,
                             hidden, spa, current_version, file_count, total_bytes, created_at, updated_at, kv_writes, host_label,
-                            rules_required, access)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                            rules_required, access, rules)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
         .bind(
           id,
@@ -836,6 +854,7 @@ export async function publishSite(ctx: Ctx, input: PublishInput) {
           hostLabel,
           rulesRequiredHere ? 1 : 0,
           storedAccess(access),
+          access.rules ? JSON.stringify(access.rules) : null,
         )
         .run();
     }

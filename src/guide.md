@@ -124,8 +124,9 @@ const votes = await formelab.kv.list("vote:");         // only keys starting wit
 await formelab.kv.delete("settings");
 ```
 
-**Who can change it.** Everyone who can open the app can read shared KV. Changing it depends on
-the app's `data_writes` setting: `"editors"` (the default for new apps) lets only the owner and
+**Who can change it.** An app with access rules (`formelab.json`, see "Access rules") follows
+them, for reading too. Otherwise everyone who can open the app can read shared KV, and changing it
+depends on the app's `data_writes` setting: `"editors"` (the default for new apps) lets only the owner and
 editors write; `"everyone"` lets every viewer write. Writing without permission fails with
 `read_only_data` (403). Set it with `publish` (new apps) or `update_site`.
 
@@ -480,7 +481,10 @@ explicit, valid choice:
     signed-in person's email) or `"none"`. Roles not listed get `"none"`.
 - `guest` is the role for people who open the app through its public link, signed out. It gets
   `"none"` unless you grant it.
-- `default_role`: the role people the app is shared with get.
+- `default_role`: the role everyone below editor gets: the people the app is shared with, and
+  everyone signed in who can open it. Roles can't be given to particular people inside the app
+  yet, so a role like `"manager"` works only through `default_role` for now; people who must see
+  everything can be made editors.
 - `manage_roles`: roles that may add people and give them roles inside the app. **Only if the person
   asks for it:** people in these roles can invite anyone, so the app counts as public. Publishing
   asks the person to confirm (`confirm_public`); tell them what it says and publish again with
@@ -494,8 +498,13 @@ explicit, valid choice:
 (`{ "index.html": "...", "formelab.json": "..." }`) or as a zip, since `html` carries one file.
 To add rules to an existing app, publish `files: { "formelab.json": "..." }`.
 
-Formelab checks the file when you publish. Filtering what each person sees by these rules is
-rolling out after that; until then, `data_writes` still decides who can change shared data.
+**What it does in the app.** Formelab applies the rules to every `formelab.kv` call. Records a
+person may not see are left out of `list()`, and `get()` returns `null` for them, as if they didn't
+exist, so write the app to cope with missing records. Changing a record they may not change fails
+with `not_allowed` (403); with `"own"`, a record must keep their email in its `owner_field`. For an
+app with rules, the rules decide who can change its data and `data_writes` no longer applies.
+`formelab.kv.mine` isn't affected. An app made since access rules arrived that has no rules can't
+use shared data, Sheets or connectors at all: those calls fail with `rules_required`.
 
 ## 5. Patterns
 

@@ -211,3 +211,62 @@ export const confirmPublic = () =>
   err(409, "confirm_public", "People using this app can invite anyone. Treat it as public: anyone they invite can open it.",
     "Ask the person whether to publish anyway. Only if they say yes, publish again with confirm_public set to true.",
     { title: "People using this app can invite anyone", reason: "Treat it as public: anyone they invite can open it." });
+
+/** Who is asking, for deciding what the rules let them do. */
+export interface Who {
+  /** The app's owner, editors or space editors: they see and change everything. */
+  manages: boolean;
+  /** Opened through the public link, signed out: the "guest" role. */
+  guest: boolean;
+  email: string | null;
+}
+
+/**
+ * The person's level for reading or writing a key, and the rule that gave it. Owners and editors
+ * get "all"; keys no rule covers are theirs alone. Until roles are managed inside apps (spec step 4),
+ * everyone else who signs in has the rules' default_role.
+ */
+export function levelFor(rules: Rules, who: Who, key: string, op: "read" | "write"): { level: Level; rule?: RecordRule } {
+  if (who.manages || "everyone" in rules) return { level: "all" };
+  const rule = Object.values(rules.records).find((r) => key.startsWith(r.prefix));
+  if (!rule) return { level: "none" };
+  const role = who.guest ? "guest" : rules.default_role;
+  return { level: (role && rule[op]?.[role]) || "none", rule };
+}
+
+/** Whether a record's owner_field names this person. */
+function ownedBy(rule: RecordRule | undefined, value: unknown, email: string | null): boolean {
+  const field = rule?.owner_field;
+  if (!field || !email || !isObject(value)) return false;
+  const v = value[field];
+  return typeof v === "string" && v.trim().toLowerCase() === email.trim().toLowerCase();
+}
+
+/** Whether the person may see this record. */
+export function mayRead(rules: Rules, who: Who, key: string, value: unknown): boolean {
+  const { level, rule } = levelFor(rules, who, key, "read");
+  return level === "all" || (level === "own" && ownedBy(rule, value, who.email));
+}
+
+/**
+ * Throws not_allowed unless the person may write `next` to the key (undefined `next` is a delete).
+ * With "own", the record must already be theirs (or new) and stay theirs.
+ */
+export function checkWrite(rules: Rules, who: Who, key: string, existing: unknown, next: unknown) {
+  const { level, rule } = levelFor(rules, who, key, "write");
+  if (level === "all") return;
+  if (level === "own") {
+    const theirs = existing === undefined || ownedBy(rule, existing, who.email);
+    const staysTheirs = next === undefined || ownedBy(rule, next, who.email);
+    if (theirs && staysTheirs) return;
+    if (theirs && !staysTheirs) {
+      throw err(403, "not_allowed", `You can only save records with your own email in "${rule!.owner_field}".`, `Set "${rule!.owner_field}" to your email, the one formelab.me() returns.`);
+    }
+  }
+  throw err(403, "not_allowed", "You can't change this record.", "This app's access rules (formelab.json) decide who can change each kind of record. Ask its owner if you need to.");
+}
+
+/** Refuses an app made after access rules shipped that has none, at runtime: a backstop for what the publish scan missed. */
+export const rulesMissing = () =>
+  err(403, "rules_required", "This app can't use saved data or connected services until it has access rules.",
+    "Its owner can add a formelab.json saying who can see and change what (the guide's Access rules section), then publish again.");
