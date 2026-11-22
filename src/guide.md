@@ -476,7 +476,8 @@ explicit, valid choice:
     (like `"settings"`) uses the whole key. No prefix may start another (`"lead:"` and
     `"lead:old:"` are refused): use `"lead:"` and `"oldlead:"`.
   - `fields`: the fields in its value (optional; AI tools use them to describe the data).
-  - `owner_field`: the field holding the email of the person a record belongs to. Needed for `own`.
+  - `owner_field`: the field holding the email of the person a record belongs to (letters, digits
+    and `_`, like `assignedTo`). Needed for `own`.
   - `read` and `write`: each role gets `"all"`, `"own"` (only records whose `owner_field` is the
     signed-in person's email) or `"none"`. Roles not listed get `"none"`.
 - `guest` is the role for people who open the app through its public link, signed out. It gets
