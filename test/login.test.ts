@@ -631,9 +631,9 @@ describe("Formelab's own sign-in page", () => {
       authentication_method: method,
     });
 
-  const post = (path: string, fields: Record<string, string>, opts: { origin?: string; cookie?: string; host?: string } = {}) => {
+  const post = (path: string, fields: Record<string, string>, opts: { origin?: string; cookie?: string; host?: string; ip?: string } = {}) => {
     const host = opts.host ?? "https://example.com";
-    const headers: Record<string, string> = { origin: opts.origin ?? host, "content-type": "application/x-www-form-urlencoded", "cf-connecting-ip": "203.0.113.9", "user-agent": "test-browser" };
+    const headers: Record<string, string> = { origin: opts.origin ?? host, "content-type": "application/x-www-form-urlencoded", "cf-connecting-ip": opts.ip ?? "203.0.113.9", "user-agent": "test-browser" };
     if (opts.cookie) headers.cookie = opts.cookie;
     return w(host + path, { method: "POST", headers, body: new URLSearchParams(fields).toString() });
   };
@@ -680,7 +680,7 @@ describe("Formelab's own sign-in page", () => {
 
     const res = await post("/login", { email, action: "code" });
     const html = await res.text();
-    expect(html).toContain("We sent a code to <b>" + email);
+    expect(html).toContain("If there's an account for <b>" + email + "</b>, we've sent a code.");
     expect(calls[0]!.url).toBe("https://api.workos.com/user_management/magic_auth");
     expect(html).toContain('value="use-password"');
     expect(await (await post("/login", { email, action: "use-password" })).text()).toContain("Enter your password");
@@ -714,13 +714,13 @@ describe("Formelab's own sign-in page", () => {
     });
     const sent = await post("/login", { email, action: "code", return: "/app" });
     expect(sent.status).toBe(200);
-    expect(await sent.text()).toContain("We sent a code to <b>" + email);
+    expect(await sent.text()).toContain("If there's an account for <b>" + email + "</b>, we've sent a code.");
     expect(calls[0]).toMatchObject({ url: "https://api.workos.com/user_management/magic_auth", body: { email } });
     const pending = cookieFrom(sent, "__Host-fl_signin")!;
 
     const wrong = await post("/login/code", { code: "000000", return: "/app" }, { cookie: pending });
     expect(wrong.status).toBe(400);
-    expect(await wrong.text()).toContain("That code didn");
+    expect(await wrong.text()).toContain("That code is invalid or expired.");
 
     const ok = await post("/login/code", { code: "123 456", return: "/app" }, { cookie: pending });
     expect(ok.status).toBe(303);
@@ -746,6 +746,123 @@ describe("Formelab's own sign-in page", () => {
     mockApi(() => Response.json({ code: "mfa_challenge", message: "MFA" }, { status: 403 }));
     const res = await post("/login", { email: "mfa@example.com", password: "a password here", action: "password" });
     expect(await res.text()).toContain('href="/auth/login">Continue on the secure sign-in page');
+  });
+
+  describe("answers the same for emails with and without an account", () => {
+    // WorkOS answers in two shapes: { code, message } and OAuth-style { error, error_description }.
+    const refuse = (status: number, body: Record<string, unknown>) => () => Response.json(body, { status, headers: { "x-request-id": "req_1" } });
+    const SIGN_UP_OFF = refuse(400, { error: "sign_up_not_allowed", error_description: "Sign up is not allowed for this email." });
+    /** The page and status for `email`, with the address itself taken out so pages can be compared. */
+    const seen = async (res: Response, email: string) => ({ status: res.status, html: (await res.text()).replaceAll(email, "EMAIL"), cookie: !!cookieFrom(res, "__Host-fl_signin") });
+    // Each request from its own address, so the sign-in rate limit (20 a minute per IP) doesn't trip.
+    let ip = 0;
+    const postFrom = (path: string, fields: Record<string, string>, opts: { cookie?: string } = {}) => post(path, fields, { ...opts, ip: `198.51.100.${++ip % 250}` });
+    const known = `known-${uniq()}@example.com`;
+    const unknown = `unknown-${uniq()}@example.com`;
+
+    it("sending a code: every refusal looks like a code was sent, and the code never reaches the browser", async () => {
+      mockApi(() => Response.json({ id: "ma_1", user_id: "user_1", email: known, code: "918273" }, { status: 201 }));
+      const res = await postFrom("/login", { email: known, action: "code" });
+      const sent = await seen(res, known);
+      expect(sent.status).toBe(200);
+      expect(sent.cookie).toBe(true);
+      expect(sent.html).toContain("If there's an account for <b>EMAIL</b>, we've sent a code.");
+      expect(sent.html).not.toContain("918273");
+      expect(res.headers.getSetCookie().join(";")).not.toContain("918273");
+      for (const answer of [
+        SIGN_UP_OFF,
+        refuse(400, { code: "sign_up_not_allowed", message: "Sign up is not allowed." }),
+        refuse(400, { code: "email_domain_not_deliverable", message: "The email domain is not deliverable." }),
+        refuse(400, { code: "invitation_invalid", message: "Invitation is invalid." }),
+        refuse(400, { code: "authentication_method_not_allowed", message: "Magic auth is disabled." }),
+        refuse(403, { code: "policy_denied", message: "Denied by Radar." }),
+        refuse(422, { code: "invalid_request_parameters", message: "Validation failed", errors: [{ code: "email", message: "Email is invalid." }] }),
+        refuse(404, { code: "entity_not_found", message: "User not found." }),
+      ]) {
+        mockApi(answer);
+        expect(await seen(await postFrom("/login", { email: unknown, action: "code" }), unknown)).toEqual(sent);
+      }
+    });
+
+    it("sending a code: too many tries gets one fixed message, whoever it's for", async () => {
+      for (const answer of [refuse(429, { code: "rate_limit_exceeded", message: "Rate limit exceeded. Retry in 60 seconds." }), refuse(429, { error: "too_many_requests", error_description: "Slow down." })]) {
+        mockApi(answer);
+        const a = await seen(await postFrom("/login", { email: known, action: "code" }), known);
+        const b = await seen(await postFrom("/login", { email: unknown, action: "code" }), unknown);
+        expect(a).toEqual(b);
+        expect(a.status).toBe(429);
+        expect(a.html).toContain("Too many attempts. Try again in a minute.");
+        expect(a.html).not.toMatch(/Rate limit|Slow down/);
+      }
+    });
+
+    it("logging in with a code: one fixed message for every wrong or refused code", async () => {
+      const codeStep = async (email: string, answer: () => Response) => {
+        mockApi((path) => (path === "/user_management/magic_auth" ? Response.json({ id: "ma_1" }, { status: 201 }) : answer()));
+        const pending = cookieFrom(await postFrom("/login", { email, action: "code" }), "__Host-fl_signin")!;
+        return seen(await postFrom("/login/code", { code: "000000" }, { cookie: pending }), email);
+      };
+      const wrong = await codeStep(known, refuse(400, { code: "invalid_one_time_code", message: "Invalid one-time code." }));
+      expect(wrong.status).toBe(400);
+      expect(wrong.html).toContain("That code is invalid or expired.");
+      for (const answer of [
+        refuse(400, { code: "one_time_code_expired", message: "Expired." }),
+        refuse(400, { code: "one_time_code_previously_used", message: "Used." }),
+        refuse(400, { code: "one_time_code_too_many_attempts", message: "Too many attempts on this code." }),
+        refuse(400, { error: "invalid_grant", error_description: "The code is invalid." }),
+        SIGN_UP_OFF,
+        refuse(404, { code: "entity_not_found", message: "User not found." }),
+        refuse(403, { code: "policy_denied", message: "Denied." }),
+      ]) {
+        expect(await codeStep(unknown, answer)).toEqual(wrong);
+      }
+      const limited = await codeStep(known, refuse(429, { error: "too_many_requests", error_description: "Slow down." }));
+      expect(limited.status).toBe(429);
+      expect(limited.html).toContain("Too many attempts. Try again in a minute.");
+    });
+
+    it("logging in with a password: one fixed message for a wrong password and an unknown email", async () => {
+      const attempt = async (email: string, answer: () => Response) => {
+        mockApi(answer);
+        return seen(await postFrom("/login", { email, password: "wrong-pass-123", action: "password" }), email);
+      };
+      const wrong = await attempt(known, refuse(400, { code: "invalid_credentials", message: "Invalid credentials." }));
+      expect(wrong.status).toBe(400);
+      expect(wrong.html).toContain("That password isn&#39;t right");
+      for (const answer of [
+        refuse(404, { code: "entity_not_found", message: "User not found." }),
+        refuse(400, { error: "invalid_grant", error_description: "Invalid credentials." }),
+        SIGN_UP_OFF,
+        refuse(403, { code: "email_password_auth_disabled", message: "Password sign-in is off." }),
+        refuse(403, { code: "policy_denied", message: "Denied." }),
+        refuse(403, { code: "action_denied", message: "Denied by an action." }),
+      ]) {
+        expect(await attempt(unknown, answer)).toEqual(wrong);
+      }
+      const limited = await attempt(known, refuse(429, { code: "rate_limit_exceeded", message: "Rate limit exceeded." }));
+      expect(limited.status).toBe(429);
+      expect(limited.html).toContain("Too many attempts. Try again in a minute.");
+    });
+
+    it("logging in with a password: WorkOS's other steps still lead to its page, in either error shape", async () => {
+      for (const code of ["mfa_enrollment", "mfa_challenge", "mfa_verification", "sso_required", "organization_selection_required", "radar_email_challenge", "radar_sms_challenge", "radar_challenge", "radar_sign_up_challenge", "radar_sms_sign_in_challenge"]) {
+        for (const body of [{ code, message: "x" }, { error: code, error_description: "x" }]) {
+          mockApi(refuse(403, body));
+          const res = await postFrom("/login", { email: known, password: "a password here", action: "password" });
+          expect(await res.text(), code).toContain('href="/auth/login">Continue on the secure sign-in page');
+        }
+      }
+    });
+
+    it("forgot password: the same page whatever WorkOS answers below 500", async () => {
+      mockApi(() => Response.json({ id: "pr_1" }, { status: 201 }));
+      const sent = await seen(await postFrom("/login/forgot", { email: known }), known);
+      expect(sent.status).toBe(200);
+      for (const answer of [refuse(404, { code: "entity_not_found", message: "User not found." }), SIGN_UP_OFF, refuse(429, { code: "rate_limit_exceeded", message: "Slow down." })]) {
+        mockApi(answer);
+        expect(await seen(await postFrom("/login/forgot", { email: unknown }), unknown)).toEqual(sent);
+      }
+    });
   });
 
   it("refuses forms posted from another site, and expired code steps", async () => {

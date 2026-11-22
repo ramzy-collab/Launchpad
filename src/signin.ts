@@ -42,7 +42,10 @@ const GOOGLE_G = `<svg width="20" height="20" viewBox="0 0 48 48" aria-hidden="t
 // WorkOS
 // ---------------------------------------------------------------------------
 
-type WorkosResult<T> = { ok: true; data: T } | { ok: false; status: number; code: string; message: string; data: Record<string, unknown> };
+type WorkosResult<T> =
+  | { ok: true; data: T }
+  | { ok: false; status: number; code: string; message: string; requestId: string; data: Record<string, unknown> };
+type WorkosFailure = Extract<WorkosResult<unknown>, { ok: false }>;
 
 async function workos<T>(env: Env, path: string, body: Record<string, unknown>): Promise<WorkosResult<T>> {
   let res: Response;
@@ -54,7 +57,7 @@ async function workos<T>(env: Env, path: string, body: Record<string, unknown>):
     });
   } catch {
     console.error("workos unreachable", path);
-    return { ok: false, status: 503, code: "", message: "", data: {} };
+    return { ok: false, status: 503, code: "", message: "", requestId: "", data: {} };
   }
   const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
   if (res.ok) return { ok: true, data: data as T };
@@ -63,7 +66,7 @@ async function workos<T>(env: Env, path: string, body: Record<string, unknown>):
   const firstError = Array.isArray(data.errors) ? str((data.errors[0] as { message?: unknown } | undefined)?.message) : "";
   const message = firstError || str(data.message) || str(data.error_description);
   if (res.status >= 500) console.error("workos", path, res.status);
-  return { ok: false, status: res.status, code, message, data };
+  return { ok: false, status: res.status, code, message, requestId: res.headers.get("x-request-id") ?? "", data };
 }
 
 /** POST /user_management/authenticate with this app's credentials and the visitor's IP and browser. */
@@ -81,7 +84,57 @@ const visitor = (c: Context<AppEnv>) => ({
 });
 
 /** Steps WorkOS can ask for that this page doesn't handle; WorkOS's own page does. */
-const OTHER_STEPS = new Set(["mfa_enrollment", "mfa_challenge", "mfa_verification", "sso_required", "organization_selection_required", "radar_email_challenge", "radar_sms_challenge"]);
+const OTHER_STEPS = new Set([
+  "mfa_enrollment",
+  "mfa_challenge",
+  "mfa_verification",
+  "sso_required",
+  "organization_selection_required",
+  "radar_email_challenge",
+  "radar_sms_challenge",
+  // The names WorkOS's API reference uses for Radar's steps.
+  "radar_challenge",
+  "radar_sign_up_challenge",
+  "radar_sms_sign_in_challenge",
+]);
+
+const TOO_MANY = "Too many attempts. Try again in a minute.";
+const NOT_ANSWERING = "The sign-in service isn't answering. Try again in a minute.";
+
+type AuthFlow = "send_code" | "code" | "password";
+
+/**
+ * What a visitor may be told when WorkOS turns a sign-in down. WorkOS's own text is never shown:
+ * some of it only happens for emails without an account (sign_up_not_allowed), so it would tell
+ * anyone which emails have one. The real answer goes to the server log instead.
+ */
+type AuthMessage = { kind: "message"; status: number; message: string };
+export type LoginProblem =
+  /** The email needs confirming first; the token goes with the emailed code (email_verification_required). */
+  | { kind: "verify"; token: string }
+  /** A step only WorkOS's own sign-in page handles (two-factor, SSO, Radar). */
+  | { kind: "other_step" }
+  | AuthMessage;
+/** Sending a code: "sent" means answer as if it was, so every email gets the same page. */
+export type SendCodeProblem = { kind: "sent" } | AuthMessage;
+
+export function toPublicAuthError(res: WorkosFailure, flow: "send_code"): SendCodeProblem;
+export function toPublicAuthError(res: WorkosFailure, flow: "code" | "password"): LoginProblem;
+export function toPublicAuthError(res: WorkosFailure, flow: AuthFlow): SendCodeProblem | LoginProblem {
+  if (res.status > 0 && res.status < 500) console.warn("workos refused", flow, res.status, res.code || "-", res.requestId || "-");
+  if (res.status >= 500 || res.status === 0) {
+    return { kind: "message", status: 502, message: flow === "send_code" ? "Couldn't send a code. Try again in a minute." : NOT_ANSWERING };
+  }
+  if (res.status === 429) return { kind: "message", status: 429, message: TOO_MANY };
+  if (flow === "send_code") return { kind: "sent" };
+  if (res.code === "email_verification_required" && typeof res.data.pending_authentication_token === "string") {
+    return { kind: "verify", token: res.data.pending_authentication_token };
+  }
+  if (OTHER_STEPS.has(res.code)) return { kind: "other_step" };
+  return flow === "code"
+    ? { kind: "message", status: 400, message: "That code is invalid or expired." }
+    : { kind: "message", status: 400, message: "That password isn't right. Try again, or choose Email me a code." };
+}
 
 // ---------------------------------------------------------------------------
 // Pages
@@ -222,7 +275,7 @@ function codeForm(v: View, email: string, verifying: boolean, status = 200): Res
       <div class="foot-row"><span>Wrong address?</span><a class="tlink" href="${e(withReturn("/login", v))}">Change it</a></div>`;
   const intro = verifying
     ? `To confirm it's your email address, enter the code we sent to <b>${e(email)}</b>.`
-    : `We sent a code to <b>${e(email)}</b>. It works once and expires in 10 minutes.`;
+    : `If there's an account for <b>${e(email)}</b>, we've sent a code. It works once and expires in 10 minutes.`;
   return frame(v, "Check your email", intro, body, status);
 }
 
@@ -239,7 +292,7 @@ async function gate(c: Context<AppEnv>): Promise<{ v: View } | Response> {
     const origin = c.req.header("origin");
     if (origin !== new URL(c.req.url).origin) return htmlResponse("Log in from Formelab itself.", undefined, 403);
     if (c.env.LOGIN_LIMITER && !(await c.env.LOGIN_LIMITER.limit({ key: c.req.header("cf-connecting-ip") ?? "unknown" })).success) {
-      return signInForm({ ...view(c, returnTo), error: "Too many tries. Wait a minute, then try again." }, 429);
+      return signInForm({ ...view(c, returnTo), error: TOO_MANY }, 429);
     }
   }
   return { v: view(c, returnTo) };
@@ -286,8 +339,10 @@ export async function signInPost(c: Context<AppEnv>): Promise<Response> {
   if (action === "email" || action === "use-password") return passwordForm(v, email, true);
 
   if (action === "code") {
+    // Only whether it worked is used: the answer carries the code itself, and never reaches the browser.
     const sent = await workos(c.env, "/user_management/magic_auth", { email, ...visitor(c) });
-    if (!sent.ok) return signInForm({ ...v, error: (sent.status < 500 && sent.message) || "Couldn't send a code. Try again in a minute." }, sent.status >= 500 ? 502 : 400);
+    const problem = sent.ok ? null : toPublicAuthError(sent, "send_code");
+    if (problem?.kind === "message") return signInForm({ ...v, error: problem.message }, problem.status);
     const page = codeForm(v, email, false);
     page.headers.append("set-cookie", pendingCookie({ kind: "m", email }));
     return page;
@@ -297,7 +352,7 @@ export async function signInPost(c: Context<AppEnv>): Promise<Response> {
   if (!password) return passwordForm({ ...v, error: "Enter your password, or choose Email me a code." }, email, false, 400);
   const res = await authenticate(c, { grant_type: "password", email, password });
   if (res.ok) return completeSignIn(c, res.data, moveOn(v.returnTo));
-  return authProblem(c, v, email, res);
+  return authProblem(c, v, email, toPublicAuthError(res, "password"));
 }
 
 /** POST /login/code: the code from the email, to log in or to confirm the address. */
@@ -314,24 +369,23 @@ export async function signInCode(c: Context<AppEnv>): Promise<Response> {
     ? await authenticate(c, { grant_type: "urn:workos:oauth:grant-type:email-verification:code", pending_authentication_token: pending.token, code })
     : await authenticate(c, { grant_type: "urn:workos:oauth:grant-type:magic-auth:code", email: pending.email, code });
   if (res.ok) return completeSignIn(c, res.data, moveOn(v.returnTo));
-  if (OTHER_STEPS.has(res.code) || res.code === "email_verification_required") return authProblem(c, { ...v, email: pending.email }, pending.email, res);
-  return codeForm({ ...v, error: "That code didn't work. Check it, or send a new one." }, pending.email, verifying, 400);
+  const problem = toPublicAuthError(res, "code");
+  if (problem.kind !== "message") return authProblem(c, { ...v, email: pending.email }, pending.email, problem);
+  return codeForm({ ...v, error: problem.message }, pending.email, verifying, problem.status);
 }
 
-/** WorkOS turned the sign-in down, or wants another step first. */
-function authProblem(c: Context<AppEnv>, v: View, email: string, res: Extract<WorkosResult<unknown>, { ok: false }>): Response {
-  if (res.code === "email_verification_required" && typeof res.data.pending_authentication_token === "string") {
+/** WorkOS turned the sign-in down, or wants another step first (see toPublicAuthError). */
+function authProblem(c: Context<AppEnv>, v: View, email: string, p: LoginProblem): Response {
+  if (p.kind === "verify") {
     const page = codeForm(v, email, true);
-    page.headers.append("set-cookie", pendingCookie({ kind: "v", email, token: res.data.pending_authentication_token }));
+    page.headers.append("set-cookie", pendingCookie({ kind: "v", email, token: p.token }));
     return page;
   }
-  if (OTHER_STEPS.has(res.code)) {
+  if (p.kind === "other_step") {
     const link = `<a class="tlink" href="${e(withReturn("/auth/login", v))}">Continue on the secure sign-in page</a>`;
     return signInForm({ ...v, error: "Your account needs another sign-in step.", extra: link }, 400);
   }
-  if (res.status >= 500 || res.status === 0) return passwordForm({ ...v, error: "The sign-in service isn't answering. Try again in a minute." }, email, false, 502);
-  if (res.status === 429) return passwordForm({ ...v, error: "Too many tries. Wait a minute, then try again." }, email, false, 429);
-  return passwordForm({ ...v, error: "That password isn't right. Try again, or choose Email me a code." }, email, false, 400);
+  return passwordForm({ ...v, error: p.message }, email, false, p.status);
 }
 
 /** GET /login/forgot */

@@ -318,9 +318,10 @@ Thanksgiving Menu. Example cases:
     password set. Unknown emails and accounts without a password look the same. Fixed Nov 22,
     2026: the hint is shown to everyone and the lookup is gone.
   - "Email me a code" and wrong passwords: Formelab's own copy is the same for every email, but
-    WorkOS's error message is shown as is when sending a code fails (`sent.message`). Whether
-    WorkOS words it differently for unknown emails can't be told from the code; check against
-    WorkOS once.
+    WorkOS's error message was shown as is when sending a code failed (`sent.message`). Fixed
+    Nov 22, 2026: every sign-in step now shows Formelab's own copy (`toPublicAuthError`,
+    `src/signin.ts`). Checking WorkOS staging itself for leftovers (extra sign-in steps on a wrong
+    password, timing) is on the README's "Before a wider launch" list.
 - WorkOS cost for large numbers of app sign-ins.
 - Lawyer: processor terms, deletion deadlines (GDPR: one month), marketing consent.
 
