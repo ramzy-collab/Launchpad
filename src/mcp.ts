@@ -407,7 +407,7 @@ export function buildServer(ctx: Ctx, beforeTools?: (server: McpServer) => void,
 
   server.registerTool(
     "get_guide",
-    { description: "Return the Formelab app-building guide (markdown): URL model, SDK reference, patterns, starter app, checklist.", annotations: { readOnlyHint: true } },
+    { description: "Return the Formelab app-building guide (markdown): URL model, SDK reference, access rules, patterns, starter app, checklist.", annotations: { readOnlyHint: true } },
     () => run(async () => withFlags(GUIDE_MD, await enabledFlags(ctx.env, ctx.user))),
   );
 

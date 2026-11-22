@@ -139,6 +139,8 @@ apex.get(AUTHORIZE_PATH, authorizeGet);
 apex.post(AUTHORIZE_PATH, authorizePost);
 
 apex.get("/_platform/guide.md", guide);
+// The address refusals give people to paste into their AI tool (/guide#access-rules).
+apex.get("/guide", guide);
 apex.notFound(notFoundPage);
 
 // ---------------------------------------------------------------------------

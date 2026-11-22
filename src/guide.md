@@ -433,7 +433,71 @@ async function combined() {
   cache, for the owner only, so viewers can't use up the limit.
 
 <!-- /flag:connected_apps -->
-## 4. Patterns
+## 4. Access rules
+
+An app that saves shared data (`formelab.kv`)<!-- flag:connected_apps -->, uses Google Sheets or calls connectors (custom
+connectors, saved keys or Gemini)<!-- /flag:connected_apps --> needs **access rules**: a `formelab.json` file at the root of the
+app that says who can see and change each kind of record. Formelab refuses to publish a new app
+without one (`rules_required`), and refuses a broken one for every app (`rules_invalid`, with the
+exact problem). Apps that only use `formelab.kv.mine`<!-- flag:responses --> or `formelab.responses`<!-- /flag:responses -->, or save nothing,
+don't need it.
+
+**Ask the person first.** Before you write the file, ask who should see and change each kind of
+record. Don't guess: the answer decides who can read other people's data.
+
+**Everyone may read and write everything** (polls, a shared menu, a team board) is one line, and an
+explicit, valid choice:
+
+```json
+{ "everyone": "all" }
+```
+
+**Rules per kind of record**, for apps where people should see only some of the data:
+
+```json
+{
+  "default_role": "salesperson",
+  "manage_roles": ["manager"],
+  "records": {
+    "lead": {
+      "prefix": "lead:",
+      "fields": ["name", "stage", "assignedTo"],
+      "owner_field": "assignedTo",
+      "read":  { "manager": "all", "salesperson": "own" },
+      "write": { "manager": "all", "salesperson": "own" }
+    }
+  }
+}
+```
+
+- `records`: each kind of record the app saves, by name (lowercase letters, digits, `_` or `-`).
+  - `prefix`: the start of its keys, like `"lead:"` for `"lead:42"`. A record you save as one key
+    (like `"settings"`) uses the whole key. No prefix may start another (`"lead:"` and
+    `"lead:old:"` are refused): use `"lead:"` and `"oldlead:"`.
+  - `fields`: the fields in its value (optional; AI tools use them to describe the data).
+  - `owner_field`: the field holding the email of the person a record belongs to. Needed for `own`.
+  - `read` and `write`: each role gets `"all"`, `"own"` (only records whose `owner_field` is the
+    signed-in person's email) or `"none"`. Roles not listed get `"none"`.
+- `guest` is the role for people who open the app through its public link, signed out. It gets
+  `"none"` unless you grant it.
+- `default_role`: the role people the app is shared with get.
+- `manage_roles`: roles that may add people and give them roles inside the app. **Only if the person
+  asks for it:** people in these roles can invite anyone, so the app counts as public. Publishing
+  asks the person to confirm (`confirm_public`); tell them what it says and publish again with
+  `confirm_public: true` only if they say yes. Never confirm on their behalf.
+- The owner and editors always see and change everything. Records whose prefix no rule mentions
+  are only for them.
+- Don't list who holds which role: anyone who can open the app can read its files, `formelab.json`
+  included.
+
+**Publishing it.** A single-file app with rules is published as `files`
+(`{ "index.html": "...", "formelab.json": "..." }`) or as a zip, since `html` carries one file.
+To add rules to an existing app, publish `files: { "formelab.json": "..." }`.
+
+Formelab checks the file when you publish. Filtering what each person sees by these rules is
+rolling out after that; until then, `data_writes` still decides who can change shared data.
+
+## 5. Patterns
 
 ### Dashboard over an external API
 
@@ -496,11 +560,13 @@ form.addEventListener("submit", async (ev) => {
 
 <!-- /flag:responses -->
 
-## 5. Starter app
+## 6. Starter app
 
 A complete single-file app that uses `me`, `kv` and `secrets.proxy`. It greets the viewer, counts
 visits, lets an editor store a key, and calls `https://httpbin.org/anything` through the proxy.
 Every visitor updates the visit counter, so publish it with `data_writes: "everyone"`.
+It saves shared data, so it needs access rules too: publish it with
+`files: { "index.html": "...", "formelab.json": "{ \"everyone\": \"all\" }" }` (see "Access rules").
 
 ```html
 <!doctype html>
@@ -571,7 +637,7 @@ Every visitor updates the visit counter, so publish it with `data_writes: "every
 </html>
 ```
 
-## 6. Publishing
+## 7. Publishing
 
 ### With the MCP `publish` tool (preferred)
 
@@ -582,7 +648,9 @@ Claude Code (deploy token), Claude chat and ChatGPT (custom connectors with sign
    name; publishing to a free namespace creates it.
 2. `publish` with `html` (a complete document as a string) or `zip_base64`, plus `namespace` and
    `mount_path`. Optional: `title`, `spa`, `visibility`, `allowed_emails`, `data_writes`
-   (`"everyone"` if viewers write to shared KV; the default `"editors"` otherwise).
+   (`"everyone"` if viewers write to shared KV; the default `"editors"` otherwise). If the app saves shared
+   data<!-- flag:connected_apps --> or uses Sheets or connectors<!-- /flag:connected_apps -->, include `formelab.json` (send `files` or a zip instead of
+   `html`; see "Access rules").
 3. Give the user the returned `url` (the app's own address, like `https://budget-7kq2.<APP_DOMAIN>/`).
 
 **Changing an existing app: send only the changes.** Don't resend the whole app; for a large app
@@ -633,7 +701,7 @@ only the changed files and `delete` lists paths to remove, one per line).
 `GET /_api/deploy/sites/manifest?namespace=…&mount_path=…` lists the live files with their SHA-256
 (`&format=sha256sum` for `sha256sum` lines). The JSON body also takes `edits` and `files`, as above.
 
-## 7. Agent checklist
+## 8. Agent checklist
 
 - [ ] One self-contained `index.html` unless the user needs more files.
 - [ ] Has `<head>`; all asset URLs are relative; nothing points at `/_api/` or `/_platform/` except the SDK script tag.
@@ -647,6 +715,7 @@ only the changed files and `delete` lists paths to remove, one per line).
       without a Formelab account must fill it in, `update_site` sets `public_link` and `guest_responses`.
 <!-- /flag:responses -->
 - [ ] Works on a phone (responsive layout, `<meta name="viewport">`), and as an installed app (every screen has a way back).
+- [ ] **Has access rules if it saves shared data<!-- flag:connected_apps --> or uses Sheets or connectors<!-- /flag:connected_apps --> (required for new apps):** a `formelab.json` written after asking the person who should see and change each kind of record (see "Access rules"). `manage_roles` only if they asked for in-app invites.
 - [ ] **Has an icon (required):** a small SVG that fits the app, linked in `<head>` as `<link rel="icon" href="data:image/svg+xml,...">` (URL-encoded SVG), or as `<link rel="icon" href="icon.svg">` with `icon.svg` in the zip. Formelab shows it on the app's tile, and the `publish` tool refuses apps without one (`icon_required`).
 - [ ] **Has a share illustration and description (recommended):** a 1200×630 SVG that shows what the app is, named by `<meta property="og:image">`, and a one-sentence `<meta name="description">`, for link previews in iMessage, Slack and the rest (see "Link previews"). No one's data in them: they're public.
 - [ ] Apps are private by default (only the owner and editors). Add `allowed_emails` for the people who should open it; they see it under "My apps".

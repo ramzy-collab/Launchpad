@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ApiError } from "../src/errors";
+import { GUIDE_MD } from "../src/generated/assets";
 import { parseRules, scanAccess } from "../src/rules";
 
 const enc = (s: string) => new TextEncoder().encode(s);
@@ -36,6 +37,13 @@ describe("formelab.json", () => {
     expect(rules(CRM)).toEqual(CRM);
     expect(rules({ everyone: "all" })).toEqual({ everyone: "all" });
     expect(rules({ records: {} })).toEqual({ records: {} });
+  });
+
+  it("accepts the guide's examples", () => {
+    const section = GUIDE_MD.slice(GUIDE_MD.indexOf("## 4. Access rules"), GUIDE_MD.indexOf("## 5. Patterns"));
+    const examples = [...section.matchAll(/```json\n([\s\S]*?)```/g)].map((m) => m[1]!);
+    expect(examples).toHaveLength(2);
+    for (const json of examples) expect(() => rules(json)).not.toThrow();
   });
 
   it("refuses broken files with the exact problem", () => {
