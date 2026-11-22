@@ -168,3 +168,45 @@ export function scanAccess(files: FileMap): AccessScan {
   scan.prefixes = [...prefixes].sort();
   return scan;
 }
+
+/** What the app's settings page needs from a scan, stored in sites.access as JSON. */
+export const storedAccess = (s: AccessScan) =>
+  JSON.stringify({ kv: s.kv, prefixes: s.prefixes, dynamic: s.dynamic, sheets: s.sheets, connectors: s.connectors, rules: !!s.rules, invites: s.invites });
+
+/** Whether the app needs rules it doesn't have: it saves shared data or uses connected services. */
+export const needsRules = (s: AccessScan) => !s.rules && (s.kv || s.sheets || s.connectors);
+
+const LISTED = 10;
+const listOf = (items: string[]) => (items.length < 3 ? items.join(" and ") : `${items.slice(0, -1).join(", ")} and ${items.at(-1)}`);
+
+/** The refusal for a new app that needs rules: the reason, the remedy and a prompt to paste into an AI tool. */
+export function rulesRequired(s: AccessScan, guideUrl: string) {
+  const shown = s.prefixes.slice(0, LISTED);
+  const more = s.prefixes.length > LISTED ? ` and ${s.prefixes.length - LISTED} more` : "";
+  const services = [s.sheets && "Google Sheets", s.connectors && "connected services"].filter((x): x is string => !!x);
+  const uses = services.length ? `uses ${listOf(services)}` : "";
+  let what: string;
+  let promptStart: string;
+  if (s.kv) {
+    what = `saves data${shown.length ? ` (we found ${listOf(shown)}${more} records)` : ""}${uses ? ` and ${uses}` : ""}`;
+    promptStart = shown.length ? `My Formelab app saves data under these keys: ${shown.join(", ")}${more ? ", and others" : ""}.` : "My Formelab app saves data with formelab.kv.";
+    if (uses) promptStart += ` It also ${uses}.`;
+  } else {
+    what = uses;
+    promptStart = `My Formelab app ${uses}.`;
+  }
+  const ask = s.kv ? "Ask me who should see and change each kind of record before you write it." : "Ask me who should use them before you write it.";
+  const prompt = `${promptStart} Write a formelab.json access rules file for it, following ${guideUrl}. ${ask}`;
+  const fix = s.kv
+    ? "To fix it, add a formelab.json that says who can see and change each kind of record."
+    : "To fix it, add a formelab.json that says who can use the app.";
+  return err(400, "rules_required", `This app can't be published yet. It ${what} but has no access rules, so we can't tell who should see what.`,
+    `${fix} Or paste this into Claude, ChatGPT or your AI tool: ${prompt}`,
+    { title: "This app can't be published yet", reason: `It ${what} but has no access rules, so we can't tell who should see what.`, fix, prompt, prefixes: s.prefixes });
+}
+
+/** Asked before publishing rules that let people in the app invite others (manage_roles). */
+export const confirmPublic = () =>
+  err(409, "confirm_public", "People using this app can invite anyone. Treat it as public: anyone they invite can open it.",
+    "Ask the person whether to publish anyway. Only if they say yes, publish again with confirm_public set to true.",
+    { title: "People using this app can invite anyone", reason: "Treat it as public: anyone they invite can open it." });

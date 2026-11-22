@@ -163,6 +163,10 @@ export function buildServer(ctx: Ctx, beforeTools?: (server: McpServer) => void,
         visibility: z.enum(["all", "restricted"]).optional().describe("Default \"restricted\": only the owner, editors and allowed_emails can open it. \"all\": every Formelab member (people let in, not those still on the waitlist)"),
         allowed_emails: emails,
         data_writes: dataWrites,
+        confirm_public: z
+          .boolean()
+          .optional()
+          .describe("Only after the person said yes to publishing anyway, when publish answered confirm_public. Never set it on your own."),
       },
     },
     (args) =>
@@ -179,6 +183,7 @@ export function buildServer(ctx: Ctx, beforeTools?: (server: McpServer) => void,
           allowedEmails: args.allowed_emails,
           dataWrites: args.data_writes,
           requireIcon: true,
+          confirmPublic: args.confirm_public,
         });
         return { url: r.url, replaced: r.replaced, ...(changed ? { changed } : {}), site: r.site, ...(r.note ? { note: r.note } : {}) };
       }),

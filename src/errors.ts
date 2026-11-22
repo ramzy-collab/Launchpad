@@ -8,15 +8,17 @@ export class ApiError extends Error {
     public code: string,
     message: string,
     public hint: string,
+    /** More for the caller to show, like a refusal's paste-in prompt; sent as error.details. */
+    public details?: Record<string, unknown>,
   ) {
     super(message);
   }
 }
 
-export const err = (status: ContentfulStatusCode, code: string, message: string, hint: string) =>
-  new ApiError(status, code, message, hint);
+export const err = (status: ContentfulStatusCode, code: string, message: string, hint: string, details?: Record<string, unknown>) =>
+  new ApiError(status, code, message, hint, details);
 
-export const errorBody = (e: ApiError) => ({ error: { code: e.code, message: e.message, hint: e.hint } });
+export const errorBody = (e: ApiError) => ({ error: { code: e.code, message: e.message, hint: e.hint, ...(e.details ? { details: e.details } : {}) } });
 
 export function jsonError(e: ApiError): Response {
   return new Response(JSON.stringify(errorBody(e)), {
