@@ -176,8 +176,26 @@ export interface SheetsRequest {
   body?: unknown;
 }
 
+/**
+ * What people who use an app (not its owner or editors) may do with its spreadsheets: read values
+ * and add or change rows, which is all formelab.sheets.read/append/update need. Not structural
+ * edits (batchUpdate, clear, copyTo, DELETE), data-filter calls or whole-grid reads, which they
+ * could otherwise make with the owner's account by calling the endpoint directly.
+ */
+function viewerMayCall(method: string, rest: string, query: URLSearchParams): boolean {
+  if (rest === "") {
+    // Spreadsheet metadata (tab names) only: grid data comes with includeGridData or a field mask.
+    return method === "GET" && [...query.keys()].every((k) => k === "fields" || k === "ranges") && !/data/i.test(query.getAll("fields").join(","));
+  }
+  if (rest === "/values:batchGet") return method === "GET";
+  if (rest === "/values:batchUpdate") return method === "POST";
+  if (!/^\/values\/.+/.test(rest)) return false;
+  // values/<range>: get (GET), update (PUT) or append (POST). Clear is also POST, so name append.
+  return method === "GET" || method === "PUT" || (method === "POST" && rest.endsWith(":append"));
+}
+
 /** One Sheets API call (https://sheets.googleapis.com/v4/<path>) for an app, as its owner. */
-export async function sheetsCall(env: Env, site: SiteRow, viewer: User, req: SheetsRequest): Promise<{ status: number; data: unknown }> {
+export async function sheetsCall(env: Env, site: SiteRow, viewer: User, req: SheetsRequest, manages: boolean): Promise<{ status: number; data: unknown }> {
   if (!sheetsConfigured(env)) throw err(503, "not_configured", "Google Sheets isn't set up on this Formelab yet.", "Ask the Formelab admin.");
   const method = String(req.method ?? "GET").toUpperCase();
   if (!["GET", "POST", "PUT", "DELETE"].includes(method)) throw badRequest("method must be GET, POST, PUT or DELETE.", "Use formelab.sheets.read/append/update/create, or request().");
@@ -212,6 +230,14 @@ export async function sheetsCall(env: Env, site: SiteRow, viewer: User, req: She
     for (const [k, v] of Object.entries(req.query as Record<string, unknown>)) {
       for (const item of Array.isArray(v) ? v : [v]) url.searchParams.append(k, String(item));
     }
+  }
+  if (!creating && !manages && !viewerMayCall(method, path.slice(`spreadsheets/${sheetId}`.length), url.searchParams)) {
+    throw err(
+      403,
+      "sheets_editors_only",
+      "Only the app's owner and editors can do that with its spreadsheets.",
+      "People using the app can read values and add or change rows: use formelab.sheets.read, append and update.",
+    );
   }
   const payload = req.body === undefined ? undefined : JSON.stringify(req.body);
   if (payload && payload.length > MAX_BODY) throw err(413, "body_too_large", "The request to Google Sheets is larger than 1 MB.", "Send fewer rows at a time.");

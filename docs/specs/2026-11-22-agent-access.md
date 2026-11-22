@@ -19,9 +19,14 @@ Storage is not the security question; who may read and write is.
 Two existing problems, each a small change of its own (details in step 6 and the open items):
 
 1. People an app is shared with can make any Sheets or connector call, with the owner's account
-   or key, beyond what the app's code does, and `data_writes` doesn't limit them. At minimum, make
-   non-GET Sheets calls and `batchUpdate` follow `data_writes`, and say in the Connected apps copy
-   that people who can open the app can use the key directly, not only through the app.
+   or key, beyond what the app's code does, and `data_writes` doesn't limit them. **Partly fixed
+   Nov 22, 2026:** people below owner or editor are limited to value reads, row appends and
+   updates and tab names (`viewerMayCall`, `src/sheets.ts`); structural edits, clearing, data
+   filters and grid data fail with `sheets_editors_only`. Making row writes follow `data_writes`
+   was rejected: apps made since migration `0012` default to "editors" and the builder only
+   checks `formelab.kv` writes, so it would break apps whose users add rows. They can still read
+   any range and overwrite rows; step 6's rules close that. Connectors are unchanged apart from
+   copy saying people who can open the app can make their own calls with them.
 2. Sign-in step one shows whether an email has a password set (account enumeration, low severity).
 
 ## Build order
