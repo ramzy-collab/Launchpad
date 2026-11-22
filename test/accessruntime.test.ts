@@ -124,6 +124,43 @@ describe("access rules inside the app", () => {
     expect((await call(`${origin}/_api/me/kv/draft`, { as: OWNER, mount: "/", method: "PUT", body: "1" })).status).toBe(200);
   });
 
+  it("can't be slipped past with a percent-encoded path", async () => {
+    const ns = uniq();
+    await publishHtml(OWNER, ns, "enc", PAGE(`<script>formelab["kv"].set("x", 1)</script>`), {}, { newApp: true });
+    const origin = await appAt(ns, "enc");
+    for (const path of ["%6Bv/x", "k%76/x", "%73heets"]) {
+      const res = await call(`${origin}/_api/${path}`, { as: OWNER, mount: "/", method: path.includes("heets") ? "POST" : "PUT", body: '{"method":"GET","path":"x"}' });
+      expect(res.status, path).not.toBe(200);
+    }
+    const id = (await env.DB.prepare("SELECT id FROM sites WHERE namespace = ? AND mount_path = 'enc'").bind(ns).first<{ id: string }>())!.id;
+    expect(await env.DB.prepare("SELECT COUNT(*) AS n FROM kv WHERE site_id = ?").bind(id).first<{ n: number }>()).toEqual({ n: 0 });
+  });
+
+  it("checks ownership inside the write, so a record that isn't theirs is never replaced or deleted", async () => {
+    const { id, kv } = await app(CRM);
+    await kv(OWNER, "lead:5", "PUT", { name: "Eve", assignedTo: REP2 });
+    expect((await kv(REP, "lead:5", "PUT", { name: "Mine now", assignedTo: REP })).status).toBe(403);
+    expect((await kv(REP, "lead:5", "DELETE")).status).toBe(403);
+    // A value that isn't an object has no owner: nobody but owners and editors can replace it.
+    await kv(OWNER, "lead:6", "PUT", "just text");
+    expect((await kv(REP, "lead:6", "PUT", { name: "x", assignedTo: REP })).status).toBe(403);
+    const rows = await env.DB.prepare("SELECT key, value FROM kv WHERE site_id = ? ORDER BY key").bind(id).all<{ key: string; value: string }>();
+    expect(rows.results).toEqual([
+      { key: "lead:5", value: JSON.stringify({ name: "Eve", assignedTo: REP2 }) },
+      { key: "lead:6", value: '"just text"' },
+    ]);
+  });
+
+  it("pages past records someone can't see, never naming them in the cursor", async () => {
+    const { kv } = await app(CRM);
+    const big = "x".repeat(60 * 1024);
+    for (let i = 10; i < 80; i++) await kv(OWNER, `lead:${i}`, "PUT", { name: big, assignedTo: REP2 }); // about 4.2 MB Rep A can't see
+    await kv(OWNER, "lead:90", "PUT", { name: "Ada", assignedTo: REP });
+    const res = await kv(REP, "");
+    expect(res.headers.get("x-formelab-next")).toBeNull();
+    expect(await keys(res)).toEqual(["lead:90"]);
+  });
+
   it("keeps today's behavior for apps made before access rules", async () => {
     const ns = uniq();
     const id = (await (await publishHtml(OWNER, ns, "old", PAGE("hi"), { allowed_emails: REP })).json<{ site: { id: string } }>()).site.id;

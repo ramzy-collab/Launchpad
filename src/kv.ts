@@ -1,6 +1,6 @@
 import type { Env } from "./env";
 import { now } from "./env";
-import { badRequest, err, notFound } from "./errors";
+import { badRequest, err, notAllowed, notFound } from "./errors";
 
 export const KV_MAX_KEY = 256;
 export const KV_MAX_VALUE_BYTES = 64 * 1024;
@@ -66,7 +66,20 @@ export async function kvGet(env: Env, scope: KvScope, key: string) {
   return { value: JSON.parse(row.value) as unknown };
 }
 
-export async function kvSet(env: Env, scope: KvScope, key: string, rawBody: string) {
+/** The SQL test that a stored value's owner field names the person (?7 = JSON path, ?8 = email). */
+const OWNED = "lower(trim(json_extract(value, ?7))) = ?8";
+/** For writes limited to records a person owns (see checkWrite in src/rules.ts). */
+export interface OwnedBy {
+  field: string;
+  email: string;
+}
+
+/** Whether the key exists in the scope, to tell a refused conditional write from a full app. */
+const exists = async (env: Env, scope: KvScope, key: string) =>
+  !!(await env.DB.prepare(`SELECT 1 FROM ${table(scope)} WHERE ${owner(scope)} AND key = ?3`).bind(...ownerBinds(scope), key).first());
+
+/** `owned`: only replace an existing record whose owner field names that person (shared data only). */
+export async function kvSet(env: Env, scope: KvScope, key: string, rawBody: string, owned?: OwnedBy) {
   validateKey(key);
   let parsed: unknown;
   try {
@@ -87,16 +100,18 @@ export async function kvSet(env: Env, scope: KvScope, key: string, rawBody: stri
            SELECT ?1, ?3, ?4, ?5
             WHERE EXISTS (SELECT 1 FROM kv WHERE site_id = ?1 AND key = ?3)
                OR (SELECT COUNT(*) FROM kv WHERE site_id = ?1) < ?6
-         ON CONFLICT(site_id, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`
+         ON CONFLICT(site_id, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+         ${owned ? `WHERE ${OWNED.replace("value", "kv.value")}` : ""}`
       : `INSERT INTO kv_user (site_id, email, key, value, updated_at)
            SELECT ?1, ?2, ?3, ?4, ?5
             WHERE EXISTS (SELECT 1 FROM kv_user WHERE site_id = ?1 AND email = ?2 AND key = ?3)
                OR (SELECT COUNT(*) FROM kv_user WHERE site_id = ?1 AND email = ?2) < ?6
          ON CONFLICT(site_id, email, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
   )
-    .bind(...ownerBinds(scope), key, serialized, now(), cap)
+    .bind(...ownerBinds(scope), key, serialized, now(), cap, ...(owned ? [`$.${owned.field}`, owned.email] : []))
     .run();
   if (!res.meta.changes) {
+    if (owned && (await exists(env, scope, key))) throw notAllowed();
     throw t === "kv"
       ? err(409, "too_many_keys", `This app already has ${KV_MAX_KEYS} keys.`, "Delete keys you no longer need, or combine small values into one key.")
       : err(409, "too_many_keys", `You already have ${KV_MAX_USER_KEYS} keys of your own in this app.`, "Delete keys you no longer need, or combine small values into one key.");
@@ -104,8 +119,15 @@ export async function kvSet(env: Env, scope: KvScope, key: string, rawBody: stri
   return { ok: true };
 }
 
-export async function kvDelete(env: Env, scope: KvScope, key: string) {
+export async function kvDelete(env: Env, scope: KvScope, key: string, owned?: OwnedBy) {
   validateKey(key);
-  await env.DB.prepare(`DELETE FROM ${table(scope)} WHERE ${owner(scope)} AND key = ?3`).bind(...ownerBinds(scope), key).run();
+  if (!owned) {
+    await env.DB.prepare(`DELETE FROM ${table(scope)} WHERE ${owner(scope)} AND key = ?3`).bind(...ownerBinds(scope), key).run();
+    return { ok: true };
+  }
+  const res = await env.DB.prepare(`DELETE FROM ${table(scope)} WHERE ${owner(scope)} AND key = ?3 AND ${OWNED}`)
+    .bind(...ownerBinds(scope), key, null, null, null, `$.${owned.field}`, owned.email)
+    .run();
+  if (!res.meta.changes && (await exists(env, scope, key))) throw notAllowed();
   return { ok: true };
 }

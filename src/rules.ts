@@ -1,8 +1,8 @@
 // An app's access rules (formelab.json) and the fixed scan publish uses to tell whether an app
 // needs them: does its code save shared data, use Google Sheets or call connectors. No AI is
 // involved. See docs/specs/2026-11-22-agent-access.md, step 2.
-import { err } from "./errors";
-import { KV_MAX_KEY } from "./kv";
+import { err, notAllowed } from "./errors";
+import { KV_MAX_KEY, type OwnedBy } from "./kv";
 import type { FileMap } from "./upload";
 
 export const RULES_FILE = "formelab.json";
@@ -88,7 +88,9 @@ export function parseRules(bytes: Uint8Array): Rules {
     if (r.fields !== undefined && !(Array.isArray(r.fields) && r.fields.every((f) => typeof f === "string" && f))) {
       throw bad(`${where}.fields must be a list of field names.`);
     }
-    if (r.owner_field !== undefined && (typeof r.owner_field !== "string" || !r.owner_field)) throw bad(`${where}.owner_field must be a field name.`);
+    if (r.owner_field !== undefined && (typeof r.owner_field !== "string" || !/^[A-Za-z_][A-Za-z0-9_]{0,63}$/.test(r.owner_field))) {
+      throw bad(`${where}.owner_field must be a field name of letters, digits and "_", like "assignedTo".`);
+    }
     const read = levels(r.read, `${where}.read`);
     const write = levels(r.write, `${where}.write`);
     const ownUsed = [...Object.values(read), ...Object.values(write)].includes("own");
@@ -250,20 +252,19 @@ export function mayRead(rules: Rules, who: Who, key: string, value: unknown): bo
 
 /**
  * Throws not_allowed unless the person may write `next` to the key (undefined `next` is a delete).
- * With "own", the record must already be theirs (or new) and stay theirs.
+ * With "own", the new value must name them, and the result says which existing record may be
+ * replaced: kvSet and kvDelete check that in the same statement, so nobody can slip in between.
  */
-export function checkWrite(rules: Rules, who: Who, key: string, existing: unknown, next: unknown) {
+export function checkWrite(rules: Rules, who: Who, key: string, next: unknown): OwnedBy | undefined {
   const { level, rule } = levelFor(rules, who, key, "write");
-  if (level === "all") return;
-  if (level === "own") {
-    const theirs = existing === undefined || ownedBy(rule, existing, who.email);
-    const staysTheirs = next === undefined || ownedBy(rule, next, who.email);
-    if (theirs && staysTheirs) return;
-    if (theirs && !staysTheirs) {
-      throw err(403, "not_allowed", `You can only save records with your own email in "${rule!.owner_field}".`, `Set "${rule!.owner_field}" to your email, the one formelab.me() returns.`);
+  if (level === "all") return undefined;
+  if (level === "own" && rule?.owner_field && who.email) {
+    if (next !== undefined && !ownedBy(rule, next, who.email)) {
+      throw err(403, "not_allowed", `You can only save records with your own email in "${rule.owner_field}".`, `Set "${rule.owner_field}" to your email, the one formelab.me() returns.`);
     }
+    return { field: rule.owner_field, email: who.email.trim().toLowerCase() };
   }
-  throw err(403, "not_allowed", "You can't change this record.", "This app's access rules (formelab.json) decide who can change each kind of record. Ask its owner if you need to.");
+  throw notAllowed();
 }
 
 /** Refuses an app made after access rules shipped that has none, at runtime: a backstop for what the publish scan missed. */
