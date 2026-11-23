@@ -1,7 +1,7 @@
 import { Hono, type Context } from "hono";
 import type { AppEnv } from "./env";
-import { badRequest, err, forbidden, jsonError, onError } from "./errors";
-import { kvDelete, kvGet, kvList, kvSet, type KvScope } from "./kv";
+import { badRequest, err, forbidden, jsonError, notFound, onError } from "./errors";
+import { KV_LIST_PAGE_BYTES, kvDelete, kvGet, kvList, kvSet, type KvScope } from "./kv";
 import { proxy, secretDelete, secretList, secretSet } from "./secrets";
 import { connectorFetch } from "./connectors";
 import { geminiAvailable, geminiGenerate } from "./gemini";
@@ -9,6 +9,8 @@ import { flagOnForOwner } from "./flags";
 import { sheetsAvailable, sheetsCall } from "./sheets";
 import { deleteResponse, listResponses, submitResponse } from "./responses";
 import { parseJsonArray } from "./util";
+import { checkWrite, mayRead, rulesMissing, type Rules, type Who } from "./rules";
+import { rulesOfSite } from "./sites";
 
 /**
  * The per-app runtime API on an app's own host, <host_label>.APP_DOMAIN/_api/*. The parent sets
@@ -65,6 +67,17 @@ export function runtimeApi() {
     await next();
   });
 
+  // Backstop (spec step 3): an app made after access rules shipped that has none can't use saved
+  // data or the owner's services, whoever asks, even if the publish scan missed its calls. Attached
+  // to the routes themselves, so it matches exactly what the router serves.
+  const backstop = async (c: Context<AppEnv>, next: () => Promise<void>) => {
+    const site = c.get("site");
+    if (site.rules_required && !(await rulesOfSite(c.env, site))) throw rulesMissing();
+    await next();
+  };
+  for (const path of ["/kv", "/kv/*"]) api.use(path, backstop);
+  for (const path of ["/sheets", "/connectors/:name/fetch", "/secrets/:name/proxy", "/ai/gemini"]) api.on("POST", path, backstop);
+
   api.get("/me", (c) => {
     if (c.get("guest")) return c.json(null);
     const u = c.get("user");
@@ -110,15 +123,67 @@ export function runtimeApi() {
     if (next !== null) c.header("x-formelab-next", encodeURIComponent(next));
     return c.json(rows);
   };
-  api.get("/kv", (c) => listKv(c, shared(c)));
-  api.get("/kv/*", async (c) => c.json(await kvGet(c.env, shared(c), sharedKey(c))));
+  /**
+   * The same, keeping only rows `keep` allows. Reads on past what's left out, so a page ends on a
+   * row the person may see and the cursor never names a key they can't.
+   */
+  const listKept = async (c: Ctx, scope: KvScope, keep: (row: { key: string; value: unknown }) => boolean) => {
+    const prefix = c.req.query("prefix") ?? "";
+    let after = c.req.query("after") ?? "";
+    const kept: { key: string; value: unknown; updatedAt: number }[] = [];
+    let bytes = 0;
+    for (;;) {
+      const { rows, next } = await kvList(c.env, scope, prefix, after);
+      for (const r of rows) {
+        if (!keep(r)) continue;
+        kept.push(r);
+        bytes += JSON.stringify(r.value).length;
+        if (bytes >= KV_LIST_PAGE_BYTES) {
+          c.header("x-formelab-next", encodeURIComponent(r.key));
+          return c.json(kept);
+        }
+      }
+      if (next === null) return c.json(kept);
+      after = next;
+    }
+  };
+
+  // Apps with access rules (formelab.json): each person reads and changes only what the rules allow.
+  // Records they may not see look like missing keys, so the app's code just gets null.
+  const who = (c: Ctx): Who => ({ manages: !!c.get("manages"), guest: !!c.get("guest"), email: c.get("guest") ? null : c.get("user").email });
+  const rulesOf = (c: Ctx): Promise<Rules | null> => rulesOfSite(c.env, c.get("site"));
+  /** The value being written, for the rules to read; invalid JSON is left for kvSet to refuse. */
+  const parsed = (raw: string) => {
+    try {
+      return JSON.parse(raw) as unknown;
+    } catch {
+      return null;
+    }
+  };
+
+  api.get("/kv", async (c) => {
+    const rules = await rulesOf(c);
+    return rules ? listKept(c, shared(c), (r) => mayRead(rules, who(c), r.key, r.value)) : listKv(c, shared(c));
+  });
+  api.get("/kv/*", async (c) => {
+    const key = sharedKey(c);
+    const found = await kvGet(c.env, shared(c), key);
+    const rules = await rulesOf(c);
+    if (rules && !mayRead(rules, who(c), key, found.value)) throw notFound(`Key "${key.slice(0, 80)}"`);
+    return c.json(found);
+  });
   api.put("/kv/*", async (c) => {
-    requireDataWrite(c);
-    return c.json(await kvSet(c.env, shared(c), sharedKey(c), await readValue(c)));
+    const key = sharedKey(c);
+    const raw = await readValue(c);
+    const rules = await rulesOf(c);
+    if (!rules) requireDataWrite(c);
+    return c.json(await kvSet(c.env, shared(c), key, raw, rules ? checkWrite(rules, who(c), key, parsed(raw)) : undefined));
   });
   api.delete("/kv/*", async (c) => {
-    requireDataWrite(c);
-    return c.json(await kvDelete(c.env, shared(c), sharedKey(c)));
+    const key = sharedKey(c);
+    const rules = await rulesOf(c);
+    if (!rules) requireDataWrite(c);
+    return c.json(await kvDelete(c.env, shared(c), key, rules ? checkWrite(rules, who(c), key, undefined) : undefined));
   });
 
   // Each person's private data in this app: only they can read or change it.

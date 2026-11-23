@@ -1,8 +1,8 @@
 // An app's access rules (formelab.json) and the fixed scan publish uses to tell whether an app
 // needs them: does its code save shared data, use Google Sheets or call connectors. No AI is
 // involved. See docs/specs/2026-11-22-agent-access.md, step 2.
-import { err } from "./errors";
-import { KV_MAX_KEY } from "./kv";
+import { err, notAllowed } from "./errors";
+import { KV_MAX_KEY, type OwnedBy } from "./kv";
 import type { FileMap } from "./upload";
 
 export const RULES_FILE = "formelab.json";
@@ -88,7 +88,9 @@ export function parseRules(bytes: Uint8Array): Rules {
     if (r.fields !== undefined && !(Array.isArray(r.fields) && r.fields.every((f) => typeof f === "string" && f))) {
       throw bad(`${where}.fields must be a list of field names.`);
     }
-    if (r.owner_field !== undefined && (typeof r.owner_field !== "string" || !r.owner_field)) throw bad(`${where}.owner_field must be a field name.`);
+    if (r.owner_field !== undefined && (typeof r.owner_field !== "string" || !/^[A-Za-z_][A-Za-z0-9_]{0,63}$/.test(r.owner_field))) {
+      throw bad(`${where}.owner_field must be a field name of letters, digits and "_", like "assignedTo".`);
+    }
     const read = levels(r.read, `${where}.read`);
     const write = levels(r.write, `${where}.write`);
     const ownUsed = [...Object.values(read), ...Object.values(write)].includes("own");
@@ -211,3 +213,61 @@ export const confirmPublic = () =>
   err(409, "confirm_public", "People using this app can invite anyone. Treat it as public: anyone they invite can open it.",
     "Ask the person whether to publish anyway. Only if they say yes, publish again with confirm_public set to true.",
     { title: "People using this app can invite anyone", reason: "Treat it as public: anyone they invite can open it." });
+
+/** Who is asking, for deciding what the rules let them do. */
+export interface Who {
+  /** The app's owner, editors or space editors: they see and change everything. */
+  manages: boolean;
+  /** Opened through the public link, signed out: the "guest" role. */
+  guest: boolean;
+  email: string | null;
+}
+
+/**
+ * The person's level for reading or writing a key, and the rule that gave it. Owners and editors
+ * get "all"; keys no rule covers are theirs alone. Until roles are managed inside apps (spec step 4),
+ * everyone else who signs in has the rules' default_role.
+ */
+export function levelFor(rules: Rules, who: Who, key: string, op: "read" | "write"): { level: Level; rule?: RecordRule } {
+  if (who.manages || "everyone" in rules) return { level: "all" };
+  const rule = Object.values(rules.records).find((r) => key.startsWith(r.prefix));
+  if (!rule) return { level: "none" };
+  const role = who.guest ? "guest" : rules.default_role;
+  return { level: (role && rule[op]?.[role]) || "none", rule };
+}
+
+/** Whether a record's owner_field names this person. */
+function ownedBy(rule: RecordRule | undefined, value: unknown, email: string | null): boolean {
+  const field = rule?.owner_field;
+  if (!field || !email || !isObject(value)) return false;
+  const v = value[field];
+  return typeof v === "string" && v.trim().toLowerCase() === email.trim().toLowerCase();
+}
+
+/** Whether the person may see this record. */
+export function mayRead(rules: Rules, who: Who, key: string, value: unknown): boolean {
+  const { level, rule } = levelFor(rules, who, key, "read");
+  return level === "all" || (level === "own" && ownedBy(rule, value, who.email));
+}
+
+/**
+ * Throws not_allowed unless the person may write `next` to the key (undefined `next` is a delete).
+ * With "own", the new value must name them, and the result says which existing record may be
+ * replaced: kvSet and kvDelete check that in the same statement, so nobody can slip in between.
+ */
+export function checkWrite(rules: Rules, who: Who, key: string, next: unknown): OwnedBy | undefined {
+  const { level, rule } = levelFor(rules, who, key, "write");
+  if (level === "all") return undefined;
+  if (level === "own" && rule?.owner_field && who.email) {
+    if (next !== undefined && !ownedBy(rule, next, who.email)) {
+      throw err(403, "not_allowed", `You can only save records with your own email in "${rule.owner_field}".`, `Set "${rule.owner_field}" to your email, the one formelab.me() returns.`);
+    }
+    return { field: rule.owner_field, email: who.email.trim().toLowerCase() };
+  }
+  throw notAllowed();
+}
+
+/** Refuses an app made after access rules shipped that has none, at runtime: a backstop for what the publish scan missed. */
+export const rulesMissing = () =>
+  err(403, "rules_required", "This app can't use saved data or connected services until it has access rules.",
+    "Its owner can add a formelab.json saying who can see and change what (the guide's Access rules section), then publish again.");

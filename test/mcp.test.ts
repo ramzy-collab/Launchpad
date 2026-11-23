@@ -156,6 +156,8 @@ describe("MCP server", () => {
     const ns = uniq();
     const pub = await tool(t, "publish", { html: ICON_PAGE("<h1>Count</h1><p>v1</p>"), namespace: ns, mount_path: "c", title: "Count" });
     expect(pub.isError).toBe(false);
+    // Saves data without rules, so it acts as an app made before access rules (see helpers.ts).
+    await env.DB.prepare("UPDATE sites SET rules_required = 0 WHERE id = ?").bind(pub.data.site.id).run();
     const kv = (init: Parameters<typeof call>[1] = {}) => call(`${pub.data.url}_api/kv/hits`, { as: OWNER, mount: "/c/", ...init });
     expect((await kv({ method: "PUT", body: "7" })).status).toBe(200);
 

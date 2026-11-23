@@ -500,7 +500,11 @@ ${rulesWarn ? `<div class="pub-warn rules-warn" role="note">${ICON.alert()}<span
     </div>
     <div class="subblock">
       <h3 class="subhead">What they can do</h3>
-      ${setting("dataWrites", "Viewers can add and change the app's data", "For polls, sign-up sheets and shared lists. When off, only you, Editors and Admins can.", site.dataWrites === "everyone")}
+      ${
+        scan.rules
+          ? `<div class="setting"><div class="setting-text"><strong>Who can add and change the app's data</strong><span>This app's access rules (formelab.json) decide it, for each kind of record. You, Editors and Admins can always change everything.</span></div></div>`
+          : setting("dataWrites", "Viewers can add and change the app's data", "For polls, sign-up sheets and shared lists. When off, only you, Editors and Admins can.", site.dataWrites === "everyone")
+      }
       ${responsesOn ? setting("guestResponses", "Anyone with the link can send answers", "No sign-in needed. For forms, sign-ups and RSVPs. Only you and your team see what people send.", site.guestResponses, !site.canShare, ` data-guest-row${isPublic ? "" : " hidden"}`) : ""}
     </div>
     <div class="subblock">

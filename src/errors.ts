@@ -50,3 +50,7 @@ export const forbidden = (message = "You do not have permission to do that.") =>
   err(403, "forbidden", message, "Ask the owner of this site or namespace to add you as an editor or to the allow-list.");
 export const notFound = (what: string) => err(404, "not_found", `${what} was not found.`, "Check the name or path and try again.");
 export const badRequest = (message: string, hint: string) => err(400, "bad_request", message, hint);
+
+/** Refused by an app's access rules (src/rules.ts): a record the person may not change. */
+export const notAllowed = () =>
+  err(403, "not_allowed", "You can't change this record.", "This app's access rules (formelab.json) decide who can change each kind of record. Ask its owner if you need to.");
