@@ -12,7 +12,7 @@ import { normEmail, parseJsonArray, randomId } from "./util";
 export interface UserSummary {
   email: string;
   name: string | null;
-  status: "active" | "waitlisted";
+  status: "active" | "waitlisted" | "app_user";
   isAdmin: boolean;
   createdAt: number;
   apps: number;
@@ -29,7 +29,7 @@ export async function listUsers(env: Env, limit = 500): Promise<UserSummary[]> {
   return results.map((r) => ({
     email: r.email,
     name: r.name,
-    status: r.status === "active" ? "active" : "waitlisted",
+    status: r.status === "active" || r.status === "app_user" ? r.status : "waitlisted",
     isAdmin: r.is_admin === 1,
     createdAt: r.created_at,
     apps: r.apps,
@@ -144,6 +144,8 @@ export async function setAdmin(env: Env, admin: User, rawEmail: string, makeAdmi
 
 export interface AdminStats {
   users: number;
+  /** People who have only signed in to apps they were added to, not to Formelab itself. */
+  appUsers: number;
   active: number;
   waiting: number;
   /** Let in from the waitlist (or invited) but never logged in, so no account yet. */
@@ -157,7 +159,8 @@ export interface AdminStats {
 export async function adminStats(env: Env): Promise<AdminStats> {
   const weekAgo = now() - 7 * 86_400_000;
   const row = await env.DB.prepare(
-    `SELECT (SELECT COUNT(*) FROM users) AS users,
+    `SELECT (SELECT COUNT(*) FROM users WHERE status != 'app_user') AS users,
+            (SELECT COUNT(*) FROM users WHERE status = 'app_user') AS app_users,
             (SELECT COUNT(*) FROM users WHERE status = 'active') AS active,
             (SELECT COUNT(*) FROM waitlist WHERE approved_at IS NULL) AS waiting,
             (SELECT COUNT(*) FROM waitlist w WHERE w.approved_at IS NOT NULL
@@ -168,9 +171,10 @@ export async function adminStats(env: Env): Promise<AdminStats> {
             (SELECT COUNT(*) FROM waitlist WHERE created_at >= ?) AS signups`,
   )
     .bind(weekAgo)
-    .first<{ users: number; active: number; waiting: number; let_in: number; admins: number; apps: number; namespaces: number; signups: number }>();
+    .first<{ users: number; app_users: number; active: number; waiting: number; let_in: number; admins: number; apps: number; namespaces: number; signups: number }>();
   return {
     users: row?.users ?? 0,
+    appUsers: row?.app_users ?? 0,
     active: row?.active ?? 0,
     waiting: row?.waiting ?? 0,
     letInNotSignedIn: row?.let_in ?? 0,

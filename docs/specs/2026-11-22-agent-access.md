@@ -1,6 +1,6 @@
 # Formelab agent access
 
-Status: design agreed; steps 1 to 3 and 6 shipped; step 4 in progress (part A built Nov 24, 2026). Supersedes the Nov 21,
+Status: design agreed; steps 1 to 3 and 6 shipped; step 4 in progress (parts A and B built Nov 24, 2026). Supersedes the Nov 21,
 2026 "Agent Access: Modular Feature Proposal". Decisions are recorded in the log at the end; the module sections state the result.
 
 ## Why
@@ -219,18 +219,28 @@ Built in three parts: **A** members and roles, **B** branded sign-in, **C** dele
   someone in, so a forwarded link grants nothing.
 - **Remove this person (A).** On the app's settings page ("Added in the app"), for the owner and
   editors who may share (`canShareSite`), since it changes who can open the app.
-- **Sign-in (B).** App sign-in goes through formelab.ai (`handoffStart`, then `/login`), and today
-  `completeSignIn` makes every newcomer `waitlisted`, adds them to the waitlist and gives them a
-  formelab.ai session. B makes a member signing in this way `app_user`, keeps them off the waitlist
-  and marks their formelab.ai session app-only, so the dashboard treats them as signed out.
-  Someone who isn't a member gets "You don't have access" and no record is kept. The page shows
-  the app's address under its name, and caps the name's length, since an owner could name an app
-  after another business.
+- **Sign-in (B).** App sign-in goes through formelab.ai (`handoffStart`, `/auth/app`, then
+  `/login`). `appOfReturn` (`src/login.ts`) finds the app from the return address; the login page
+  then reads "Sign in to <app>" with the app's address and "Powered by Formelab", without
+  Formelab's menu or "Join the waitlist". The name is capped at 60 characters and the address is
+  always shown, since an owner could name an app after another business.
+- **App users (B).** `completeSignIn` gets the app. Someone new who is a member (owner, editor,
+  share list or `app_members`) gets `users.status = 'app_user'`, no waitlist entry. The flag is on
+  the account rather than the session (no migration): formelab.ai and the web app treat an
+  `app_user` as signed out, except `/auth/app` to app hosts and logout, so they never see the
+  dashboard, MCP consent or "My apps". Signing in to formelab.ai itself turns them into a normal
+  `waitlisted` account (`upsertUser`), with the same onboarding as anyone. Existing accounts are
+  left as they are. Someone new who isn't a member gets "<email> hasn't been added to <app>": no
+  Formelab record is made, and the WorkOS user the sign-in created is deleted, best effort.
+  Approving an `app_user` from the waitlist makes them active. The admin panel counts them as
+  "People using apps", apart from "People", and tags them "uses apps".
 - **Deletion (C).** On removal (in the app, on the settings page, or by deleting the app), an
   `app_user` that no app lists any more is deleted at once with `deleteUser`'s steps. There's no
   scheduled clean-up job. Records naming the person (`owner_field` emails, responses) stay as the
   app's data; audit lines are anonymized like visit logs.
-- **Known gaps.** The sign-in code email and the Google consent screen still say Formelab.
+- **Known gaps.** The sign-in code email and the Google consent screen still say Formelab. There is
+  no privacy policy page yet, so "Powered by Formelab" links to the home page until there is one.
+  The password step and "Forgot password?" are shown to app users too, the same for every email.
 
 ### Sign-in
 
@@ -433,4 +443,4 @@ Thanksgiving Menu. Example cases:
 | 15 | Step 4 member list | `app_members` per app; Formelab-side people counted, not stored; members get in only while rules have records |
 | 16 | Who manages people in the app | Owner, editors, `manage_roles`; any role the rules name but `guest`; never the owner or editors; same people may list |
 | 17 | Invite link | The app's address, no token; settings "Remove this person" for owner and sharers |
-| 18 | App sign-in and records (B, C) | `app_user` off the waitlist, app-only formelab.ai session; non-members keep no record; deletion at removal time |
+| 18 | App sign-in and records (B, C) | `app_user` off the waitlist, an account status Formelab's pages treat as signed out; non-members keep no record; deletion at removal time |

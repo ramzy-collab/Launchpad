@@ -559,8 +559,9 @@ const people = await formelab.roles.list();
 ```
 
 - Adding someone lets them open the app. Formelab sends them nothing: show a **Copy invite link**
-  button that copies the app's address (`location.origin`), so they can be sent it. They sign in
-  with their email when they open it.
+  button that copies the app's address (`location.origin`), so they can be sent it. When they open
+  it, they sign in with their email on a page named after the app ("Sign in to Acme CRM"), and
+  they don't need a Formelab account.
 - Roles must be ones the rules name (`role_unknown` otherwise), never `guest`. The owner and
   editors can't be given a role (`manages_app`): change them in Formelab.
 - `list()` includes the owner and editors (`manages: true`) and the people the app is shared with in

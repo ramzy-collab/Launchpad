@@ -96,7 +96,8 @@ apex.route("/_api/deploy", managementApi("deploy"));
 // Public pages: the home page with the waitlist, the login screen, the sign-in flow, and the
 // files they load. Someone already signed in goes straight to their dashboard.
 apex.get("/", async (c) => {
-  if (hasSignIn(c.req.raw) && (await identifyBrowser(c.req.raw, c.env))) return c.redirect(`${appOrigin(c.env, c.req.url)}/`, 302);
+  const who = hasSignIn(c.req.raw) ? await identifyBrowser(c.req.raw, c.env) : null;
+  if (who && !who.user.appOnly) return c.redirect(`${appOrigin(c.env, c.req.url)}/`, 302);
   return homePage(formelabShareTags(c.env, c.req.url, "Formelab: SaaS is dead"));
 });
 signInRoutes(apex);
@@ -120,7 +121,9 @@ apex.get("/admin/*", moved(adminOrigin, "/admin"));
 // Everything else on DOMAIN requires a sign-in: a Formelab session, or a Cloudflare Access
 // identity. Pages send visitors without one to the login screen, then back.
 apex.use("*", async (c, next) => {
-  const who = await identifyBrowser(c.req.raw, c.env);
+  const found = await identifyBrowser(c.req.raw, c.env);
+  // App users (spec step 4) are signed in only to hand their sign-in on to apps, and to log out.
+  const who = found && (!found.user.appOnly || c.req.path === "/auth/app" || c.req.path === "/auth/logout") ? found : null;
   if (!who) {
     if (c.req.path.startsWith("/_api/")) return jsonError(unauthorized());
     const url = new URL(c.req.url);
@@ -150,7 +153,9 @@ apex.notFound(notFoundPage);
 
 /** The web app: pages without a sign-in go to DOMAIN, which signs the visitor in and hands the session back. */
 const requireSignIn: MiddlewareHandler<AppEnv> = async (c, next) => {
-  const who = await identifyBrowser(c.req.raw, c.env);
+  const found = await identifyBrowser(c.req.raw, c.env);
+  // App users never see the web app (spec step 4): to them it's signed out, so /auth/app asks them to log in to Formelab.
+  const who = found?.user.appOnly ? null : found;
   if (!who) {
     if (c.req.path.startsWith("/_api/")) return jsonError(unauthorized());
     // Link previews (iMessage, Slack, ...) get Formelab's card instead of the sign-in redirect.

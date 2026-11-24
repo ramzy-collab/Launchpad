@@ -28,6 +28,7 @@ function cookieFrom(res: Response, name: string): string | null {
 let authenticated: unknown[] = [];
 let revoked: { auth: string | null; body: unknown }[] = [];
 let passwordsSet: { url: string; auth: string | null; body: unknown }[] = [];
+let workosDeleted: string[] = [];
 /** An AuthKit-style access token; only its `sid` claim is read, so it needn't be signed. */
 const accessToken = (sid: string) =>
   ["{\"alg\":\"none\"}", JSON.stringify({ sid, sub: "u" })].map((p) => btoa(p).replace(/=+$/, "").replace(/\+/g, "-").replace(/\//g, "_")).join(".") + ".x";
@@ -45,6 +46,10 @@ function mockWorkos(email: string, verified = true, passwordStatus = 200) {
       return passwordStatus === 200
         ? Response.json({ id: "u" })
         : Response.json({ code: "password_strength_error", message: "Password does not meet strength requirements." }, { status: passwordStatus });
+    }
+    if (req.method === "DELETE" && req.url.startsWith("https://api.workos.com/user_management/users/")) {
+      workosDeleted.push(decodeURIComponent(req.url.split("/").pop()!));
+      return new Response(null, { status: 202 });
     }
     if (req.url === "https://api.workos.com/user_management/sessions/revoke") {
       revoked.push({ auth: req.headers.get("authorization"), body: await req.json() });
@@ -101,6 +106,7 @@ afterEach(() => {
   authenticated = [];
   passwordsSet = [];
   revoked = [];
+  workosDeleted = [];
 });
 
 describe("login page and WorkOS redirect", () => {
@@ -910,5 +916,86 @@ describe("Formelab's own sign-in page", () => {
     const ok = await post("/login", { email: OWNER, password: "a password here", action: "password", return: "/users" }, { host: ADMIN });
     expect(ok.headers.get("location")).toBe("/users");
     expect(cookieFrom(ok, "__Host-fl_session")).not.toBeNull();
+  });
+});
+
+describe("signing in to an app (spec step 4)", () => {
+  /** An app shared with `friend`, with its title, and the login address its sign-in uses. */
+  async function sharedApp(friend: string, title = "Acme CRM") {
+    const ns = uniq();
+    await publishHtml(OWNER, ns, "crm", PAGE("crm page"), { allowed_emails: friend });
+    await env.DB.prepare("UPDATE sites SET title = ? WHERE namespace = ?").bind(title, ns).run();
+    const app = await appAt(ns, "crm");
+    return { app, returnTo: `/auth/app?return=${encodeURIComponent(`${app}/`)}` };
+  }
+  const statusOf = async (email: string) => (await env.DB.prepare("SELECT status FROM users WHERE email = ?").bind(email).first<{ status: string }>())?.status ?? null;
+  const onWaitlist = async (email: string) => !!(await env.DB.prepare("SELECT 1 FROM waitlist WHERE email = ?").bind(email).first());
+
+  it("shows the app's name and address instead of Formelab's", async () => {
+    const { app, returnTo } = await sharedApp(`x-${uniq()}@example.com`);
+    const html = await (await w(`/login?return=${encodeURIComponent(returnTo)}`)).text();
+    expect(html).toContain("<title>Sign in to Acme CRM</title>");
+    expect(html).toContain("<h2>Sign in to Acme CRM</h2>");
+    expect(html).toContain(`<b>${new URL(app).host}</b>`);
+    expect(html).toContain('Powered by <a class="tlink" href="https://example.com/">Formelab</a>');
+    expect(html).not.toContain("Join the waitlist");
+    expect(html).not.toContain("Welcome back to your Formelab workspace");
+    // The name is the owner's own text: escaped, and kept short.
+    const long = await sharedApp(`y-${uniq()}@example.com`, `<b>${"PayPal ".repeat(20)}</b>`);
+    const page = await (await w(`/login?return=${encodeURIComponent(long.returnTo)}`)).text();
+    expect(page).not.toContain("<b>PayPal");
+    expect(page).toContain(`<h2>Sign in to &lt;b&gt;${"PayPal ".repeat(8)}P</h2>`); // the first 60 characters
+    // Anywhere else, the usual page.
+    expect(await (await w("/login?return=%2Fapp")).text()).toContain("Join the waitlist");
+  });
+
+  it("gives people the app is shared with an app-only account, kept off the waitlist", async () => {
+    const friend = `friend-${uniq()}@example.com`;
+    const { app, returnTo } = await sharedApp(friend);
+    const { cookie, location } = await signIn(friend, returnTo);
+    expect(location).toBe(returnTo);
+    expect(await statusOf(friend)).toBe("app_user");
+    expect(await onWaitlist(friend)).toBe(false);
+    // They open the app...
+    expect(await (await w(`${app}/`, { headers: { cookie: await hostCookie(cookie, app) } })).text()).toContain("crm page");
+    // ...but Formelab itself treats them as signed out: the home page, no web app, the login form.
+    const home = await w("/", { headers: { cookie } });
+    expect(home.status).toBe(200);
+    const toApp = await w(`/auth/app?return=${encodeURIComponent(APP + "/")}`, { headers: { cookie } });
+    expect(toApp.headers.get("location")).toMatch(/^\/login\?return=/);
+    const login = await w(toApp.headers.get("location")!, { headers: { cookie } });
+    expect(login.status).toBe(200);
+    expect(await login.text()).toContain("Join the waitlist");
+    expect((await w(`/connect`, { headers: { cookie } })).status).toBe(302);
+
+    // Signing in to an app again keeps them an app user; signing in to Formelab makes them a normal waitlisted account.
+    await signIn(friend, returnTo);
+    expect(await statusOf(friend)).toBe("app_user");
+    await signIn(friend, "/app");
+    expect(await statusOf(friend)).toBe("waitlisted");
+    expect(await onWaitlist(friend)).toBe(true);
+  });
+
+  it("keeps no record of someone the app hasn't added", async () => {
+    const stranger = `stranger-${uniq()}@example.com`;
+    const { returnTo } = await sharedApp(`someone-${uniq()}@example.com`);
+    const res = await signInRaw(stranger, returnTo, "https://example.com");
+    expect(res.status).toBe(403);
+    expect(await res.text()).toContain(`${stranger} hasn&#39;t been added to Acme CRM.`);
+    expect(res.headers.get("set-cookie") ?? "").not.toContain("__Host-fl_session=");
+    expect(await statusOf(stranger)).toBe(null);
+    expect(await onWaitlist(stranger)).toBe(false);
+    expect(workosDeleted).toEqual([`user_${stranger}`]);
+  });
+
+  it("leaves Formelab accounts as they are", async () => {
+    const waiting = `waiting-${uniq()}@example.com`;
+    await signIn(waiting, "/app");
+    const { returnTo } = await sharedApp(waiting);
+    await signIn(waiting, returnTo);
+    expect(await statusOf(waiting)).toBe("waitlisted");
+    // A waitlisted account that isn't a member still signs in; the app itself turns them away.
+    const other = await sharedApp(`z-${uniq()}@example.com`);
+    expect((await signInRaw(waiting, other.returnTo, "https://example.com")).status).toBe(302);
   });
 });
