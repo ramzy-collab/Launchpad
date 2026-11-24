@@ -19,10 +19,23 @@ export interface RecordRule {
   write: Record<string, Level>;
 }
 
+/** A spreadsheet the app uses. With "own", people reach only the rows whose owner_column holds their email. */
+export interface SheetRule {
+  owner_column?: string;
+  read: Record<string, Level>;
+  write: Record<string, Level>;
+}
+
+/** Connected services: spreadsheets by id, and connectors, saved keys and "gemini" by name ("all" or "none"). */
+export interface Sources {
+  sheets?: Record<string, SheetRule>;
+  connectors?: Record<string, Record<string, Level>>;
+}
+
 /** Either the one-line open rule (everyone may read and write everything) or rules per record type. */
 export type Rules =
   | { everyone: "all" }
-  | { default_role?: string; manage_roles?: string[]; records: Record<string, RecordRule> };
+  | { default_role?: string; manage_roles?: string[]; records: Record<string, RecordRule>; sources?: Sources };
 
 const HINT = "Fix formelab.json and publish again. The guide's Access rules section shows the format.";
 const bad = (message: string) => err(400, "rules_invalid", `formelab.json: ${message}`, HINT);
@@ -52,6 +65,52 @@ function levels(v: unknown, where: string): Record<string, Level> {
   return v as Record<string, Level>;
 }
 
+const SHEET_ID_RE = /^[A-Za-z0-9_-]{20,128}$/;
+const CONNECTOR_RE = /^[a-z0-9_-]{1,64}$/; // SECRET_NAME_RE, the names connectors and saved keys use
+
+/** Checks formelab.json's "sources" and returns the roles it names. */
+function parseSources(v: unknown): string[] {
+  if (!isObject(v)) throw bad(`sources must be an object, like {"sheets": {...}, "connectors": {...}}.`);
+  onlyKeys(v, "sources", ["sheets", "connectors"]);
+  const roles: string[] = [];
+  const noGuest = (map: Record<string, Level>, where: string) => {
+    if ("guest" in map && map.guest !== "none") throw bad(`${where}.guest: people who open the app through its public link aren't signed in, so they can't use connected services.`);
+    roles.push(...Object.keys(map));
+  };
+  if (v.sheets !== undefined) {
+    if (!isObject(v.sheets)) throw bad(`sources.sheets must be an object of spreadsheet ids, like {"<id>": {"read": {...}}}.`);
+    for (const [id, r] of Object.entries(v.sheets)) {
+      const where = `sources.sheets.${id.slice(0, 40)}`;
+      if (!SHEET_ID_RE.test(id)) throw bad(`sources.sheets ${show(id)} isn't a spreadsheet id. Use the long part of its link: docs.google.com/spreadsheets/d/<id>/edit.`);
+      if (!isObject(r)) throw bad(`${where} must be an object.`);
+      onlyKeys(r, where, ["owner_column", "read", "write"]);
+      if (r.owner_column !== undefined && (typeof r.owner_column !== "string" || !r.owner_column.trim() || r.owner_column.length > 100)) {
+        throw bad(`${where}.owner_column must be the text in row 1 of the column holding each row's email, like "Assigned to".`);
+      }
+      const read = levels(r.read, `${where}.read`);
+      const write = levels(r.write, `${where}.write`);
+      noGuest(read, `${where}.read`);
+      noGuest(write, `${where}.write`);
+      if ([...Object.values(read), ...Object.values(write)].includes("own") && !r.owner_column) {
+        throw bad(`${where} gives "own" access but has no owner_column (the column, named in row 1, holding the email of the person each row belongs to).`);
+      }
+    }
+  }
+  if (v.connectors !== undefined) {
+    if (!isObject(v.connectors)) throw bad(`sources.connectors must be an object of connector names, like {"quo": {"salesperson": "all"}}.`);
+    for (const [n, map] of Object.entries(v.connectors)) {
+      const where = `sources.connectors.${n.slice(0, 64)}`;
+      if (!CONNECTOR_RE.test(n)) throw bad(`sources.connectors ${show(n)} isn't a connector name. Use the name the app calls, like "quo" or "gemini".`);
+      const roleMap = levels(map, where);
+      for (const [role, level] of Object.entries(roleMap)) {
+        if (level === "own") throw bad(`${where}.${role} is "own", but Formelab can't tell whose data a connected service returns. Use "all" or "none".`);
+      }
+      noGuest(roleMap, where);
+    }
+  }
+  return roles;
+}
+
 /** Parses and checks formelab.json. Throws rules_invalid with the exact problem. */
 export function parseRules(bytes: Uint8Array): Rules {
   if (bytes.length > RULES_MAX_BYTES) throw bad(`the file is larger than ${RULES_MAX_BYTES / 1024} KB.`);
@@ -69,7 +128,7 @@ export function parseRules(bytes: Uint8Array): Rules {
     return { everyone: "all" };
   }
 
-  onlyKeys(raw, "", ["default_role", "manage_roles", "records"]);
+  onlyKeys(raw, "", ["default_role", "manage_roles", "records", "sources"]);
   if (!isObject(raw.records)) throw bad(`it needs "records" (each kind of record and who may see and change it), or {"everyone": "all"}.`);
   const used = new Set<string>();
   const prefixes: [string, string][] = [];
@@ -98,6 +157,7 @@ export function parseRules(bytes: Uint8Array): Rules {
     if (r.owner_field && r.fields && !r.fields.includes(r.owner_field)) throw bad(`${where}.owner_field ${show(r.owner_field)} isn't one of its fields.`);
     for (const role of [...Object.keys(read), ...Object.keys(write)]) used.add(role);
   }
+  if (raw.sources !== undefined) for (const role of parseSources(raw.sources)) used.add(role);
 
   if (raw.default_role !== undefined) {
     const role = name(raw.default_role, "default_role");
@@ -234,6 +294,41 @@ export function levelFor(rules: Rules, who: Who, key: string, op: "read" | "writ
   if (!rule) return { level: "none" };
   const role = who.guest ? "guest" : rules.default_role;
   return { level: (role && rule[op]?.[role]) || "none", rule };
+}
+
+/**
+ * The person's level for a connected service: a spreadsheet by id, or a connector, saved key or
+ * "gemini" by name (connectors ignore `op`). Apps without rules for services keep today's
+ * behavior ("all"), except new apps (`strict`), where a service the rules don't name is for the
+ * owner and editors only, like records no rule mentions.
+ */
+export function sourceLevel(rules: Rules | null, who: Who, strict: boolean, kind: keyof Sources, id: string, op: "read" | "write"): Level {
+  if (who.manages || !rules || "everyone" in rules) return "all";
+  if (!rules.sources && !strict) return "all";
+  const role = who.guest ? "guest" : rules.default_role;
+  if (!role) return "none";
+  if (kind === "connectors") return rules.sources?.connectors?.[id]?.[role] ?? "none";
+  return rules.sources?.sheets?.[id]?.[op]?.[role] ?? "none";
+}
+
+/** Throws not_allowed unless the person may use the connector, saved key or "gemini" called `name`. */
+export function checkSource(rules: Rules | null, who: Who, strict: boolean, name: string) {
+  if (sourceLevel(rules, who, strict, "connectors", name, "read") !== "all") {
+    throw err(403, "not_allowed", `You can't use ${name} in this app.`, "The app's access rules (formelab.json) don't give your role this service. Ask the app's owner.");
+  }
+}
+
+/** A new app whose rules don't say who may use the Sheets or connectors its code calls. */
+export const needsSources = (s: AccessScan) => !!s.rules && "records" in s.rules && !s.rules.sources && (s.sheets || s.connectors);
+
+/** The refusal for needsSources, shaped like rulesRequired so the upload dialog shows it the same way. */
+export function sourcesRequired(s: Pick<AccessScan, "sheets" | "connectors">, guideUrl: string) {
+  const services = listOf([s.sheets && "Google Sheets", s.connectors && "connected services"].filter((x): x is string => !!x));
+  const reason = `It uses ${services}, but its access rules don't say who can use them.`;
+  const fix = `add a "sources" section to formelab.json that says which roles can use each spreadsheet and connector.`;
+  const prompt = `My Formelab app uses ${services}. Add a "sources" section to its formelab.json saying which roles can use each spreadsheet and connector, following ${guideUrl}. Ask me who should use each one before you write it.`;
+  return err(400, "rules_required", `This app can't be published yet. ${reason}`, `To fix it, ${fix} Or paste this into Claude, ChatGPT or your AI tool: ${prompt}`,
+    { title: "This app can't be published yet", reason, fix, prompt, prefixes: [] });
 }
 
 /** Whether a record's owner_field names this person. */

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ApiError } from "../src/errors";
 import { GUIDE_MD } from "../src/generated/assets";
-import { parseRules, scanAccess } from "../src/rules";
+import { parseRules, scanAccess, sourceLevel } from "../src/rules";
 
 const enc = (s: string) => new TextEncoder().encode(s);
 const rules = (v: unknown) => parseRules(enc(typeof v === "string" ? v : JSON.stringify(v)));
@@ -42,7 +42,7 @@ describe("formelab.json", () => {
   it("accepts the guide's examples", () => {
     const section = GUIDE_MD.slice(GUIDE_MD.indexOf("## 4. Access rules"), GUIDE_MD.indexOf("## 5. Patterns"));
     const examples = [...section.matchAll(/```json\n([\s\S]*?)```/g)].map((m) => m[1]!);
-    expect(examples).toHaveLength(2);
+    expect(examples).toHaveLength(3);
     for (const json of examples) expect(() => rules(json)).not.toThrow();
   });
 
@@ -70,6 +70,42 @@ describe("formelab.json", () => {
     expect(refusal({ ...CRM, manage_roles: ["guest"] })).toMatch(/can't include "guest"/);
     expect(refusal({ ...CRM, manage_roles: ["boss"] })).toMatch(/manage_roles "boss" isn't given access/);
     expect(() => parseRules(new Uint8Array(64 * 1024 + 1))).toThrow(/larger than 64 KB/);
+  });
+
+  it("checks the connected services it names", () => {
+    const ID = "1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms";
+    const withSources = (sources: unknown) => ({ ...CRM, sources });
+    const ok = withSources({ sheets: { [ID]: { owner_column: "Assigned to", read: { salesperson: "own" }, write: { salesperson: "own" } } }, connectors: { quo: { manager: "all" }, gemini: { salesperson: "none" } } });
+    expect(rules(ok)).toEqual(ok);
+    // A role used only by a service still counts for default_role.
+    expect(() => rules({ default_role: "temp", records: {}, sources: { connectors: { quo: { temp: "all" } } } })).not.toThrow();
+    expect(refusal({ everyone: "all", sources: {} })).toMatch(/sources isn't a known setting/);
+    expect(refusal(withSources([]))).toMatch(/sources must be an object/);
+    expect(refusal(withSources({ airtable: {} }))).toMatch(/sources\.airtable isn't a known setting/);
+    expect(refusal(withSources({ sheets: { "my-sheet": { read: {} } } }))).toMatch(/"my-sheet" isn't a spreadsheet id/);
+    expect(refusal(withSources({ sheets: { [ID]: { read: { salesperson: "own" } } } }))).toMatch(/gives "own" access but has no owner_column/);
+    expect(refusal(withSources({ sheets: { [ID]: { owner_column: " ", read: {} } } }))).toMatch(/owner_column must be the text in row 1/);
+    expect(refusal(withSources({ sheets: { [ID]: { owner_col: "x" } } }))).toMatch(/owner_col isn't a known setting/);
+    expect(refusal(withSources({ sheets: { [ID]: { read: { guest: "all" } } } }))).toMatch(/guest: people who open the app through its public link/);
+    expect(refusal(withSources({ connectors: { Quo: { manager: "all" } } }))).toMatch(/"Quo" isn't a connector name/);
+    expect(refusal(withSources({ connectors: { quo: { salesperson: "own" } } }))).toMatch(/can't tell whose data a connected service returns/);
+    expect(refusal(withSources({ connectors: { quo: { salesperson: "some" } } }))).toMatch(/Use "all", "own" or "none"/);
+  });
+
+  it("gives each role its level for a service", () => {
+    const ID = "1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms";
+    const r = rules({ ...CRM, sources: { sheets: { [ID]: { read: { salesperson: "all" } } }, connectors: { quo: { salesperson: "all" } } } });
+    const rep = { manages: false, guest: false, email: "a@x.test" };
+    expect(sourceLevel(r, rep, true, "sheets", ID, "read")).toBe("all");
+    expect(sourceLevel(r, rep, true, "sheets", ID, "write")).toBe("none"); // no "write" at all
+    expect(sourceLevel(r, rep, true, "connectors", "other", "read")).toBe("none");
+    expect(sourceLevel(r, { ...rep, manages: true }, true, "connectors", "other", "read")).toBe("all");
+    expect(sourceLevel(r, { ...rep, guest: true, email: null }, true, "connectors", "quo", "read")).toBe("none");
+    // Rules without "sources": today's behavior for older apps, owner and editors only for new ones.
+    expect(sourceLevel(CRM as never, rep, false, "sheets", ID, "write")).toBe("all");
+    expect(sourceLevel(CRM as never, rep, true, "sheets", ID, "read")).toBe("none");
+    expect(sourceLevel(null, rep, true, "sheets", ID, "read")).toBe("all");
+    expect(sourceLevel({ everyone: "all" }, rep, true, "connectors", "quo", "read")).toBe("all");
   });
 });
 

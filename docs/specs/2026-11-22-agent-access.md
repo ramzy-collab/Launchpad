@@ -1,7 +1,7 @@
 # Formelab agent access
 
-Status: design agreed, nothing built. Supersedes the Nov 21, 2026 "Agent Access: Modular Feature
-Proposal". Decisions are recorded in the log at the end; the module sections state the result.
+Status: design agreed; steps 1 to 3 shipped, step 6 built Nov 24, 2026. Supersedes the Nov 21,
+2026 "Agent Access: Modular Feature Proposal". Decisions are recorded in the log at the end; the module sections state the result.
 
 ## Why
 
@@ -243,9 +243,49 @@ Builds on what exists (behind `connected_apps`): Google Sheets (`src/sheets.ts`)
 - Rules can name each connected source and which roles may use it.
 - Sheets: rules name an owner column (`"owner_column": "Assigned to"`). Formelab drops rows that
   are not the signed-in person's before returning them, and allows writes only to their rows.
-- Supabase: Formelab sends the signed-in person's identity with each call; Supabase's RLS filters.
-  The owner sets up RLS once.
+- Supabase: role level only in step 6, like any other connector (see "Decided" below). Per-person
+  access through Supabase's RLS is step 6b.
 - Any other connected API: role level only (`all` or `none`).
+
+### Decided (Nov 24, 2026): how step 6 works
+
+- **Naming sources.** `formelab.json` gets an optional `sources` next to `records`:
+  `sheets` keyed by spreadsheet id (`owner_column`, `read`, `write`) and `connectors` keyed by name
+  (`all` or `none` per role). `connectors` covers custom connectors, saved keys and `"gemini"`: all
+  three spend the owner's keys, and `formelab.secrets.proxy(name)` already reaches a connector by
+  the same name, so a rule on `connectorFetch` alone could be skipped. `guest` can't be given
+  services. Not allowed with `{"everyone": "all"}`, which keeps meaning everything.
+- **Where.** Connectors, saved keys and Gemini are checked in `src/runtime.ts` before each route
+  (`checkSource`); Sheets in `sheetsCall` (`sourceLevel`), since filtering needs Google's answers.
+- **Apps whose rules don't name services.** Apps made before access rules keep today's behavior.
+  New apps (`rules_required`) are refused at publish if the scan finds Sheets or connectors and
+  there's no `sources`, and at runtime a service the rules don't name is for the owner and editors
+  only, so a scan that missed a call leaves nothing open.
+- **Rows that aren't yours come back empty** (`[]`) instead of being dropped, so row numbers stay
+  where the app expects them (apps work out `update` ranges from a read's row index). Trailing ones
+  are left off. This shows where other rows are, not what is in them.
+- **Formulas are refused** in `own` writes (cells starting with `=`, `+` or `-` and a letter): with
+  `USER_ENTERED`, `=D5` in your own row would show you someone else's cell.
+- **`own` is values get, append and update only**, plus tab names. `values:batchGet` and
+  `values:batchUpdate`, which `viewerMayCall` allows at `all`, are refused at `own`.
+- **Appends Google places elsewhere are undone.** Google appends at the table it finds, which can
+  start in another column than the range. If the written range starts elsewhere, Formelab clears it
+  and refuses (`sheets_append_moved`), since the owner column got a different cell.
+- **Known limit.** Sheets has no conditional write: an update is checked, then sent. Rows an owner or
+  editor inserts in between can shift. Noted in the code.
+- **Spreadsheet ids in `formelab.json`** are readable by anyone who can open the app. An id alone
+  grants nothing (`sheet_not_allowed`, the owner's Google sharing), and is usually in the code
+  already.
+
+### Step 6b: Supabase per person (not started)
+
+Supabase's RLS trusts only a JWT it can verify (`auth.jwt()`), so "send the person's identity"
+needs Formelab to sign a short-lived token per call. A plain header can be forged by anyone with the
+project's anon key, and a `service_role` key skips RLS entirely. Options to check: signing with the
+project's JWT secret (a second, very powerful secret to store) or Formelab as a third-party auth
+provider (depends on which providers Supabase accepts). Either way the owner writes RLS policies
+that read the email from the token. Until then the guide warns never to give a connector the
+`service_role` key when people below editor can use it.
 
 ### Checked (Nov 22, 2026): what people an app is shared with can do today
 
@@ -343,7 +383,9 @@ Thanksgiving Menu. Example cases:
 | 7d | Existing vs new apps | Existing: persistent warning. New: rules required |
 | 7e | Seeding and invites | Formelab-side people seeded as app users; adding in the app lets people open it; in-app invites mean "treat as public" |
 | 7f | Sign-in system | Formelab's sign-in, branded as the app; no marketing use of emails |
-| 8 | Outside data | User-level for Sheets (owner column) and Supabase (RLS); role level for other APIs |
+| 8 | Outside data | User-level for Sheets (owner column); role level for other APIs, Supabase included until step 6b (RLS through a signed token) |
+| 8b | Sources in the rules | `sources.sheets` by id, `sources.connectors` by name covering connectors, saved keys and Gemini; existing apps without `sources` keep today's behavior, new ones must name them |
+| 8c | Rows that aren't yours | Returned empty to keep row positions; formulas refused in own writes |
 | 9 | Test plans | Browser plans for screens; connector-run plan for step 1 |
 | 10 | Required for new builds | Refuse with reason, remedy and a paste-in prompt, through the connector and manual upload alike; runtime backstop; acknowledgement means the owner accepts the risk |
 | 11 | Invites and email | "Copy invite link", no Formelab email; app-branded invite email is a future paid feature |

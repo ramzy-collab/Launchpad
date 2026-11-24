@@ -9,7 +9,7 @@ import { flagOnForOwner } from "./flags";
 import { sheetsAvailable, sheetsCall } from "./sheets";
 import { deleteResponse, listResponses, submitResponse } from "./responses";
 import { parseJsonArray } from "./util";
-import { checkWrite, mayRead, rulesMissing, type Rules, type Who } from "./rules";
+import { checkSource, checkWrite, mayRead, rulesMissing, type Rules, type Who } from "./rules";
 import { rulesOfSite } from "./sites";
 
 /**
@@ -192,6 +192,9 @@ export function runtimeApi() {
   api.put("/me/kv/*", async (c) => c.json(await kvSet(c.env, mine(c), myKey(c), await readValue(c))));
   api.delete("/me/kv/*", async (c) => c.json(await kvDelete(c.env, mine(c), myKey(c))));
 
+  /** Connectors, saved keys and Gemini spend the owner's keys: only for roles the rules give them (spec step 6). */
+  const requireSource = async (c: Ctx, name: string) => checkSource(await rulesOf(c), who(c), !!c.get("site").rules_required, name);
+
   const requireManage = (c: Ctx, what = "manage its secrets") => {
     if (!c.get("manages")) throw forbidden(`Only the app's owner or editors can ${what}.`);
   };
@@ -249,6 +252,7 @@ export function runtimeApi() {
     return c.json(await secretDelete(c.env, c.get("site"), c.get("user"), c.req.param("name")));
   });
   api.post("/secrets/:name/proxy", async (c) => {
+    await requireSource(c, c.req.param("name"));
     const body = await objectBody(c, '{ "url": "https://..." }', "Use formelab.secrets.proxy(name, { url }).", ["The proxy request body is larger than 1 MB.", "Send less data."]);
     return c.json(await proxy(c.env, c.get("site"), c.get("user"), c.req.param("name"), body));
   });
@@ -266,6 +270,7 @@ export function runtimeApi() {
   api.use("/sheets", connectedAppsGate);
   api.get("/ai/gemini", async (c) => c.json({ ...(await geminiAvailable(c.env, c.get("site"))), available: true }));
   api.post("/ai/gemini", async (c) => {
+    await requireSource(c, "gemini");
     const body = await objectBody(c, '{ "prompt": "..." }', 'Use formelab.gemini.generate("your prompt").', ["The request to Gemini is larger than 1 MB.", "Send a shorter prompt or smaller images."]);
     return c.json(await geminiGenerate(c.env, c.get("site"), c.get("user"), body));
   });
@@ -275,6 +280,7 @@ export function runtimeApi() {
   api.use("/connectors/*", connectedAppsGate);
   api.get("/connectors", (c) => c.json(parseJsonArray(c.get("site").connectors ?? "[]").filter((n) => n !== "gemini")));
   api.post("/connectors/:name/fetch", async (c) => {
+    await requireSource(c, c.req.param("name"));
     const body = await objectBody(c, '{ "url": "/v1/..." }', 'Use formelab.connectors.fetch("name", "/path").', ["The request body is larger than 1 MB.", "Send less data."]);
     return c.json(await connectorFetch(c.env, c.get("site"), c.get("user"), c.req.param("name"), body));
   });
@@ -283,7 +289,7 @@ export function runtimeApi() {
   api.get("/sheets", async (c) => c.json(await sheetsAvailable(c.env, c.get("site"))));
   api.post("/sheets", async (c) => {
     const body = await objectBody(c, '{ "method": "GET", "path": "spreadsheets/..." }', "Use formelab.sheets.read/append/update/create.", ["The request to Google Sheets is larger than 1 MB.", "Send fewer rows at a time."]);
-    return c.json(await sheetsCall(c.env, c.get("site"), c.get("user"), body, !!c.get("manages")));
+    return c.json(await sheetsCall(c.env, c.get("site"), c.get("user"), body, who(c), await rulesOf(c)));
   });
 
   api.notFound(() => jsonError(err(404, "not_found", "No such API endpoint.", "Check the SDK reference in /_platform/guide.md.")));
