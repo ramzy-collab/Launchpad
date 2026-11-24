@@ -339,7 +339,8 @@ be sent to and how the service expects it (an `Authorization: Bearer` header, a 
 a query parameter, or a `{{value}}` placeholder the app puts in). Formelab adds the key on the way
 out, so it never reaches the browser, and scrubs it from the answer. **An app can only use the
 connectors listed for it**: add their names to `update_site`'s `connectors` (the owner only;
-`whoami` lists the names). Anyone who can open the app can use them, on the owner's key; calls
+`whoami` lists the names). Anyone who can open the app can use them, on the owner's key, unless
+its access rules say otherwise (`sources`, in Access rules); calls
 are limited like `formelab.secrets.proxy` and show up in the app's activity log.
 
 ```js
@@ -372,7 +373,8 @@ change the list, and only the owner can `create()` a spreadsheet; one created th
 added to its list automatically. Any other spreadsheet fails with `sheet_not_allowed`.
 
 **People using the app read values and add or change rows; only the owner and editors change the
-spreadsheet itself.** Everyone who can open the app may use `read`, `append` and `update`, plus
+spreadsheet itself.** The app's access rules can narrow this to some roles, or to each person's own
+rows (`sources`, in Access rules). Everyone who can open the app may use `read`, `append` and `update`, plus
 `values:batchGet`, `values:batchUpdate` and the spreadsheet's tab names through `request()`. Other
 calls (`batchUpdate` on the spreadsheet, clearing, copying tabs, data filters, developer metadata
 and `includeGridData`) work only for the owner and editors, and fail with `sheets_editors_only`
@@ -495,11 +497,60 @@ explicit, valid choice:
 - Don't list who holds which role: anyone who can open the app can read its files, `formelab.json`
   included.
 
+<!-- flag:connected_apps -->
+**Connected services.** If the app uses Google Sheets, custom connectors, saved keys or Gemini, say
+which roles may use each one under `sources`. Ask the person first, as for records. A new app whose
+code uses them is refused (`rules_required`) until its rules have `sources`.
+
+```json
+{
+  "default_role": "salesperson",
+  "records": {
+    "lead": { "prefix": "lead:", "owner_field": "assignedTo", "read": { "salesperson": "own" }, "write": { "salesperson": "own" } }
+  },
+  "sources": {
+    "sheets": {
+      "1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms": {
+        "owner_column": "Assigned to",
+        "read":  { "salesperson": "own" },
+        "write": { "salesperson": "own" }
+      }
+    },
+    "connectors": { "quo": { "salesperson": "all" }, "gemini": { "salesperson": "none" } }
+  }
+}
+```
+
+- `sheets`: each spreadsheet by its id, with `read` and `write` levels per role, like records.
+  `owner_column` is the heading, in row 1 of the tab, of the column holding the email of the
+  person each row belongs to. Needed for `own`.
+- `connectors`: each connector, saved key (`formelab.secrets.proxy`) or `"gemini"` by name, with
+  `"all"` or `"none"` per role. Formelab can't tell whose data another service returns, so there's
+  no `own`. A service the rules don't name is for the owner and editors only.
+- `guest` can't be given services: people who open the app through its public link can't use them.
+
+With `"own"` on a spreadsheet, people reach only their rows:
+
+- Ranges must name their tab, like `Sheet1!A2:D`.
+- `read` returns the heading row and the person's rows. Other people's rows come back as empty
+  rows (`[]`), so row numbers stay the same: row `i` of the result is still row `start + i`.
+- `append` needs the person's email (`formelab.me().email`) in the owner column of every row, and
+  the range must include that column and start at the table's first column.
+- `update` changes only rows that are already theirs, and the owner column must keep their email.
+- Cells that start with `=`, `+` or `-` followed by a letter are refused, since a formula could
+  show other rows. Put an apostrophe (`'`) before text that starts that way.
+- `values:batchGet`, `values:batchUpdate` and everything except tab names fail with `not_allowed`.
+  Read one range at a time.
+
+Supabase is a custom connector here: role level only. Never give a connector Supabase's
+`service_role` key if people below editor can use it; it skips Supabase's row rules.
+<!-- /flag:connected_apps -->
+
 **Publishing it.** A single-file app with rules is published as `files`
 (`{ "index.html": "...", "formelab.json": "..." }`) or as a zip, since `html` carries one file.
 To add rules to an existing app, publish `files: { "formelab.json": "..." }`.
 
-**What it does in the app.** Formelab applies the rules to every `formelab.kv` call. Records a
+**What it does in the app.** Formelab applies the rules to every `formelab.kv` call<!-- flag:connected_apps --> and to every Sheets and connector call<!-- /flag:connected_apps -->. Records a
 person may not see are left out of `list()`, and `get()` returns `null` for them, as if they didn't
 exist, so write the app to cope with missing records. Changing a record they may not change fails
 with `not_allowed` (403); with `"own"`, a record must keep their email in its `owner_field`. For an
@@ -725,7 +776,7 @@ only the changed files and `delete` lists paths to remove, one per line).
       without a Formelab account must fill it in, `update_site` sets `public_link` and `guest_responses`.
 <!-- /flag:responses -->
 - [ ] Works on a phone (responsive layout, `<meta name="viewport">`), and as an installed app (every screen has a way back).
-- [ ] **Has access rules if it saves shared data<!-- flag:connected_apps --> or uses Sheets or connectors<!-- /flag:connected_apps --> (required for new apps):** a `formelab.json` written after asking the person who should see and change each kind of record (see "Access rules"). `manage_roles` only if they asked for in-app invites.
+- [ ] **Has access rules if it saves shared data<!-- flag:connected_apps --> or uses Sheets or connectors<!-- /flag:connected_apps --> (required for new apps):** a `formelab.json` written after asking the person who should see and change each kind of record (see "Access rules")<!-- flag:connected_apps -->, with `sources` naming which roles use each spreadsheet and connector<!-- /flag:connected_apps -->. `manage_roles` only if they asked for in-app invites.
 - [ ] **Has an icon (required):** a small SVG that fits the app, linked in `<head>` as `<link rel="icon" href="data:image/svg+xml,...">` (URL-encoded SVG), or as `<link rel="icon" href="icon.svg">` with `icon.svg` in the zip. Formelab shows it on the app's tile, and the `publish` tool refuses apps without one (`icon_required`).
 - [ ] **Has a share illustration and description (recommended):** a 1200×630 SVG that shows what the app is, named by `<meta property="og:image">`, and a one-sentence `<meta name="description">`, for link previews in iMessage, Slack and the rest (see "Link previews"). No one's data in them: they're public.
 - [ ] Apps are private by default (only the owner and editors). Add `allowed_emails` for the people who should open it; they see it under "My apps".

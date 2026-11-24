@@ -12,7 +12,7 @@ import { appSharedEmail, namespaceSharedEmail, sendEach, shareEmailAllowance } f
 import { aiOrigin, appOrigin, siteOrigin } from "./hosts";
 import { flagOnForOwner } from "./flags";
 import { connectorNameList } from "./connectors";
-import { confirmPublic, needsRules, parseRules, RULES_FILE, rulesRequired, scanAccess, storedAccess, type Rules, type StoredAccess } from "./rules";
+import { confirmPublic, needsRules, needsSources, parseRules, RULES_FILE, rulesRequired, scanAccess, sourcesRequired, storedAccess, type Rules, type StoredAccess } from "./rules";
 
 /** Addresses in `next` that weren't in `prev` (both normalized). */
 const added = (next: string[], prev: string[]) => {
@@ -780,7 +780,9 @@ export async function publishSite(ctx: Ctx, input: PublishInput) {
   // saves data or uses connected services needs one; rules allowing invites are confirmed once.
   const access = scanAccess(input.files);
   const rulesRequiredHere = existing ? !!existing.rules_required : input.rulesRequired !== false;
-  if (rulesRequiredHere && needsRules(access)) throw rulesRequired(access, `${aiOrigin(env, ctx.requestUrl)}/guide#access-rules`);
+  const guideUrl = `${aiOrigin(env, ctx.requestUrl)}/guide#access-rules`;
+  if (rulesRequiredHere && needsRules(access)) throw rulesRequired(access, guideUrl);
+  if (rulesRequiredHere && needsSources(access)) throw sourcesRequired(access, guideUrl);
   const confirmedPublic = access.invites && !(existing?.access && JSON.parse(existing.access).invites);
   if (confirmedPublic && input.confirmPublic !== true && input.confirmPublic !== "true") throw confirmPublic();
   // Publishing a new version never changes who can open or edit the app; that only happens
