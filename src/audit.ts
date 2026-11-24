@@ -169,6 +169,8 @@ export function describeActivity(row: AuditRow): string {
     }
     case "member_set":
       return `Gave ${d.email ?? "someone"} the role ${d.role ?? "?"} in the app`;
+    case "deletion_request":
+      return `Told the owners of ${plural(d.apps, "app")} about a request to delete someone's data`;
     case "member_remove":
       return `Removed ${d.email ?? "someone"} from the app's members`;
     case "role_invite_joined":

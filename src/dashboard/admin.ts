@@ -8,8 +8,8 @@ import { isOwnerEmail } from "../auth";
 import type { AppEnv } from "../env";
 import { aiOrigin } from "../hosts";
 import { notFoundPage } from "../serve";
-import { adminStats, listUsers } from "../users";
-import { escapeHtml as e } from "../util";
+import { adminStats, findPerson, listUsers, type PersonInApps } from "../users";
+import { escapeHtml as e, isEmail, normEmail } from "../util";
 import { listWaitlist } from "../waitlist";
 import { getPlan, inlineMarkdown, listPlans, planResults, RESULT_STATUSES, renderPlan, resultCounts } from "../testplans";
 import { head, htmlResponse } from "./layout";
@@ -140,6 +140,41 @@ async function overviewBody(c: Context<AppEnv>): Promise<string> {
 const statusTag = (u: { isAdmin: boolean; status: string }) =>
   u.isAdmin ? '<span class="tag admin">admin</span>' : u.status === "active" ? "Active" : u.status === "app_user" ? '<span class="tag">uses apps</span>' : '<span class="tag">waitlist</span>';
 
+const HOW: Record<PersonInApps["apps"][number]["how"], string> = { owner: "Owns it", editor: "Editor", shared: "Shared with them", member: "Added in the app" };
+
+/** Deletion requests: every app that lists someone, and emailing their owners (spec step 4). */
+async function deletionSection(c: Context<AppEnv>): Promise<string> {
+  const find = (c.req.query("find") ?? "").trim();
+  let result = "";
+  if (find) {
+    if (!isEmail(normEmail(find))) {
+      result = `<p class="alert err" role="alert">That email address is not valid.</p>`;
+    } else {
+      const p = await findPerson(c.env, c.get("user"), find);
+      const others = p.apps.filter((a) => a.how !== "owner");
+      const account = p.account === null ? "No Formelab account." : p.account === "app_user" ? "Their account only opens apps." : p.account === "active" ? "They have a Formelab account." : "They're on the waitlist.";
+      result = p.apps.length
+        ? `<p>${e(account)} ${e(p.apps.length)} ${p.apps.length === 1 ? "app lists" : "apps list"} <strong>${e(p.email)}</strong>:</p>
+  <div class="scroll"><table><thead><tr><th>App</th><th>Owner</th><th>How</th></tr></thead><tbody>${p.apps
+    .map((a) => `<tr><td>${e(a.name)}</td><td>${e(a.owner)}</td><td>${e(HOW[a.how])}</td></tr>`)
+    .join("")}</tbody></table></div>
+  ${others.length ? `<p><button data-action="deletion-notify" data-email="${e(p.email)}">Notify owners</button></p>` : ""}
+  <p class="muted">Then reply to them: "We've passed your request to every business on Formelab that has your email." Never say which apps. To delete their Formelab account too, use <strong>Delete</strong> below.</p>`
+        : `<p>${e(account)} No app lists <strong>${e(p.email)}</strong>.</p>`;
+    }
+  }
+  return `<section id="deletion">
+  <h2>Deletion requests</h2>
+  <p class="muted">Someone asked Formelab to delete their data? Find the apps that list them, then let each owner know. The owners decide what happens in their apps.</p>
+  <form method="get" action="/users#deletion" class="inline">
+    <input type="email" name="find" required placeholder="name@example.com" aria-label="Their email" value="${e(find)}">
+    <button class="secondary">Find</button>
+  </form>
+  ${result}
+</section>
+`;
+}
+
 async function usersBody(c: Context<AppEnv>): Promise<string> {
   const me = c.get("user");
   const [users, notSignedIn] = await Promise.all([listUsers(c.env), listWaitlist(c.env, 500, "let-in-not-signed-in")]);
@@ -158,9 +193,10 @@ async function usersBody(c: Context<AppEnv>): Promise<string> {
   <td><div class="inline">${adminBtn}${deleteBtn}</div></td></tr>`;
     })
     .join("");
-  return `<section>
+  return `${await deletionSection(c)}
+<section>
   <h2>People<span class="count">${e(users.length)}</span></h2>
-  <p class="muted"><strong>Make admin</strong> gives someone this admin area (and lets them in if they were waiting). <strong>Delete</strong> removes the account and everything it owns: its spaces and apps (with their data and secrets), its place on other people's share lists, access keys and connected AI apps.</p>
+  <p class="muted"><strong>Make admin</strong> gives someone this admin area (and lets them in if they were waiting). <strong>Delete</strong> removes the account and everything it owns: its spaces and apps (with their data and secrets), its place on other people's share lists and in the apps it was added to, access keys and connected AI apps.</p>
   <div class="scroll"><table><thead><tr><th>Email</th><th>Status</th><th>Apps</th><th>Joined</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
 </section>
 

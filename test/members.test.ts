@@ -1,5 +1,7 @@
 import { env } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
+import type { Env, User } from "../src/env";
+import { notifyOwnersOfDeletion } from "../src/users";
 import { appAt, call, OWNER, PAGE, publishZip, uniq } from "./helpers";
 
 // App members and roles managed inside the app (spec step 4).
@@ -104,5 +106,84 @@ describe("app members and roles", () => {
     await setRole(OWNER, NEW, "rep");
     expect((await call(`/_api/admin/sites/${id}`, { as: OWNER, method: "DELETE" })).status).toBe(200);
     expect(await env.DB.prepare("SELECT COUNT(*) AS n FROM app_members WHERE site_id = ?").bind(id).first("n")).toBe(0);
+  });
+});
+
+describe("app user accounts go once no app lists them", () => {
+  /** An app user account (part B makes these on first sign-in), with a session and a log line. */
+  async function appUser(email: string) {
+    await env.DB.batch([
+      env.DB.prepare("INSERT INTO users (email, name, is_admin, created_at, status) VALUES (?, NULL, 0, ?, 'app_user')").bind(email, Date.now()),
+      env.DB.prepare("INSERT INTO sessions (id, email, host, expires_at, created_at) VALUES (?, ?, 'example.com', ?, ?)").bind(`s-${email}`, email, Date.now() + 3600_000, Date.now()),
+    ]);
+  }
+  const exists = async (email: string) => !!(await env.DB.prepare("SELECT 1 FROM users WHERE email = ?").bind(email).first());
+  const sessions = async (email: string) => env.DB.prepare("SELECT COUNT(*) AS n FROM sessions WHERE email = ?").bind(email).first("n");
+
+  it("deletes the account when its last app removes them, and takes their email out of the activity log", async () => {
+    const who = `gone-${uniq()}@example.com`;
+    await appUser(who);
+    const first = await app();
+    const second = await app();
+    await first.setRole(OWNER, who, "rep");
+    await second.setRole(OWNER, who, "rep");
+    await first.api(OWNER, `roles/${encodeURIComponent(who)}`, "DELETE");
+    expect(await exists(who)).toBe(true); // the second app still lists them
+    await call(`/_api/admin/sites/${second.id}/members/${encodeURIComponent(who)}`, { as: OWNER, method: "DELETE" });
+    expect(await exists(who)).toBe(false);
+    expect(await sessions(who)).toBe(0);
+    const left = await env.DB.prepare("SELECT COUNT(*) AS n FROM audit WHERE actor = ?1 OR target = ?1 OR detail LIKE ?2").bind(who, `%${who}%`).first("n");
+    expect(left).toBe(0);
+    // The log keeps the lines, under a stand-in.
+    expect(await env.DB.prepare("SELECT COUNT(*) AS n FROM audit WHERE site_id = ? AND detail LIKE '%deleted-user-%'").bind(first.id).first("n")).toBe(2);
+  });
+
+  it("deletes them with their app, or when the app stops being shared with them", async () => {
+    const added = `added-${uniq()}@example.com`;
+    const shared = `shared-${uniq()}@example.com`;
+    await appUser(added);
+    await appUser(shared);
+    const a = await app();
+    await a.setRole(OWNER, added, "rep");
+    expect((await call(`/_api/admin/sites/${a.id}`, { as: OWNER, method: "DELETE" })).status).toBe(200);
+    expect(await exists(added)).toBe(false);
+
+    const b = await app();
+    await call(`/_api/admin/sites/${b.id}`, { as: OWNER, method: "PATCH", json: { allowed_emails: [BOSS, REP, shared] } });
+    expect(await exists(shared)).toBe(true);
+    await call(`/_api/admin/sites/${b.id}`, { as: OWNER, method: "PATCH", json: { allowed_emails: [BOSS, REP] } });
+    expect(await exists(shared)).toBe(false);
+  });
+
+  it("never deletes a Formelab account", async () => {
+    const waiting = `waiting-${uniq()}@example.com`;
+    await env.DB.prepare("INSERT INTO users (email, name, is_admin, created_at, status) VALUES (?, NULL, 0, ?, 'waitlisted')").bind(waiting, Date.now()).run();
+    const a = await app();
+    await a.setRole(OWNER, waiting, "rep");
+    await a.api(OWNER, `roles/${encodeURIComponent(waiting)}`, "DELETE");
+    expect(await exists(waiting)).toBe(true);
+  });
+});
+
+describe("deletion requests in the admin panel", () => {
+  it("finds every app that lists someone and emails each owner once", async () => {
+    const who = `asks-${uniq()}@example.com`;
+    const a = await app();
+    const b = await app();
+    await a.setRole(OWNER, who, "rep");
+    await b.setRole(OWNER, who, "manager");
+    const found = await call(`/_api/admin/users/${encodeURIComponent(who)}/apps`, { as: OWNER });
+    expect(await found.json()).toMatchObject({ email: who, account: null, apps: [{ how: "member", owner: OWNER }, { how: "member", owner: OWNER }] });
+    expect((await call(`/_api/admin/users/${encodeURIComponent(who)}/apps`, { as: REP })).status).toBe(403);
+    expect(await (await call(`/admin/users?find=${encodeURIComponent(who)}`, { as: OWNER })).text()).toContain('data-action="deletion-notify"');
+
+    const sent: { to: string; subject: string; text: string }[] = [];
+    const EENV = { ...(env as unknown as Env), EMAIL: { send: async (m: never) => { sent.push(m); return { messageId: "m" }; } }, EMAIL_FROM: "Formelab <hello@example.com>" } as unknown as Env;
+    const admin: User = { email: OWNER, name: null, isAdmin: true, active: true };
+    expect(await notifyOwnersOfDeletion(EENV, admin, who, "https://admin.example.com/")).toEqual({ ok: true, owners: 1 });
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({ to: OWNER, subject: `${who} asked to have their data deleted` });
+    expect(sent[0]!.text).toContain(`https://app.example.com/apps/${a.id}`);
+    expect(sent[0]!.text).toContain(`https://app.example.com/apps/${b.id}`);
   });
 });

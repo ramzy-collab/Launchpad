@@ -1,4 +1,5 @@
 import { audit } from "./audit";
+import { dropUnlistedAppUsers } from "./users";
 import { findIcon, iconPathFor } from "./icons";
 import { findShareImage, linkPreviewOf } from "./share";
 import { accountsAmong, canManageSite, canPublishTo, canShareSite, canViewSite, isAppOwner, isListed, isNamespaceEditor, isNamespaceOwner, ownerOnly } from "./auth";
@@ -1055,6 +1056,7 @@ export async function updateSite(ctx: Ctx, id: string, patch: SitePatch) {
     set("updated_at", now());
     await ctx.env.DB.prepare(`UPDATE sites SET ${sets.join(", ")} WHERE id = ?`).bind(...binds, id).run();
     await audit(ctx.env, ctx.user.email, "update_site", `${site.namespace}/${site.mount_path}`, { ...detail, fields });
+    await dropUnlistedAppUsers(ctx.env, [...((detail.unsharedWith as string[] | undefined) ?? []), ...((detail.editorsRemoved as string[] | undefined) ?? [])]);
   }
   const updated = (await getSiteById(ctx.env, id))!;
   // A sign-up invite ends once they're an editor anyway, or no longer have access at all.
@@ -1082,6 +1084,9 @@ export async function getManageableSite(ctx: Ctx, id: string): Promise<{ view: S
 
 /** Removes a site's files, KV rows, secret rows and the site row itself. */
 export async function removeSite(env: Env, site: SiteRow) {
+  // Everyone the app lists, so app user accounts no other app lists go with it (spec step 4).
+  const members = (await env.DB.prepare("SELECT email FROM app_members WHERE site_id = ?").bind(site.id).all<{ email: string }>()).results.map((r) => r.email);
+  const listed = [...members, ...parseJsonArray(site.allowed_emails), ...parseJsonArray(site.editors)];
   await env.DB.batch([
     env.DB.prepare("DELETE FROM kv WHERE site_id = ?").bind(site.id),
     env.DB.prepare("DELETE FROM kv_user WHERE site_id = ?").bind(site.id),
@@ -1094,6 +1099,7 @@ export async function removeSite(env: Env, site: SiteRow) {
     env.DB.prepare("DELETE FROM sites WHERE id = ?").bind(site.id),
   ]);
   await deletePrefix(env.BUCKET, `sites/${site.id}/`);
+  await dropUnlistedAppUsers(env, listed);
 }
 
 export async function deleteSite(ctx: Ctx, id: string) {
