@@ -186,7 +186,8 @@ export interface SheetsRequest {
 function viewerMayCall(method: string, rest: string, query: URLSearchParams): boolean {
   if (rest === "") {
     // Spreadsheet metadata (tab names) only: grid data comes with includeGridData or a field mask.
-    return method === "GET" && [...query.keys()].every((k) => k === "fields" || k === "ranges") && !/data/i.test(query.getAll("fields").join(","));
+    // "*" (or a mask like "sheets/*") would take in grid data without naming it.
+    return method === "GET" && [...query.keys()].every((k) => k === "fields" || k === "ranges") && !/data|\*/i.test(query.getAll("fields").join(","));
   }
   if (rest === "/values:batchGet") return method === "GET";
   if (rest === "/values:batchUpdate") return method === "POST";
@@ -311,6 +312,12 @@ export async function sheetsCall(env: Env, site: SiteRow, viewer: User, req: She
   const ownerColumn = level === "own" && rules && "records" in rules ? rules.sources?.sheets?.[sheetId!]?.owner_column : undefined;
   const email = who.email ? normEmail(who.email) : null;
   if (level === "own" && (!ownerColumn || !email)) throw ownOnly("You can't use this spreadsheet in this app.");
+  if (level === "own" && rest === "") {
+    // Tab names only, with a mask Formelab sets: no fields or ranges of the caller's can bring cells along.
+    if (method !== "GET") throw ownOnly("People using this app can only read, add and change their own rows.");
+    url.search = "";
+    url.searchParams.set("fields", "spreadsheetId,properties.title,sheets.properties");
+  }
   const own = level === "own" && rest !== "" ? ownPlan(method, rest, req.body, url.searchParams) : null;
   if (!creating && !who.manages && !own && !viewerMayCall(method, rest, url.searchParams)) {
     throw err(

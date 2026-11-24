@@ -35,6 +35,7 @@ function mockGoogle() {
     if (url.href === "https://oauth2.googleapis.com/token") return Response.json({ access_token: "at", expires_in: 3600, refresh_token: "rt-1", scope: "openid https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/userinfo.email", id_token: `x.${btoa('{"email":"me@gmail.com"}').replace(/=+$/, "")}.y` });
     sent.push({ method: req.method, url: req.url });
     const p = decodeURIComponent(url.pathname.replace(`/v4/spreadsheets/${SHEET}`, ""));
+    if (p === "") return Response.json({ spreadsheetId: SHEET, sheets: [{ properties: { title: "Leads" } }] });
     if (p === "/values:batchGet") return Response.json({ valueRanges: url.searchParams.getAll("ranges").map(slice) });
     const range = p.replace(/^\/values\//, "").replace(/:(append|clear)$/, "");
     if (req.method === "GET") return Response.json(slice(range));
@@ -135,8 +136,13 @@ describe("Sheets rows by owner column", () => {
       const res = await sheets(rep, req);
       expect(res.status, req.path).toBe(403);
     }
-    // Tab names are still fine.
-    expect((await sheets(rep, { method: "GET", path: `spreadsheets/${SHEET}`, query: { fields: "sheets.properties.title" } })).status).not.toBe(403);
+    // Tab names are still fine, with Formelab's own field mask whatever the caller asks for.
+    for (const fields of ["sheets.properties.title", "*", "sheets/*"]) {
+      expect((await sheets(rep, { method: "GET", path: `spreadsheets/${SHEET}`, query: { fields, ranges: "Leads!A:C" } })).status, fields).not.toBe(403);
+      const meta = new URL(sent.at(-1)!.url);
+      expect(meta.pathname).toBe(`/v4/spreadsheets/${SHEET}`);
+      expect([...meta.searchParams]).toEqual([["fields", "spreadsheetId,properties.title,sheets.properties"]]);
+    }
   });
 
   it("adds rows only with the person's email in the owner column", async () => {

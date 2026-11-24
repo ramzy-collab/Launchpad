@@ -5,7 +5,7 @@ Everything that has changed in Formelab, newest first. Shown in the admin panel 
 ## 2026-11-24
 
 - **Access rules now cover Google Sheets and connected services.** An app's `formelab.json` can name each spreadsheet and connector it uses, under `sources`, and which roles may use it. A spreadsheet can give people only their own rows: with `"owner_column": "Assigned to"`, someone reading it gets the heading row and the rows with their email in that column, and other people's rows come back empty, so row numbers stay the same. They can add rows only with their own email in it, change only rows that are already theirs, and can't save formulas (a formula could show other rows). Custom connectors, saved keys and Gemini are "all" or "none" per role. The rules are checked on the server, so calling Formelab directly instead of through the app gets no more. A new app whose code uses Sheets or connectors can't be published until its rules say who uses them: uploading shows "This app can't be published yet" with a prompt to paste into your AI tool. Apps made before access rules work as before. Supabase works as a connector at role level for now; per-person access through Supabase's own row rules comes later. The guide's **Access rules** section explains it all.
-- **Test plan:** [Access rules over outside data](/test-plans/2026-11-24-access-rules-outside-data), 62 browser test cases to hand to Claude Cowork.
+- **Test plan:** [Access rules over outside data](/test-plans/2026-11-24-access-rules-outside-data), 63 browser test cases to hand to Claude Cowork.
 
 ## 2026-11-22
 
