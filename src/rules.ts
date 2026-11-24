@@ -281,18 +281,30 @@ export interface Who {
   /** Opened through the public link, signed out: the "guest" role. */
   guest: boolean;
   email: string | null;
+  /** Their role in the app (spec step 4): their member row's, else default_role for people the app is shared with. */
+  role: string | null;
+}
+
+/** The roles the rules give anything to, which are the roles people can be given ("guest" is never one). */
+export function rolesIn(rules: Rules): string[] {
+  if ("everyone" in rules) return [];
+  const maps = [
+    ...Object.values(rules.records).flatMap((r) => [r.read, r.write]),
+    ...Object.values(rules.sources?.sheets ?? {}).flatMap((r) => [r.read, r.write]),
+    ...Object.values(rules.sources?.connectors ?? {}),
+  ];
+  return [...new Set(maps.flatMap((m) => Object.keys(m ?? {})))].filter((r) => r !== "guest").sort();
 }
 
 /**
  * The person's level for reading or writing a key, and the rule that gave it. Owners and editors
- * get "all"; keys no rule covers are theirs alone. Until roles are managed inside apps (spec step 4),
- * everyone else who signs in has the rules' default_role.
+ * get "all"; keys no rule covers are theirs alone. Everyone else gets their role's level.
  */
 export function levelFor(rules: Rules, who: Who, key: string, op: "read" | "write"): { level: Level; rule?: RecordRule } {
   if (who.manages || "everyone" in rules) return { level: "all" };
   const rule = Object.values(rules.records).find((r) => key.startsWith(r.prefix));
   if (!rule) return { level: "none" };
-  const role = who.guest ? "guest" : rules.default_role;
+  const role = who.guest ? "guest" : who.role;
   return { level: (role && rule[op]?.[role]) || "none", rule };
 }
 
@@ -305,7 +317,7 @@ export function levelFor(rules: Rules, who: Who, key: string, op: "read" | "writ
 export function sourceLevel(rules: Rules | null, who: Who, strict: boolean, kind: keyof Sources, id: string, op: "read" | "write"): Level {
   if (who.manages || !rules || "everyone" in rules) return "all";
   if (!rules.sources && !strict) return "all";
-  const role = who.guest ? "guest" : rules.default_role;
+  const role = who.guest ? "guest" : who.role;
   if (!role) return "none";
   if (kind === "connectors") return rules.sources?.connectors?.[id]?.[role] ?? "none";
   return rules.sources?.sheets?.[id]?.[op]?.[role] ?? "none";

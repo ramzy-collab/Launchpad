@@ -24,7 +24,7 @@ afterEach(() => onOutbound(undefined));
 describe("runtime API: me and kv", () => {
   it("me returns the viewer", async () => {
     const { api } = await newSite({ allowed_emails: "viewer@example.com" });
-    expect(await (await api("me", { as: "Viewer@Example.com" })).json()).toEqual({ email: "viewer@example.com", name: null });
+    expect(await (await api("me", { as: "Viewer@Example.com" })).json()).toEqual({ email: "viewer@example.com", name: null, role: null, manages: false });
   });
 
   it("kv round-trips JSON, lists by prefix, and deletes", async () => {

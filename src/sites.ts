@@ -1089,6 +1089,7 @@ export async function removeSite(env: Env, site: SiteRow) {
     env.DB.prepare("DELETE FROM responses WHERE site_id = ?").bind(site.id),
     env.DB.prepare("DELETE FROM app_stars WHERE site_id = ?").bind(site.id),
     env.DB.prepare("DELETE FROM pending_role_invites WHERE site_id = ?").bind(site.id),
+    env.DB.prepare("DELETE FROM app_members WHERE site_id = ?").bind(site.id),
     env.DB.prepare("DELETE FROM rate_counters WHERE bucket LIKE ?").bind(site.id + ":%"),
     env.DB.prepare("DELETE FROM sites WHERE id = ?").bind(site.id),
   ]);

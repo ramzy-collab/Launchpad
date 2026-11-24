@@ -1,6 +1,6 @@
 import { Hono, type Context, type MiddlewareHandler } from "hono";
 import { ctxOf, managementApi } from "./api";
-import { canManageSite, canViewSite, identifyBearer, identifyBrowser } from "./auth";
+import { identifyBearer, identifyBrowser } from "./auth";
 import { adminPage, testPlanPage } from "./dashboard/admin";
 import { ANSWERS_PATH, answersRoute, showAnswersLink } from "./answers";
 import { connectPage } from "./dashboard/connect";
@@ -17,6 +17,7 @@ import { forbidden, jsonError, onError, unauthorized } from "./errors";
 import { ASSET_VERSION, CONSENT_JS, DASHBOARD_JS, FORMELAB_CSS, GUIDE_MD, HOME_CSS, INSTALL_JS, VIZ_JS, SDK_JS, SIGNIN_JS, SITE_JS, THEME_JS } from "./generated/assets";
 import { AUTHORIZE_PATH, authorizeGet, authorizePost, oauthProvider } from "./oauth";
 import { runtimeApi } from "./runtime";
+import { appAccess } from "./members";
 import { appCallback, appHandoff, handoffStart, loginCallback, loginStart, logout, safeReturn, workosEnabled } from "./login";
 import { legacyAppRedirect, noAccessPage, notFoundPage, plainPage, serveAppFile } from "./serve";
 import { cookieHeader, hasSignIn, readCookie } from "./session";
@@ -307,10 +308,12 @@ siteApp.use("*", async (c, next) => {
   const site = c.get("site");
   const who = await identifyBrowser(c.req.raw, c.env);
   const nsRow = who ? await getNamespace(c.env, site.namespace) : null;
-  const allowed = !!who && !!nsRow && canViewSite(who.user, site, nsRow);
+  const access = who && nsRow ? await appAccess(c.env, site, nsRow, who.user) : null;
+  const allowed = !!access?.allowed;
   if (!allowed && hasPublicLink(site, c.req.raw)) {
     c.set("guest", true);
     c.set("manages", false);
+    c.set("role", null);
     // Guests are anonymous: their page views count toward the app's views, not its visitors.
     if (isPageView(c.req.raw)) c.executionCtx.waitUntil(recordAppVisit(c.env, site.id, GUEST, false).catch(() => {}));
     return next();
@@ -325,9 +328,10 @@ siteApp.use("*", async (c, next) => {
   if (!allowed) {
     return c.req.path.startsWith("/_api/") ? jsonError(forbidden("You don't have access to this app.")) : noAccessPage(site, who.user);
   }
-  const manages = canManageSite(who.user, site, nsRow);
+  const manages = access!.manages;
   c.set("user", who.user);
   c.set("manages", manages);
+  c.set("role", access!.role);
   // Someone opening one of the app's pages counts toward its visitors (admin panel → Metrics).
   if (isPageView(c.req.raw)) c.executionCtx.waitUntil(recordAppVisit(c.env, site.id, who.user.email, manages).catch(() => {}));
   await next();

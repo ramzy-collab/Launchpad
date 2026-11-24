@@ -94,7 +94,7 @@ describe("public links: anyone with the link", () => {
     const { publicUrl } = await (await patch({ public_link: true })).json<View>();
     const { cookie } = await openLink(publicUrl!);
     const me = await call(`${origin}/_api/me`, { as: "friend@example.com", mount: "/", headers: { cookie: cookie! } });
-    expect(await me.json()).toEqual({ email: "friend@example.com", name: null });
+    expect(await me.json()).toEqual({ email: "friend@example.com", name: null, role: null, manages: false });
     // Someone the app isn't shared with is a guest, rather than being turned away.
     const stranger = await call(`${origin}/_api/me`, { as: "stranger@example.com", mount: "/", headers: { cookie: cookie! } });
     expect(stranger.status).toBe(200);

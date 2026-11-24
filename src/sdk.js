@@ -98,6 +98,13 @@
       kv.mine = store("me/kv");
       return kv;
     })(),
+    // Who uses the app and their role (formelab.json): for the owner, editors and manage_roles.
+    // Adding someone lets them open the app; nobody gets an email, so share the app's address yourself.
+    roles: {
+      list: function () { return call("GET", "roles"); },
+      set: function (email, role) { return call("PUT", "roles/" + enc(email), { role: role }); },
+      remove: function (email) { return call("DELETE", "roles/" + enc(email)); }
+    },
     // Form answers: anyone who can open the app sends them; only its owner and editors list them.
     responses: {
       submit: function (data) { return call("POST", "responses", data === undefined ? null : data); },

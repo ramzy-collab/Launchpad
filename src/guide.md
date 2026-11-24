@@ -97,8 +97,11 @@ Add `<script src="/_platform/sdk.js"></script>`, then use `window.formelab` (als
 ### `formelab.me()`
 
 ```js
-const me = await formelab.me(); // { email: "ana@example.com", name: null }
+const me = await formelab.me(); // { email: "ana@example.com", name: null, role: "salesperson", manages: false }
 ```
+
+`role` is the person's role from the app's access rules (see "Members and roles"), or `null` when
+it has none. `manages` is `true` for the app's owner and editors, who see and change everything.
 
 `me()` returns `null` for a **guest**: someone who opened the app through its public link and isn't
 signed in (or isn't someone the app is shared with). Guests can see the app and read its shared data
@@ -484,10 +487,8 @@ explicit, valid choice:
     signed-in person's email) or `"none"`. Roles not listed get `"none"`.
 - `guest` is the role for people who open the app through its public link, signed out. It gets
   `"none"` unless you grant it.
-- `default_role`: the role everyone below editor gets: the people the app is shared with, and
-  everyone signed in who can open it. Roles can't be given to particular people inside the app
-  yet, so a role like `"manager"` works only through `default_role` for now; people who must see
-  everything can be made editors.
+- `default_role`: the role of the people the app is shared with in Formelab, and of everyone signed
+  in who can open it, until they're given another (see "Members and roles" below).
 - `manage_roles`: roles that may add people and give them roles inside the app. **Only if the person
   asks for it:** people in these roles can invite anyone, so the app counts as public. Publishing
   asks the person to confirm (`confirm_public`); tell them what it says and publish again with
@@ -545,6 +546,30 @@ With `"own"` on a spreadsheet, people reach only their rows:
 Supabase is a custom connector here: role level only. Never give a connector Supabase's
 `service_role` key if people below editor can use it; it skips Supabase's row rules.
 <!-- /flag:connected_apps -->
+
+**Members and roles.** People get roles inside the app, through `formelab.roles`. Only the owner,
+editors and roles in `manage_roles` may use it; for everyone else it fails with `not_allowed`.
+
+```js
+await formelab.roles.set("ada@example.com", "manager"); // adds Ada, or changes her role
+await formelab.roles.remove("ada@example.com");          // takes her off the list
+const people = await formelab.roles.list();
+// [{ email: "owner@example.com", role: null, manages: true, member: false }, ...,
+//  { email: "ada@example.com", role: "manager", manages: false, member: true }]
+```
+
+- Adding someone lets them open the app. Formelab sends them nothing: show a **Copy invite link**
+  button that copies the app's address (`location.origin`), so they can be sent it. They sign in
+  with their email when they open it.
+- Roles must be ones the rules name (`role_unknown` otherwise), never `guest`. The owner and
+  editors can't be given a role (`manages_app`): change them in Formelab.
+- `list()` includes the owner and editors (`manages: true`) and the people the app is shared with in
+  Formelab (`default_role`, `member: false`). `remove()` works only for `member: true`: someone the
+  app is shared with in Formelab goes back to `default_role`.
+- Apps with `{ "everyone": "all" }` have no roles (`roles_unavailable`).
+- A members screen built for this is for managers only: check `me().manages` or `me().role`.
+- Removing someone doesn't delete records that name them (like their `owner_field` email). Those
+  are the app's data, for the owner to change.
 
 **Publishing it.** A single-file app with rules is published as `files`
 (`{ "index.html": "...", "formelab.json": "..." }`) or as a zip, since `html` carries one file.

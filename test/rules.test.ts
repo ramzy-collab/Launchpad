@@ -95,7 +95,7 @@ describe("formelab.json", () => {
   it("gives each role its level for a service", () => {
     const ID = "1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms";
     const r = rules({ ...CRM, sources: { sheets: { [ID]: { read: { salesperson: "all" } } }, connectors: { quo: { salesperson: "all" } } } });
-    const rep = { manages: false, guest: false, email: "a@x.test" };
+    const rep = { manages: false, guest: false, email: "a@x.test", role: "salesperson" };
     expect(sourceLevel(r, rep, true, "sheets", ID, "read")).toBe("all");
     expect(sourceLevel(r, rep, true, "sheets", ID, "write")).toBe("none"); // no "write" at all
     expect(sourceLevel(r, rep, true, "connectors", "other", "read")).toBe("none");
