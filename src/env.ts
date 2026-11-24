@@ -56,6 +56,8 @@ export type AppEnv = {
     guest: boolean | undefined;
     /** On an app's host: whether the signed-in person is one of the app's owners or editors (never a guest). */
     manages: boolean;
+    /** On an app's host: the signed-in person's role in the app (src/members.ts), null for managers or without one. */
+    role: string | null;
     site: import("./sites").SiteRow;
     /** The browser session behind the request, when it came from Formelab's own login. */
     sessionId: string | undefined;

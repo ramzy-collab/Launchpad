@@ -1268,8 +1268,34 @@
       });
     }
 
+    // "Remove this person" on the list of people added inside the app.
+    var memberDialog = $("#dlg-member-remove");
+    var removingMember = null;
+    if (memberDialog) {
+      memberDialog.querySelector("[data-member-remove-go]").addEventListener("click", function () {
+        var email = removingMember;
+        if (!email) return;
+        api("DELETE", "/sites/" + encodeURIComponent(S.id) + "/members/" + encodeURIComponent(email)).then(function () {
+          memberDialog.close();
+          removingMember = null;
+          var row = document.querySelector('[data-member="' + CSS.escape(email) + '"]');
+          var list = row && row.parentNode;
+          if (row) row.remove();
+          if (list && !list.children.length) { list.previousElementSibling.remove(); list.previousElementSibling.remove(); list.remove(); }
+          toast(email + " was removed from the app");
+        }, function (e) { toast(e.message, true); });
+      });
+    }
+
     page.addEventListener("click", function (ev) {
       var t = ev.target;
+      var rmMember = t.closest("[data-member-remove]");
+      if (rmMember && memberDialog) {
+        removingMember = rmMember.dataset.memberRemove;
+        memberDialog.querySelector("[data-member-remove-email]").textContent = removingMember;
+        memberDialog.showModal();
+        return;
+      }
       if (t.closest("[data-goto-tab]")) {
         selectTab(t.closest("[data-goto-tab]").dataset.gotoTab, true);
         document.getElementById("panel-sharing").scrollIntoView({ behavior: "smooth", block: "start" });

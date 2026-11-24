@@ -1,6 +1,6 @@
 # Formelab agent access
 
-Status: design agreed; steps 1 to 3 shipped, step 6 built Nov 24, 2026. Supersedes the Nov 21,
+Status: design agreed; steps 1 to 3 and 6 shipped; step 4 in progress (part A built Nov 24, 2026). Supersedes the Nov 21,
 2026 "Agent Access: Modular Feature Proposal". Decisions are recorded in the log at the end; the module sections state the result.
 
 ## Why
@@ -193,6 +193,44 @@ as public. Goes away on its own once a valid `formelab.json` is published.
   is public, and its share list.
 - Adding someone in the app lets them open it.
 - Owners get a "Remove this person" action on the member list.
+
+### Decided (Nov 24, 2026): how step 4 works
+
+Built in three parts: **A** members and roles, **B** branded sign-in, **C** deletion.
+
+- **Where the list lives (A).** Table `app_members` (`site_id`, `email`, `role`, `added_by`,
+  `created_at`; migration `0029`), code in `src/members.ts`. The owner, editors and share list
+  aren't stored: they count as members, share list people with `default_role`. A row for a share
+  list person only changes their role; removing it puts them back on `default_role`. Taking them off
+  the share list stays a Formelab sharing change. Apps open to "All Formelab members" treat every
+  member like the share list.
+- **Opening the app (A).** The app-host check (`appAccess`) lets in people with a row, but only
+  while the app's rules have records, so dropping the rules can't leave members in. Members needn't
+  be active Formelab accounts.
+- **Roles (A).** `Who` carries `role`: the member row's, else `default_role` for people the app is
+  shared with, `guest` for the public link. `levelFor` and `sourceLevel` read it.
+- **SDK (A).** `formelab.roles.list()`, `set(email, role)`, `remove(email)` at `/_api/roles`, for
+  the owner, editors and `manage_roles` (`not_allowed` otherwise). A manager may give any role the
+  rules name, `manage_roles` included, but never `guest`, and can't touch the owner or editors
+  (`manages_app`). The list shows emails, so it's for the same people. `me()` adds `role` and
+  `manages`. At most 2,000 rows per app (`members_full`, one statement); people below editor may
+  make 20 changes a minute. Apps with `{"everyone":"all"}` have no roles (`roles_unavailable`).
+- **Invite link (A).** No token: the link is the app's address. Only being on the list lets
+  someone in, so a forwarded link grants nothing.
+- **Remove this person (A).** On the app's settings page ("Added in the app"), for the owner and
+  editors who may share (`canShareSite`), since it changes who can open the app.
+- **Sign-in (B).** App sign-in goes through formelab.ai (`handoffStart`, then `/login`), and today
+  `completeSignIn` makes every newcomer `waitlisted`, adds them to the waitlist and gives them a
+  formelab.ai session. B makes a member signing in this way `app_user`, keeps them off the waitlist
+  and marks their formelab.ai session app-only, so the dashboard treats them as signed out.
+  Someone who isn't a member gets "You don't have access" and no record is kept. The page shows
+  the app's address under its name, and caps the name's length, since an owner could name an app
+  after another business.
+- **Deletion (C).** On removal (in the app, on the settings page, or by deleting the app), an
+  `app_user` that no app lists any more is deleted at once with `deleteUser`'s steps. There's no
+  scheduled clean-up job. Records naming the person (`owner_field` emails, responses) stay as the
+  app's data; audit lines are anonymized like visit logs.
+- **Known gaps.** The sign-in code email and the Google consent screen still say Formelab.
 
 ### Sign-in
 
@@ -392,3 +430,7 @@ Thanksgiving Menu. Example cases:
 | 12 | App users on the Formelab side | `app_user` created only on first sign-in, off the waitlist; invites store the email only on the app's member list |
 | 13 | Signup privacy | Signup looks the same for any email; app-only memberships hidden |
 | 14 | Deletion requests | To a customer: their apps. To Formelab: delete own data, notify each affected owner, never tell the requester which apps |
+| 15 | Step 4 member list | `app_members` per app; Formelab-side people counted, not stored; members get in only while rules have records |
+| 16 | Who manages people in the app | Owner, editors, `manage_roles`; any role the rules name but `guest`; never the owner or editors; same people may list |
+| 17 | Invite link | The app's address, no token; settings "Remove this person" for owner and sharers |
+| 18 | App sign-in and records (B, C) | `app_user` off the waitlist, app-only formelab.ai session; non-members keep no record; deletion at removal time |

@@ -167,6 +167,10 @@ export function describeActivity(row: AuditRow): string {
       const who = list(d.emails);
       return `Sent ${who || "someone"} a sign-up invite to become ${d.role === "admin" ? "an Admin" : "an Editor"}`;
     }
+    case "member_set":
+      return `Gave ${d.email ?? "someone"} the role ${d.role ?? "?"} in the app`;
+    case "member_remove":
+      return `Removed ${d.email ?? "someone"} from the app's members`;
     case "role_invite_joined":
       return `Joined Formelab and became ${d.role === "admin" ? "an Admin" : "an Editor"}`;
     case "transfer_owner":

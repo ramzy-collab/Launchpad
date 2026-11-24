@@ -1,4 +1,5 @@
 import type { Context } from "hono";
+import { membersOf } from "../members";
 import { describeActivity, HIGH_VOLUME_ACTIONS, siteActivity, type AuditRow } from "../audit";
 import { canPublishTo, listTokens } from "../auth";
 import type { AppEnv, User } from "../env";
@@ -342,6 +343,29 @@ const UPDATE_IDEAS = ["Add a search bar", "Make it work better on phones", "Add 
 /** Which saved key "Update with ..." uses: Gemini first (it's free), then the others. */
 const UPDATE_ORDER: Builder[] = ["gemini", "claude", "openai", "grok"];
 
+/** People added inside the app (formelab.roles.set), with "Remove this person" for those who share it. */
+function memberList(members: { email: string; role: string }[], canShare: boolean): string {
+  if (!members.length) return "";
+  const rows = members
+    .map((m) => {
+      const control = canShare
+        ? `<button type="button" class="secondary" data-member-remove="${e(m.email)}" aria-haspopup="dialog" aria-label="Remove ${e(m.email)}">Remove</button>`
+        : "";
+      return `<li class="person" data-member="${e(m.email)}"><span class="avatar soft" aria-hidden="true">${e(m.email.slice(0, 1).toUpperCase())}</span><span class="pi"><span class="pe">${e(m.email)}</span><span class="ps">${e(m.role)}</span></span>${control}</li>`;
+    })
+    .join("");
+  return `<h3 id="members-title">Added in the app</h3>
+    <p class="muted">People the app added, with their role from its access rules. Being on this list lets them open it.</p>
+    <ul class="people" data-members aria-labelledby="members-title">${rows}</ul>
+    <dialog id="dlg-member-remove" class="howto-dialog confirm" aria-labelledby="dlg-member-remove-title">
+      <div class="howto">
+        <h2 id="dlg-member-remove-title">Remove <span data-member-remove-email></span>?</h2>
+        <p>They can't open the app any more, unless you also shared it with them here. Data they saved in it stays.</p>
+        <div class="dialog-actions"><button type="button" class="secondary" data-close>Keep them</button><button type="button" class="danger-solid" data-member-remove-go>Remove this person</button></div>
+      </div>
+    </dialog>`;
+}
+
 /** An app's own page: its name and share pill, then Sharing, Update and Activity tabs. */
 export async function appSettingsPage(c: Context<AppEnv>, id: string): Promise<Response> {
   const found = await manageable(c, id);
@@ -368,10 +392,11 @@ export async function appSettingsPage(c: Context<AppEnv>, id: string): Promise<R
   const lock = site.canShare ? "" : " disabled";
   const appHost = new URL(site.url).host;
   const ctx = ctxOf(c);
-  const [starred, accounts, pending] = await Promise.all([
+  const [starred, accounts, pending, members] = await Promise.all([
     starredIds(ctx).then((s) => s.has(site.id)),
     peopleWithAccounts(ctx, site),
     pendingInvites(ctx, site.id),
+    membersOf(c.env, site.id),
   ]);
   const canCopy = user.active && canPublishTo(user, ns);
   const pendingRoles = new Map(pending.map((p) => [p.email, p.role] as [string, Role]));
@@ -541,6 +566,7 @@ ${rulesWarn ? `<div class="pub-warn rules-warn" role="note">${ICON.alert()}<span
         : `<p class="owner-note" data-owner-note>${ICON.people(16)}<span><strong>${e(site.ownerEmail)}</strong> owns this app.${myRole ? ` You're ${aRole(myRole)}.` : ""}</span></p>`
     }
     <ul class="people" data-people>${peopleRows(site, user.email, isOwner, site.canShare, new Set(accounts), pendingRoles)}</ul>
+    ${memberList(members, site.canShare)}
   </div>
 </section>
 

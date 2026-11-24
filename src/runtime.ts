@@ -2,7 +2,8 @@ import { Hono, type Context } from "hono";
 import type { AppEnv } from "./env";
 import { badRequest, err, forbidden, jsonError, notFound, onError } from "./errors";
 import { KV_LIST_PAGE_BYTES, kvDelete, kvGet, kvList, kvSet, type KvScope } from "./kv";
-import { proxy, secretDelete, secretList, secretSet } from "./secrets";
+import { listRoles, removeRole, setRole, type RolesCaller } from "./members";
+import { PROXY_VIEWER_PER_MINUTE, proxy, rateLimit, secretDelete, secretList, secretSet } from "./secrets";
 import { connectorFetch } from "./connectors";
 import { geminiAvailable, geminiGenerate } from "./gemini";
 import { flagOnForOwner } from "./flags";
@@ -81,7 +82,7 @@ export function runtimeApi() {
   api.get("/me", (c) => {
     if (c.get("guest")) return c.json(null);
     const u = c.get("user");
-    return c.json({ email: u.email, name: u.name });
+    return c.json({ email: u.email, name: u.name, role: c.get("role") ?? null, manages: !!c.get("manages") });
   });
 
   // Keys may contain "/" (sent percent-encoded); take the raw remainder of the path.
@@ -150,7 +151,7 @@ export function runtimeApi() {
 
   // Apps with access rules (formelab.json): each person reads and changes only what the rules allow.
   // Records they may not see look like missing keys, so the app's code just gets null.
-  const who = (c: Ctx): Who => ({ manages: !!c.get("manages"), guest: !!c.get("guest"), email: c.get("guest") ? null : c.get("user").email });
+  const who = (c: Ctx): Who => ({ manages: !!c.get("manages"), guest: !!c.get("guest"), email: c.get("guest") ? null : c.get("user").email, role: c.get("role") ?? null });
   const rulesOf = (c: Ctx): Promise<Rules | null> => rulesOfSite(c.env, c.get("site"));
   /** The value being written, for the rules to read; invalid JSON is left for kvSet to refuse. */
   const parsed = (raw: string) => {
@@ -184,6 +185,24 @@ export function runtimeApi() {
     const rules = await rulesOf(c);
     if (!rules) requireDataWrite(c);
     return c.json(await kvDelete(c.env, shared(c), key, rules ? checkWrite(rules, who(c), key, undefined) : undefined));
+  });
+
+  // Members and roles (spec step 4): the owner, editors and manage_roles change who has which role.
+  // Guests never get here (sign_in_required above). Changes by people below editor are limited per person, like proxy calls.
+  const rolesRate = async (c: Ctx) =>
+    c.get("manages") ||
+    rateLimit(c.env, `roles:${c.get("site").id}:${c.get("user").email}`, PROXY_VIEWER_PER_MINUTE, `You changed people in this app more than ${PROXY_VIEWER_PER_MINUTE} times in a minute.`, c.env.VIEWER_LIMITER, "Wait a minute and try again.");
+  const caller = (c: Ctx): RolesCaller => ({ env: c.env, site: c.get("site"), user: c.get("user"), manages: !!c.get("manages"), role: c.get("role") ?? null });
+  const emailParam = (c: Ctx) => keyFrom(new URL(c.req.url).pathname, "/_api/roles/");
+  api.get("/roles", async (c) => c.json(await listRoles(caller(c))));
+  api.put("/roles/*", async (c) => {
+    await rolesRate(c);
+    const body = await objectBody(c, '{ "role": "salesperson" }', 'Use formelab.roles.set("ada@example.com", "salesperson").');
+    return c.json(await setRole(caller(c), emailParam(c), body.role));
+  });
+  api.delete("/roles/*", async (c) => {
+    await rolesRate(c);
+    return c.json(await removeRole(caller(c), emailParam(c)));
   });
 
   // Each person's private data in this app: only they can read or change it.

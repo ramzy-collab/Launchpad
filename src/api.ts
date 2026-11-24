@@ -1,4 +1,5 @@
 import { Hono, type Context } from "hono";
+import { removeMemberInSettings } from "./members";
 import { listTokens, mintToken, revokeToken, TOKEN_DEFAULT_TTL_HOURS } from "./auth";
 import type { AppEnv } from "./env";
 import { ApiError, badRequest, err, errorBody, jsonError, onError } from "./errors";
@@ -154,6 +155,8 @@ export function managementApi(kind: "admin" | "deploy") {
     const body = await jsonBody(c);
     return c.json(await sendRoleInvites(ctxOf(c), c.req.param("id"), body.emails, body.role));
   });
+  // "Remove this person" on the app's member list (people added inside the app, spec step 4).
+  api.delete("/sites/:id/members/:email", async (c) => c.json(await removeMemberInSettings(ctxOf(c), c.req.param("id"), c.req.param("email"))));
   api.post("/sites/:id/transfer", async (c) => {
     const body = await jsonBody(c);
     return c.json(await transferOwnership(ctxOf(c), c.req.param("id"), body.to, body.confirm));
