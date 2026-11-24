@@ -8,14 +8,16 @@
 import type { Context } from "hono";
 import { decodeJwt } from "jose";
 import { audit } from "./audit";
-import { isOwnerEmail, upsertUser } from "./auth";
+import { getUser, isOwnerEmail, upsertUser } from "./auth";
 import type { AppEnv, Env, User } from "./env";
 import { err } from "./errors";
 import { now } from "./env";
 import { acceptedEmail, sendEmail } from "./email";
 import { addToWaitlist } from "./waitlist";
 import { notFoundPage, plainPage } from "./serve";
-import { adminOrigin, aiOrigin, hostKind } from "./hosts";
+import { adminOrigin, aiOrigin, appsLabelOf, hostKind } from "./hosts";
+import { isAppMember } from "./members";
+import { getSiteByHostLabel, type SiteRow } from "./sites";
 import {
   cookieHeader,
   createSession,
@@ -55,6 +57,24 @@ export function safeReturn(raw: string | null | undefined, fallback = "/app"): s
     return fallback;
   }
 }
+
+/**
+ * The app a sign-in is for: one whose return address hands the session on to an app's host
+ * (/auth/app?return=https://<label>.APP_DOMAIN/...), as signing in from an app does. Else null.
+ */
+export async function appOfReturn(env: Env, returnTo: string): Promise<SiteRow | null> {
+  const u = new URL(returnTo, "https://return.invalid");
+  if (u.pathname !== "/auth/app") return null;
+  try {
+    const label = appsLabelOf(new URL(u.searchParams.get("return") ?? "").hostname, env);
+    return label ? await getSiteByHostLabel(env, label) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** An app's name as its sign-in page shows it: owner-chosen text, so kept short. */
+export const appSignInName = (site: SiteRow) => (site.title || site.mount_path || site.namespace).slice(0, 60);
 
 export const onAdminHost = (c: Context<AppEnv>) => hostKind(new URL(c.req.url).hostname, c.env) === "admin";
 export const homePath = (c: Context<AppEnv>) => (onAdminHost(c) ? "/" : "/app");
@@ -127,10 +147,11 @@ export async function loginCallback(c: Context<AppEnv>): Promise<Response> {
     return plainPage(502, "Couldn't sign you in", "The sign-in service didn't accept this attempt. Go back to Formelab and try again.");
   }
   const signedIn = await res.json<WorkosAuthentication>();
+  const forApp = onAdminHost(c) ? null : await appOfReturn(env, returnTo);
   const done = await completeSignIn(c, signedIn, (headers) => {
     headers.set("location", returnTo);
     return new Response(null, { status: 302, headers });
-  });
+  }, forApp);
   done.headers.append("set-cookie", cookieHeader(STATE_COOKIE, "", 0));
   return done;
 }
@@ -156,12 +177,15 @@ export const markHasPassword = (env: Env, email: string) =>
 /**
  * Turns a WorkOS sign-in into a Formelab one: checks the email, creates or updates the account
  * (new people land on the waitlist), and starts a session. `respond` builds the response from the
- * headers (cache-control and the session cookie) once everything checks out.
+ * headers (cache-control and the session cookie) once everything checks out. `forApp` is the app
+ * the person is signing in to, if any (appOfReturn): someone new who is one of its members gets
+ * an app user account instead, kept off the waitlist (spec step 4).
  */
 export async function completeSignIn(
   c: Context<AppEnv>,
   { user: wu, access_token, authentication_method }: WorkosAuthentication,
   respond: (headers: Headers) => Response,
+  forApp: SiteRow | null = null,
 ): Promise<Response> {
   const env = c.env;
   if (!wu?.email || wu.email_verified === false) {
@@ -188,14 +212,36 @@ export async function completeSignIn(
     return respond(headers);
   }
 
-  const status = isOwnerEmail(env, email) || (await isApproved(env, email)) ? "active" : "waitlisted";
+  const approved = isOwnerEmail(env, email) || (await isApproved(env, email));
+  let status: "active" | "waitlisted" | "app_user" = approved ? "active" : "waitlisted";
+  if (!approved && forApp) {
+    const existing = await getUser(env, email);
+    if (!existing && !(await isAppMember(env, forApp, email))) return notAMember(env, forApp, email, wu.id);
+    // New, or only ever signed in to apps: stays an app user. Anyone else keeps their account as it is.
+    if (!existing || existing.appOnly) status = "app_user";
+  }
   const user = await upsertUser(env, email, name, { status, workosId: wu.id });
   await remember();
-  // Someone who signs in before being let in lands on the waitlist, so an admin can approve them.
-  if (!user.active) await addToWaitlist(env, email, c.req.url, "login", (p) => c.executionCtx.waitUntil(p));
+  // Someone who signs in to Formelab before being let in lands on the waitlist, so an admin can approve them.
+  if (!user.active && !user.appOnly) await addToWaitlist(env, email, c.req.url, "login", (p) => c.executionCtx.waitUntil(p));
 
   headers.append("set-cookie", await createSession(env, email, new URL(c.req.url).hostname, { workosSid }));
   return respond(headers);
+}
+
+/**
+ * Someone new signing in to an app that hasn't added them: no Formelab record is made, and the
+ * WorkOS user the sign-in may just have created is deleted, best effort.
+ */
+async function notAMember(env: Env, site: SiteRow, email: string, workosId: string): Promise<Response> {
+  if (workosId && env.WORKOS_API_KEY) {
+    const res = await fetch(`${WORKOS_API}/user_management/users/${encodeURIComponent(workosId)}`, {
+      method: "DELETE",
+      headers: { authorization: `Bearer ${env.WORKOS_API_KEY}` },
+    }).catch(() => null);
+    if (!res?.ok) console.warn("workos user delete failed", res?.status ?? "network");
+  }
+  return plainPage(403, "No access", `${email} hasn't been added to ${appSignInName(site)}. Ask whoever sent you the link to add you, then open it again.`);
 }
 
 async function isApproved(env: Env, email: string): Promise<boolean> {
@@ -290,6 +336,10 @@ export async function appHandoff(c: Context<AppEnv>): Promise<Response> {
   const kind = hostKind(target.hostname, c.env);
   if (target.protocol !== here.protocol || (kind !== "app" && kind !== "apps")) {
     return plainPage(400, "Bad request", "Formelab only signs you in to its own apps.");
+  }
+  // App users get into apps only: the web app means signing in to Formelab itself (see signin.ts gate).
+  if (kind === "app" && c.get("user").appOnly) {
+    return new Response(null, { status: 302, headers: { location: `/login?return=${encodeURIComponent(here.pathname + here.search)}`, "cache-control": "no-store" } });
   }
   const sessionId = c.get("sessionId");
   // Signed in through Cloudflare Access instead: there is no session to hand over, and sending

@@ -59,12 +59,15 @@ export async function identifyBrowser(req: Request, env: Env): Promise<{ user: U
 
 export const isOwnerEmail = (env: Env, email: string) => normEmail(email) === normEmail(env.OWNER_EMAIL ?? "");
 
-/** Creates or refreshes a user. An existing account never loses active status here. */
+/**
+ * Creates or refreshes a user. An existing account never loses active status here, and an app
+ * user who signs in to Formelab itself becomes a waitlisted (or active) account.
+ */
 export async function upsertUser(
   env: Env,
   email: string,
   name: string | null,
-  opts: { status?: "active" | "waitlisted"; workosId?: string } = {},
+  opts: { status?: "active" | "waitlisted" | "app_user"; workosId?: string } = {},
 ): Promise<User> {
   const isAdmin = isOwnerEmail(env, email) ? 1 : 0;
   const status = isAdmin ? "active" : (opts.status ?? "active");
@@ -72,7 +75,8 @@ export async function upsertUser(
     `INSERT INTO users (email, name, is_admin, created_at, status, workos_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6)
      ON CONFLICT(email) DO UPDATE SET name = COALESCE(excluded.name, users.name),
        is_admin = MAX(users.is_admin, excluded.is_admin),
-       status = CASE WHEN users.status = 'active' OR excluded.status = 'active' THEN 'active' ELSE users.status END,
+       status = CASE WHEN users.status = 'active' OR excluded.status = 'active' THEN 'active'
+                     WHEN users.status = 'app_user' THEN excluded.status ELSE users.status END,
        workos_id = COALESCE(excluded.workos_id, users.workos_id)
      RETURNING email, name, is_admin, status`,
   )
@@ -126,7 +130,7 @@ export async function applyPendingInvites(env: Env, email: string): Promise<void
 }
 
 type UserRow = { email: string; name: string | null; is_admin: number; status: string };
-export const userOf = (r: UserRow): User => ({ email: r.email, name: r.name, isAdmin: r.is_admin === 1, active: r.status === "active" });
+export const userOf = (r: UserRow): User => ({ email: r.email, name: r.name, isAdmin: r.is_admin === 1, active: r.status === "active", appOnly: r.status === "app_user" });
 
 // ---------------------------------------------------------------------------
 // Agent identity: deploy tokens

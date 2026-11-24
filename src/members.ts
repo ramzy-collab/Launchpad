@@ -124,6 +124,15 @@ export async function removeRole(c: RolesCaller, rawEmail: unknown) {
   return deleteMember(c.env, c.site, c.user.email, emailOf(rawEmail));
 }
 
+/**
+ * Whether signing in to this app should give `email` an app user account (part B): they're its
+ * owner, an editor, on its share list or added in the app.
+ */
+export async function isAppMember(env: Env, site: SiteRow, email: string): Promise<boolean> {
+  if (normEmail(site.owner_email) === email || isListed(site.editors, email) || isListed(site.allowed_emails, email)) return true;
+  return !!(await env.DB.prepare("SELECT 1 FROM app_members WHERE site_id = ? AND email = ?").bind(site.id, email).first());
+}
+
 /** The member list on the app's settings page. */
 export async function membersOf(env: Env, siteId: string): Promise<{ email: string; role: string }[]> {
   const { results } = await env.DB.prepare("SELECT email, role FROM app_members WHERE site_id = ? ORDER BY email").bind(siteId).all<{ email: string; role: string }>();

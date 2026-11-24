@@ -11,6 +11,8 @@
 import type { Context } from "hono";
 import type { AppEnv, Env } from "./env";
 import {
+  appOfReturn,
+  appSignInName,
   completeSignIn,
   homePath,
   LAST_USED_COOKIE,
@@ -26,7 +28,8 @@ import {
 } from "./login";
 import { homeHead, loginPage, topNav } from "./dashboard/home";
 import { htmlResponse, PAGE_CSP } from "./dashboard/layout";
-import { appOrigin, siteOrigin } from "./hosts";
+import { aiOrigin, appOrigin, siteOrigin } from "./hosts";
+import type { SiteRow } from "./sites";
 import { identifyBrowser } from "./auth";
 import { formelabShareTags } from "./share";
 import { cookieHeader, endOtherSessions, hasSignIn, readCookie } from "./session";
@@ -155,13 +158,16 @@ interface View {
   extra?: string;
   /** Link preview tags (see share.ts). */
   share?: string;
+  /** Signing in to this app (appOfReturn): the page is branded as the app, spec step 4. */
+  app?: { site: SiteRow; name: string; host: string; formelab: string } | null;
 }
 
-function view(c: Context<AppEnv>, returnTo: string): View {
+function view(c: Context<AppEnv>, returnTo: string, site: SiteRow | null): View {
   const last = readCookie(c.req.raw, LAST_USED_COOKIE);
   const admin = onAdminHost(c);
-  const share = admin ? "" : formelabShareTags(c.env, c.req.url, "Log in to Formelab");
-  return { admin, home: homePath(c), returnTo, last: last === "email" || last === "google" ? last : null, csp: signinCsp(c), share };
+  const app = site ? { site, name: appSignInName(site), host: new URL(siteOrigin(c.env, site.host_label, c.req.url)).host, formelab: `${aiOrigin(c.env, c.req.url)}/` } : null;
+  const share = admin || app ? "" : formelabShareTags(c.env, c.req.url, "Log in to Formelab");
+  return { admin, home: homePath(c), returnTo, last: last === "email" || last === "google" ? last : null, csp: signinCsp(c), share, app };
 }
 
 /**
@@ -184,10 +190,10 @@ function frame(v: View, title: string, intro: string, body: string, status = 200
     `<!doctype html>
 <html lang="en">
 <head>
-${homeHead(v.admin ? "Formelab admin" : "Log in to Formelab", ["signin.js"])}${v.share ? "\n" + v.share : ""}
+${homeHead(v.admin ? "Formelab admin" : v.app ? `Sign in to ${v.app.name}` : "Log in to Formelab", ["signin.js"])}${v.share ? "\n" + v.share : ""}
 </head>
 <body>
-${topNav(v.admin, false)}
+${v.app ? "" : topNav(v.admin, false)}
 
 <main>
   <div class="container center">
@@ -196,6 +202,7 @@ ${topNav(v.admin, false)}
       <p>${intro}</p>
       ${alert}
       ${body}
+      ${v.app ? `<p class="hint center-text">Powered by <a class="tlink" href="${e(v.app.formelab)}">Formelab</a></p>` : ""}
     </div>
   </div>
 </main>
@@ -234,8 +241,11 @@ function signInForm(v: View, status = 200): Response {
       ${
         v.admin
           ? `<p class="hint center-text">For Formelab admins only. This sign-in is separate from your lab and lasts 8 hours.</p>`
-          : `<div class="foot-row center-row"><span>Don't have an account?</span><a class="tlink" href="/#signup">Join the waitlist</a></div>`
+          : v.app
+            ? ""
+            : `<div class="foot-row center-row"><span>Don't have an account?</span><a class="tlink" href="/#signup">Join the waitlist</a></div>`
       }`;
+  if (v.app) return frame(v, `Sign in to ${v.app.name}`, `Use your email to open the app at <b>${e(v.app.host)}</b>.`, body, status);
   return frame(v, v.admin ? "Formelab admin" : "Log in", v.admin ? "Log in to manage Formelab." : "Welcome back to your Formelab workspace.", body, status);
 }
 
@@ -287,15 +297,20 @@ function codeForm(v: View, email: string, verifying: boolean, status = 200): Res
 async function gate(c: Context<AppEnv>): Promise<{ v: View } | Response> {
   const returnTo = safeReturn(c.req.method === "GET" ? c.req.query("return") : String((await form(c)).get("return") ?? ""), homePath(c));
   if (!workosEnabled(c.env)) return loginPage({ admin: onAdminHost(c), share: onAdminHost(c) ? "" : formelabShareTags(c.env, c.req.url, "Log in to Formelab") });
-  if (c.req.method === "GET" && hasSignIn(c.req.raw) && (await identifyBrowser(c.req.raw, c.env))) return c.redirect(returnTo, 302);
+  const site = onAdminHost(c) ? null : await appOfReturn(c.env, returnTo);
+  if (c.req.method === "GET" && hasSignIn(c.req.raw)) {
+    const who = await identifyBrowser(c.req.raw, c.env);
+    // An app user is signed in for apps only: logging in to Formelab itself shows the form.
+    if (who && (!who.user.appOnly || site)) return c.redirect(returnTo, 302);
+  }
   if (c.req.method === "POST") {
     const origin = c.req.header("origin");
     if (origin !== new URL(c.req.url).origin) return htmlResponse("Log in from Formelab itself.", undefined, 403);
     if (c.env.LOGIN_LIMITER && !(await c.env.LOGIN_LIMITER.limit({ key: c.req.header("cf-connecting-ip") ?? "unknown" })).success) {
-      return signInForm({ ...view(c, returnTo), error: TOO_MANY }, 429);
+      return signInForm({ ...view(c, returnTo, site), error: TOO_MANY }, 429);
     }
   }
-  return { v: view(c, returnTo) };
+  return { v: view(c, returnTo, site) };
 }
 
 const forms = new WeakMap<Request, Promise<FormData>>();
@@ -351,7 +366,7 @@ export async function signInPost(c: Context<AppEnv>): Promise<Response> {
   const password = String(f.get("password") ?? "");
   if (!password) return passwordForm({ ...v, error: "Enter your password, or choose Email me a code." }, email, false, 400);
   const res = await authenticate(c, { grant_type: "password", email, password });
-  if (res.ok) return completeSignIn(c, res.data, moveOn(v.returnTo));
+  if (res.ok) return completeSignIn(c, res.data, moveOn(v.returnTo), v.app?.site ?? null);
   return authProblem(c, v, email, toPublicAuthError(res, "password"));
 }
 
@@ -368,7 +383,7 @@ export async function signInCode(c: Context<AppEnv>): Promise<Response> {
   const res = verifying
     ? await authenticate(c, { grant_type: "urn:workos:oauth:grant-type:email-verification:code", pending_authentication_token: pending.token, code })
     : await authenticate(c, { grant_type: "urn:workos:oauth:grant-type:magic-auth:code", email: pending.email, code });
-  if (res.ok) return completeSignIn(c, res.data, moveOn(v.returnTo));
+  if (res.ok) return completeSignIn(c, res.data, moveOn(v.returnTo), v.app?.site ?? null);
   const problem = toPublicAuthError(res, "code");
   if (problem.kind !== "message") return authProblem(c, { ...v, email: pending.email }, pending.email, problem);
   return codeForm({ ...v, error: problem.message }, pending.email, verifying, problem.status);

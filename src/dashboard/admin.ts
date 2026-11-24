@@ -106,6 +106,7 @@ async function overviewBody(c: Context<AppEnv>): Promise<string> {
   <h2>At a glance</h2>
   <div class="stats">
     ${stat("People", s.users, "/users")}
+    ${stat("People using apps", s.appUsers, "/users")}
     ${stat("Waiting to get in", s.waiting, "/waitlist")}
     ${stat("Let in, not logged in yet", s.letInNotSignedIn, "/users#not-signed-in")}
     ${stat("Sign-ups this week", s.signupsThisWeek, "/waitlist")}
@@ -137,7 +138,7 @@ async function overviewBody(c: Context<AppEnv>): Promise<string> {
 }
 
 const statusTag = (u: { isAdmin: boolean; status: string }) =>
-  u.isAdmin ? '<span class="tag admin">admin</span>' : u.status === "active" ? "Active" : '<span class="tag">waitlist</span>';
+  u.isAdmin ? '<span class="tag admin">admin</span>' : u.status === "active" ? "Active" : u.status === "app_user" ? '<span class="tag">uses apps</span>' : '<span class="tag">waitlist</span>';
 
 async function usersBody(c: Context<AppEnv>): Promise<string> {
   const me = c.get("user");

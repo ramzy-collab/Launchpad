@@ -43,6 +43,11 @@ export interface User {
   isAdmin: boolean;
   /** False for accounts still on the waitlist: they can open apps shared with them, not create. */
   active: boolean;
+  /**
+   * Someone who has only signed in to apps they were added to (status "app_user", spec step 4):
+   * Formelab's own pages treat them as signed out, and they're kept off the waitlist.
+   */
+  appOnly?: boolean;
 }
 
 export type AppEnv = {
