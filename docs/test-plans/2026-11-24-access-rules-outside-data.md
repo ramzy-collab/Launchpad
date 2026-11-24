@@ -144,6 +144,7 @@ In Rules sheet, put QA leads' id in **Spreadsheet id**.
 | `SR-08` | As Rep A, in the console: `await formelab.sheets.request("GET", "spreadsheets/<id>", { query: { includeGridData: true } })` | Rejected with code `sheets_editors_only`. |
 | `SR-09` | As Rep A, in the console: `await formelab.sheets.request("GET", "spreadsheets/<id>", { query: { fields: "sheets.properties.title" } })` | Works: the answer lists the tab names Leads and Gaps, and no cell values. |
 | `SR-10` | As Rep A, in the console: `(await formelab.sheets.request("GET", "spreadsheets/<id>/values/Leads!A1:C10", { query: { majorDimension: "COLUMNS", valueRenderOption: "FORMULA" } })).values` | Still rows, not columns, and still only the heading row, Ada, an empty row and Cy. |
+| `SR-12` | As Rep A, in the console: `await formelab.sheets.request("GET", "spreadsheets/<id>", { query: { fields: "*" } })` | Works, but the answer has only the spreadsheet's title and tab details: no `data`, no cell values. |
 | `SR-11` | As Owner, rename C1 in Google Sheets to `Owner`. As Rep A, read `Leads!A1:C10`. Then rename it back to `Assigned to`. | "Error: sheets_owner_column_missing The tab "Leads" has no "Assigned to" column in row 1." No rows are shown. After renaming back, SR-03's result again. |
 
 ## 5. Writing your own rows

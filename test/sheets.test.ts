@@ -247,6 +247,8 @@ describe("Google Sheets as a connected app (OAuth)", () => {
       { method: "GET", path: s, query: { include_grid_data: "true" } },
       { method: "GET", path: s, query: { fields: "sheets(data(rowData))" } },
       { method: "GET", path: s, query: { fields: ["sheets.properties", "sheets.data"] } },
+      { method: "GET", path: s, query: { fields: "*" } },
+      { method: "GET", path: s, query: { fields: "sheets/*" } },
     ];
     for (const req of refused) {
       seen.length = 0;
