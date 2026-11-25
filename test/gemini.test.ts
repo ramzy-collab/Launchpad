@@ -1,6 +1,6 @@
 import { env } from "cloudflare:workers";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { call, onOutbound, OWNER, PAGE, publishHtml, uniq, appAt } from "./helpers";
+import { appAt, awayFromMinuteEdge, call, onOutbound, OWNER, PAGE, publishHtml, TIMED, uniq } from "./helpers";
 
 const GOOD = "AIzaSyTESTKEY0123456789abcdefGHIJ";
 type Seen = { url: string; key: string | null; body: string };
@@ -106,7 +106,7 @@ describe("Google Gemini as a connected app", () => {
     expect(log).toContain("Asked Gemini (9 tokens)");
   });
 
-  it("limits each person using someone else's apps, and the owner's apps together each day", async () => {
+  it("limits each person using someone else's apps, and the owner's apps together each day", TIMED, async () => {
     mockGoogle();
     const owner = `gl-${uniq()}@example.com`;
     const [a, b] = [`gla-${uniq()}@example.com`, `glb-${uniq()}@example.com`];
@@ -119,6 +119,7 @@ describe("Google Gemini as a connected app", () => {
     const error = async (res: Response) => (await res.json<{ error: { code: string; message: string } }>()).error;
 
     // 20 a minute for each person, across all the owner's apps.
+    await awayFromMinuteEdge();
     for (let i = 0; i < 20; i++) expect((await ask(a, ns, i % 2 ? "one" : "two", { prompt: "hi" })).status).toBe(200);
     const limited = await ask(a, ns, "two", { prompt: "hi" });
     expect(limited.status).toBe(429);

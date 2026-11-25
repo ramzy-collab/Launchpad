@@ -1,6 +1,6 @@
 import { env } from "cloudflare:workers";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { call, onOutbound, OWNER, PAGE, publishHtml, uniq, appAt } from "./helpers";
+import { appAt, awayFromMinuteEdge, call, onOutbound, OWNER, PAGE, publishHtml, TIMED, uniq } from "./helpers";
 
 type Seen = { url: string; method: string; auth: string | null; body: string };
 const seen: Seen[] = [];
@@ -144,7 +144,7 @@ describe("Google Sheets as a connected app (OAuth)", () => {
     expect((await sheets(owner, ns, { method: "GET", path: "spreadsheets/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/values/Sheet1!A1:B2" })).status).toBe(409);
   });
 
-  it("limits each person using the owner's apps to 20 calls a minute", async () => {
+  it("limits each person using the owner's apps to 20 calls a minute", TIMED, async () => {
     mockGoogle();
     const ns = uniq();
     const friend = `sl-${uniq()}@example.com`;
@@ -152,6 +152,7 @@ describe("Google Sheets as a connected app (OAuth)", () => {
     await connectSheets(OWNER);
     expect((await allowSheets(OWNER, ns, [SHEET])).status).toBe(200);
     const read = (as: string) => sheets(as, ns, { method: "GET", path: `spreadsheets/${SHEET}/values/Sheet1!A1:B2` });
+    await awayFromMinuteEdge();
     for (let i = 0; i < 20; i++) expect((await read(friend)).status).toBe(200);
     const limited = await read(friend);
     expect(limited.status).toBe(429);

@@ -3,7 +3,7 @@ import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { decryptSecret, encryptSecret, redact } from "../src/secrets";
 import { pruneAudit } from "../src/audit";
 import type { Env } from "../src/env";
-import { appAt, call, onOutbound, OWNER, PAGE, publishHtml, uniq } from "./helpers";
+import { appAt, awayFromMinuteEdge, call, onOutbound, OWNER, PAGE, publishHtml, TIMED, uniq } from "./helpers";
 
 const E = env as unknown as Env;
 const SECRET = "sk-live-0123456789abcdef";
@@ -322,8 +322,9 @@ describe("secret proxy", () => {
     expect(row!.detail).not.toContain("path");
   });
 
-  it("rate-limits to 60 calls per minute per site", async () => {
-    const s = await newSite();
+  it("rate-limits to 60 calls per minute per site", TIMED, async () => {
+    await awayFromMinuteEdge();
+        const s = await newSite();
     await s.api("secrets/k", { method: "PUT", json: { hosts: HOSTS, value: "v" } });
     onOutbound(() => new Response("ok"));
     const statuses: number[] = [];
@@ -353,8 +354,9 @@ describe("redaction", () => {
 });
 
 describe("secret proxy limits per person", () => {
-  it("lets each person other than the owner make 20 calls a minute, so one can't use up the app's 60", async () => {
-    const s = await newSite({ allowed_emails: "pa@example.com, pb@example.com" });
+  it("lets each person other than the owner make 20 calls a minute, so one can't use up the app's 60", TIMED, async () => {
+    await awayFromMinuteEdge();
+        const s = await newSite({ allowed_emails: "pa@example.com, pb@example.com" });
     await s.api("secrets/k", { method: "PUT", json: { hosts: HOSTS, value: "v" } });
     onOutbound(() => new Response("ok"));
     const go = (as: string) => s.api("secrets/k/proxy", { method: "POST", json: { url: "https://api.test/" }, as });
