@@ -1311,6 +1311,7 @@
         return;
       }
       if (t.closest("[data-copy-public]")) { copyText(S.publicUrl, "Link copied"); return; }
+      if (t.closest("[data-copy-text]")) { copyText(t.closest("[data-copy-text]").dataset.copyText, "Address copied"); return; }
       var choice = t.closest("[data-access-choice]");
       if (choice) {
         var toPublic = choice.dataset.accessChoice === "public";

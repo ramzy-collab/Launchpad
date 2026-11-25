@@ -1,4 +1,5 @@
 import type { Context } from "hono";
+import { appMcpRules } from "../appmcp";
 import { membersOf } from "../members";
 import { describeActivity, HIGH_VOLUME_ACTIONS, siteActivity, type AuditRow } from "../audit";
 import { canPublishTo, listTokens } from "../auth";
@@ -343,6 +344,23 @@ const UPDATE_IDEAS = ["Add a search bar", "Make it work better on phones", "Add 
 /** Which saved key "Update with ..." uses: Gemini first (it's free), then the others. */
 const UPDATE_ORDER: Builder[] = ["gemini", "claude", "openai", "grok"];
 
+/** "Use with your AI": the app's own address for AI tools (spec step 5), for its owner to pass on. */
+function aiAddressBlock(address: string): string {
+  return `<div class="block" id="use-with-ai">
+    <h2>Use with your AI</h2>
+    <p class="muted">Anyone who can open this app can connect Claude, ChatGPT or another AI tool to it. Their AI sees and changes only what their role in the app allows.</p>
+    <div class="linkbox">
+      <code>${e(address)}</code>
+      <button type="button" class="small" data-copy-text="${e(address)}" aria-label="Copy the app's address for AI tools">Copy address</button>
+    </div>
+    <ol class="muted ai-steps">
+      <li>In Claude: Settings, Connectors, <strong>Add custom connector</strong>. Paste the address.</li>
+      <li>In ChatGPT: Settings, Connectors, add a custom connector with the address (needs Developer mode).</li>
+      <li>They sign in with their email and choose what it can do.</li>
+    </ol>
+  </div>`;
+}
+
 /** People added inside the app (formelab.roles.set), with "Remove this person" for those who share it. */
 function memberList(members: { email: string; role: string }[], canShare: boolean): string {
   if (!members.length) return "";
@@ -568,6 +586,7 @@ ${rulesWarn ? `<div class="pub-warn rules-warn" role="note">${ICON.alert()}<span
     <ul class="people" data-people>${peopleRows(site, user.email, isOwner, site.canShare, new Set(accounts), pendingRoles)}</ul>
     ${memberList(members, site.canShare)}
   </div>
+  ${(await appMcpRules(c.env, row)) ? aiAddressBlock(new URL("/mcp", site.url).toString()) : ""}
 </section>
 
 ${

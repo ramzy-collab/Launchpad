@@ -1,6 +1,6 @@
 # Formelab agent access
 
-Status: design agreed; steps 1 to 3 and 6 shipped; step 4 built Nov 24, 2026 (parts A, B and C); step 5 in progress (part A built Nov 25, 2026). Supersedes the Nov 21,
+Status: design agreed; steps 1 to 3 and 6 shipped; step 4 built Nov 24, 2026 (parts A, B and C); step 5 built Nov 25, 2026 (parts A and B). Supersedes the Nov 21,
 2026 "Agent Access: Modular Feature Proposal". Decisions are recorded in the log at the end; the module sections state the result.
 
 ## Why
@@ -335,6 +335,11 @@ Two parts: **A** the address and its tools, **B** "Use with your AI" on the sett
   (`env.OAUTH_PROVIDER`), an object every request in an isolate shares, so Formelab's consent page
   could pick up an app's helpers and refuse a connection. The app provider now gets its own child of
   `env`, and `oauthHelpers` always builds Formelab's own.
+- **Use with your AI (B).** The app's settings page, Sharing tab, shows "Use with your AI" with the
+  address, **Copy address** and short steps for Claude and ChatGPT, only when the app has an
+  address (feature on, valid rules). The guide's Access rules section gets a flagged "Use with your
+  AI" part: what the address is, that tools come from the rules (so list `fields`), an optional
+  in-app section for signed-in people only if the person asks, and the reserved paths.
 - **Known gaps.** App users can't see or end their AI connections in Formelab (they have no
   dashboard): they disconnect in their AI tool, and access ends when the app removes them. No
   custom domains. The provider cache keeps one object per app origin per isolate.
