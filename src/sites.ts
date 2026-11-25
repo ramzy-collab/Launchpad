@@ -1,5 +1,6 @@
 import { audit } from "./audit";
 import { dropUnlistedAppUsers } from "./users";
+import { revokeAppGrants } from "./appmcp";
 import { findIcon, iconPathFor } from "./icons";
 import { findShareImage, linkPreviewOf } from "./share";
 import { accountsAmong, canManageSite, canPublishTo, canShareSite, canViewSite, isAppOwner, isListed, isNamespaceEditor, isNamespaceOwner, ownerOnly } from "./auth";
@@ -786,6 +787,11 @@ export async function publishSite(ctx: Ctx, input: PublishInput) {
   if (rulesRequiredHere && needsSources(access)) throw sourcesRequired(access, guideUrl);
   const confirmedPublic = access.invites && !(existing?.access && JSON.parse(existing.access).invites);
   if (confirmedPublic && input.confirmPublic !== true && input.confirmPublic !== "true") throw confirmPublic();
+  // The app's address for AI tools (src/appmcp.ts) answers these paths, so files there would never be served.
+  const reserved = [...input.files.keys()].find((p) => p === "mcp" || p.startsWith(".well-known/oauth-"));
+  if (reserved && (await flagOnForOwner(env, "app_mcp", existing?.owner_email ?? user.email))) {
+    throw err(400, "reserved_path", `"${reserved}" is reserved for the app's address for AI tools.`, "Rename or remove that file and publish again.");
+  }
   // Publishing a new version never changes who can open or edit the app; that only happens
   // through update_site / the app's settings. Say so when the caller asked for something else.
   const sharingNote = existing && sharingDiffers(existing, visibility, allowed, editors)
@@ -1099,6 +1105,7 @@ export async function removeSite(env: Env, site: SiteRow) {
     env.DB.prepare("DELETE FROM sites WHERE id = ?").bind(site.id),
   ]);
   await deletePrefix(env.BUCKET, `sites/${site.id}/`);
+  await revokeAppGrants(env, site.id, [...listed, site.owner_email]);
   await dropUnlistedAppUsers(env, listed);
 }
 

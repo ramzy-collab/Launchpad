@@ -18,6 +18,7 @@ import { ASSET_VERSION, CONSENT_JS, DASHBOARD_JS, FORMELAB_CSS, GUIDE_MD, HOME_C
 import { AUTHORIZE_PATH, authorizeGet, authorizePost, oauthProvider } from "./oauth";
 import { runtimeApi } from "./runtime";
 import { appAccess } from "./members";
+import { appAuthorizeGet, appAuthorizePost, appMcpRules, appOAuth, isAppOAuthPath } from "./appmcp";
 import { appCallback, appHandoff, handoffStart, loginCallback, loginStart, logout, safeReturn, workosEnabled } from "./login";
 import { legacyAppRedirect, noAccessPage, notFoundPage, plainPage, serveAppFile } from "./serve";
 import { cookieHeader, hasSignIn, readCookie } from "./session";
@@ -342,6 +343,9 @@ siteApp.use("*", async (c, next) => {
   await next();
 });
 
+// "Connect Claude to Acme CRM?": signed in on the app's host by the check above (src/appmcp.ts).
+siteApp.get("/_platform/authorize", appAuthorizeGet);
+siteApp.post("/_platform/authorize", appAuthorizePost);
 siteApp.get("/_platform/sdk.js", () => text(SDK_JS, "text/javascript; charset=utf-8", "public, max-age=300"));
 siteApp.get("/_platform/guide.md", guide);
 siteApp.get("/_platform/manifest.webmanifest", appManifest);
@@ -361,6 +365,13 @@ siteApp.all("*", (c) =>
 async function appsHost(req: Request, env: Env, ctx: ExecutionContext, label: string): Promise<Response> {
   if (new URL(req.url).pathname === "/healthz") return healthz();
   const site = await getSiteByHostLabel(env, label);
+  // The app's address for AI tools (spec step 5): OAuth metadata, tokens and /mcp itself.
+  if (site && isAppOAuthPath(new URL(req.url).pathname)) {
+    if (!(await appMcpRules(env, site))) return plainPage(404, "Not found", "This app has no address for AI tools.");
+    // The provider writes its helpers onto env (env.OAUTH_PROVIDER), which every request in this
+    // isolate shares: give it its own child so Formelab's /authorize never picks up an app's.
+    return appOAuth(new URL(req.url).origin).fetch(req, Object.create(env) as Env, ctx);
+  }
   if (site) {
     siteOf.set(req, site);
     return siteApp.fetch(req, env, ctx);

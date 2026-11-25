@@ -120,7 +120,7 @@ async function eraseAccount(env: Env, email: string, workosId: string | null, ex
   ]);
 
   let disconnected = 0;
-  for (const g of await listConnections(env, email).catch(() => [])) {
+  for (const g of await listConnections(env, email, true).catch(() => [])) {
     await oauthHelpers(env).revokeGrant(g.id, email).then(() => disconnected++, () => {});
   }
   if (workosId && env.WORKOS_API_KEY) {

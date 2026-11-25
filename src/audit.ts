@@ -240,7 +240,8 @@ export function describeActivity(row: AuditRow): string {
     case "password_set":
       return "Set their password";
     case "oauth_connect":
-      return `Connected ${d.client ?? "an AI app"}${d.access === "read" ? ", to look only" : ""}`;
+      // With a siteId: connected to the app's own address for AI tools (spec step 5).
+      return `Connected ${d.client ?? "an AI app"}${d.siteId ? " to this app" : ""}${d.access === "read" ? ", to look only" : ""}`;
     case "oauth_disconnect":
       return "Disconnected an AI app";
     default:

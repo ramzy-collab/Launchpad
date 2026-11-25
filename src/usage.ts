@@ -5,9 +5,9 @@ import { now } from "./env";
 import { extOf } from "./mime";
 
 /** Records one MCP tool call (or a new connection, tool "initialize"). */
-export async function recordMcpCall(env: Env, call: { email: string; client: string | null; tool: string; ok: boolean; ms: number }): Promise<void> {
-  await env.DB.prepare("INSERT INTO mcp_calls (at, email, client, tool, ok, ms) VALUES (?, ?, ?, ?, ?, ?)")
-    .bind(now(), call.email, call.client?.slice(0, 100) ?? null, call.tool.slice(0, 64), call.ok ? 1 : 0, Math.max(0, Math.round(call.ms)))
+export async function recordMcpCall(env: Env, call: { email: string; client: string | null; tool: string; ok: boolean; ms: number; siteId?: string }): Promise<void> {
+  await env.DB.prepare("INSERT INTO mcp_calls (at, email, client, tool, ok, ms, site_id) VALUES (?, ?, ?, ?, ?, ?, ?)")
+    .bind(now(), call.email, call.client?.slice(0, 100) ?? null, call.tool.slice(0, 64), call.ok ? 1 : 0, Math.max(0, Math.round(call.ms)), call.siteId ?? null)
     .run();
 }
 

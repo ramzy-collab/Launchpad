@@ -57,6 +57,26 @@ export async function kvList(env: Env, scope: KvScope, prefix = "", after = "") 
   }
 }
 
+/**
+ * Like kvList, keeping only rows `keep` allows. Reads on past what's left out, so a page ends on a
+ * row the person may see and the cursor never names a key they can't (access rules, spec step 3).
+ */
+export async function kvListKept(env: Env, scope: KvScope, prefix: string, after: string, keep: (row: { key: string; value: unknown }) => boolean) {
+  const kept: { key: string; value: unknown; updatedAt: number }[] = [];
+  let bytes = 0;
+  for (;;) {
+    const { rows, next } = await kvList(env, scope, prefix, after);
+    for (const r of rows) {
+      if (!keep(r)) continue;
+      kept.push(r);
+      bytes += JSON.stringify(r.value).length;
+      if (bytes >= KV_LIST_PAGE_BYTES) return { rows: kept, next: r.key as string | null };
+    }
+    if (next === null) return { rows: kept, next: null };
+    after = next;
+  }
+}
+
 export async function kvGet(env: Env, scope: KvScope, key: string) {
   validateKey(key);
   const row = await env.DB.prepare(`SELECT value FROM ${table(scope)} WHERE ${owner(scope)} AND key = ?3`)

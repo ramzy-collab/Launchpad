@@ -36,7 +36,7 @@ export const REGISTER_PATH = "/oauth/register";
 export const MCP_SCOPE = "mcp";
 
 /** Props stored with each grant / resolved for each deploy token; passed to the MCP handler. */
-interface McpProps {
+export interface McpProps {
   email: string;
   via: "oauth" | "token";
   /** The access key, for connections made with one (via "token"). */
@@ -45,10 +45,12 @@ interface McpProps {
   client?: string;
   /** "read" for a connection allowed only to look (no publish, update_site or delete_site). */
   access?: "read";
+  /** Set on connections to one app's own address (<app-host>/mcp, spec step 5): the app's id. */
+  siteId?: string;
 }
 
 /** The client name in an MCP initialize message (a single message or a batch), if this is one. */
-async function initializeClientName(req: Request): Promise<string | null> {
+export async function initializeClientName(req: Request): Promise<string | null> {
   if (req.method !== "POST") return null;
   try {
     const body = await req.clone().json();
@@ -64,6 +66,13 @@ async function initializeClientName(req: Request): Promise<string | null> {
 
 const mcpApiHandler = {
   async fetch(req: Request, env: Env, ctx: ExecutionContext & { props?: McpProps }): Promise<Response> {
+    // A connection made to one app's own address only works there (src/appmcp.ts).
+    if (ctx.props?.siteId) {
+      return Response.json(
+        { error: { code: "wrong_address", message: "This connection is for one app's own address, not Formelab's.", hint: `Connect your AI to ${aiOrigin(env, req.url)}/mcp to work on Formelab.` } },
+        { status: 401 },
+      );
+    }
     const email = ctx.props?.email;
     const user = email ? await getUser(env, email) : null;
     if (!user) {
@@ -86,7 +95,7 @@ const mcpApiHandler = {
 };
 
 /** The AI app named by a request's User-Agent (e.g. "claude-code/2.1.0" → "claude-code"), if any. */
-function userAgentClient(req: Request): string | null {
+export function userAgentClient(req: Request): string | null {
   const ua = req.headers.get("user-agent")?.trim();
   if (!ua) return null;
   const first = ua.split(/\s+/)[0]!.split("/")[0]!;
@@ -139,12 +148,12 @@ export function oauthProvider(origin: string, defaultHandler: ApexHandler): OAut
 const notServed = { fetch: () => new Response(null, { status: 404 }) } as unknown as ApexHandler;
 
 /**
- * The provider's helpers (grants, clients). Requests on DOMAIN get them from the provider
- * wrapping the request; the web app and admin hosts aren't wrapped, so build them here. They
- * read and write the same OAUTH_KV, so connections are the same on every host.
+ * Formelab's own provider helpers (grants, clients), built here every time rather than read from
+ * env.OAUTH_PROVIDER: that's set per request on an object other requests share, so it could hold an
+ * app's helpers (src/appmcp.ts). They read and write the same OAUTH_KV on every host.
  */
 export function oauthHelpers(env: Env): OAuthHelpers {
-  return env.OAUTH_PROVIDER ?? getOAuthApi(providerOptions(aiOrigin(env), notServed), env);
+  return getOAuthApi(providerOptions(aiOrigin(env), notServed), env);
 }
 
 // ---------------------------------------------------------------------------
@@ -300,9 +309,11 @@ export interface ConnectionView {
 /** Grant times come in seconds; anything already past 1e12 is milliseconds. */
 const toMs = (t: number) => (t < 1e12 ? t * 1000 : t);
 
-export async function listConnections(env: Env, email: string): Promise<ConnectionView[]> {
+/** The person's connections to Formelab itself; those to an app's own address (spec step 5) are left out unless `withApps`. */
+export async function listConnections(env: Env, email: string, withApps = false): Promise<ConnectionView[]> {
   const { items } = await oauthHelpers(env).listUserGrants(email, { limit: 100 });
   return items
+    .filter((g) => withApps || !g.metadata?.siteId)
     .map((g) => ({
       id: g.id,
       clientName: typeof g.metadata?.clientName === "string" ? g.metadata.clientName : g.clientId,

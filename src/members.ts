@@ -10,6 +10,7 @@ import { badRequest, err, notFound } from "./errors";
 import { rolesIn, type Rules } from "./rules";
 import { requireManageableSite, rulesOfSite, type Ctx, type NamespaceRow, type SiteRow } from "./sites";
 import { dropUnlistedAppUsers } from "./users";
+import { revokeAppGrants } from "./appmcp";
 import { isEmail, normEmail, parseJsonArray } from "./util";
 
 /** Rows an app can have, so a manager can't fill the table. */
@@ -113,6 +114,8 @@ async function deleteMember(env: Env, site: SiteRow, actor: string, email: strin
   const res = await env.DB.prepare("DELETE FROM app_members WHERE site_id = ? AND email = ?").bind(site.id, email).run();
   if (!res.meta.changes) throw notFound(`${email} on this app's member list`);
   await audit(env, actor, "member_remove", target(site), { siteId: site.id, email });
+  // Someone the app is also shared with keeps opening it (on default_role), and keeps their AI connection.
+  if (!(await isAppMember(env, site, email))) await revokeAppGrants(env, site.id, [email]);
   await dropUnlistedAppUsers(env, [email]);
   return { ok: true };
 }
