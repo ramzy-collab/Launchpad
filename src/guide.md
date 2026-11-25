@@ -572,6 +572,23 @@ const people = await formelab.roles.list();
 - Removing someone doesn't delete records that name them (like their `owner_field` email). Those
   are the app's data, for the owner to change.
 
+<!-- flag:app_mcp -->
+**Use with your AI.** An app with access rules has its own address for AI tools: the app's
+address plus `/mcp` (`location.origin + "/mcp"`). Anyone who can open the app can add it to Claude,
+ChatGPT or another AI tool, sign in with their email, and ask about the app's data. Their AI sees
+and changes only what their role allows, checked on the server like everything in the app.
+
+- The tools come from `formelab.json`: each record type gets `list_<type>`, `get_<type>`,
+  `save_<type>` and `delete_<type>`, shown only for what the person's role may do. List each
+  record's `fields`, since the tools describe records by them. Apps with `{ "everyone": "all" }`
+  get `list_data`, `get_data`, `save_data` and `delete_data`.
+- **Only if the person asks for it,** add a small "Use with your AI" section for signed-in people
+  (`formelab.me()` isn't null): the address, a **Copy address** button, and "In Claude: Settings,
+  Connectors, Add custom connector, then paste this address."
+- Don't put files at `mcp` or `.well-known/oauth-…`: the address uses them, and publishing refuses
+  them.
+
+<!-- /flag:app_mcp -->
 **Publishing it.** A single-file app with rules is published as `files`
 (`{ "index.html": "...", "formelab.json": "..." }`) or as a zip, since `html` carries one file.
 To add rules to an existing app, publish `files: { "formelab.json": "..." }`.

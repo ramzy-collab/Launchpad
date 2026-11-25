@@ -200,3 +200,23 @@ describe("an app's own address for AI tools", () => {
     expect((await res.json<Err>()).error.code).toBe("reserved_path");
   });
 });
+
+describe("Use with your AI (part B)", () => {
+  it("shows the app's address on its settings page, only when it has one", async () => {
+    const { id, origin } = await app();
+    const page = await (await call(`/app/apps/${id}`, { as: OWNER })).text();
+    expect(page).toContain("<h2>Use with your AI</h2>");
+    expect(page).toContain(`<code>${origin}/mcp</code>`);
+    expect(page).toContain(`data-copy-text="${origin}/mcp"`);
+    // No rules, no address, no box.
+    const res = await publishZip(OWNER, uniq(), "plain", { "index.html": PAGE("hi") });
+    const plain = (await res.json<{ site: { id: string } }>()).site.id;
+    expect(await (await call(`/app/apps/${plain}`, { as: OWNER })).text()).not.toContain("Use with your AI");
+  });
+
+  it("tells AI tools building apps about the address while the feature is on", async () => {
+    const guide = await (await call("/_platform/guide.md", { as: OWNER })).text();
+    expect(guide).toContain("**Use with your AI.**");
+    expect(guide).toContain('location.origin + "/mcp"');
+  });
+});

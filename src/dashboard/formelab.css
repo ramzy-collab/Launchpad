@@ -455,6 +455,8 @@ button.cta { border: 0; cursor: pointer; font: inherit; font-weight: 600; }
 .pub-warn svg { color: var(--fl-warn-ink); flex: none; margin-top: 1px; }
 .linkbox { margin-top: 12px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; background: var(--fl-surface-2); border: 1px solid var(--fl-line); border-radius: var(--fl-radius-md); padding: 10px 10px 10px 14px; }
 .linkbox code { flex: 1; min-width: 12rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ai-steps { margin: 12px 0 0; padding-left: 1.25rem; }
+.ai-steps li { margin: 4px 0; }
 .dash main button.small { min-height: 34px; padding: 4px 14px; font-size: .875rem; }
 .subblock { margin-top: 18px; border-top: 1px dashed var(--fl-line); padding-top: 10px; }
 .dash h3.subhead { font: 600 .78rem var(--fl-body); letter-spacing: .06em; text-transform: uppercase; color: var(--fl-ink-soft); margin: 4px 0 2px; }
