@@ -49,7 +49,8 @@ async function connect(origin: string, as: string, opts: { access?: "read" | "wr
   const clientId = (await reg.json<{ client_id: string }>()).client_id;
   const verifier = b64url(crypto.getRandomValues(new Uint8Array(32)));
   const challenge = b64url(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier))));
-  const authorize = opts.authorize ?? `${origin}/_platform/authorize`;
+  // An app's consent page is on Formelab's own origin, away from the app's code.
+  const authorize = opts.authorize ?? `https://example.com/app-authorize/${new URL(origin).hostname.split(".")[0]}`;
   const u = new URL(authorize);
   u.search = new URLSearchParams({ response_type: "code", client_id: clientId, redirect_uri: REDIRECT, code_challenge: challenge, code_challenge_method: "S256", scope: "mcp", state: "s1", resource: `${origin}/mcp` }).toString();
   const page = await call(u.toString(), { as, headers: NAVIGATE });
@@ -59,7 +60,7 @@ async function connect(origin: string, as: string, opts: { access?: "read" | "wr
   const res = await call(u.origin + u.pathname, {
     as,
     method: "POST",
-    headers: { ...NAVIGATE, "sec-fetch-site": "same-origin", cookie: cookiesFrom(page), "content-type": "application/x-www-form-urlencoded", origin },
+    headers: { ...NAVIGATE, "sec-fetch-site": "same-origin", cookie: cookiesFrom(page), "content-type": "application/x-www-form-urlencoded", origin: u.origin },
     body: new URLSearchParams({ handle, decision: "approve", ...(opts.access ? { access: opts.access } : {}) }).toString(),
   });
   expect(res.status, await res.clone().text()).toBe(302);
@@ -70,7 +71,7 @@ async function connect(origin: string, as: string, opts: { access?: "read" | "wr
     body: new URLSearchParams({ grant_type: "authorization_code", code, redirect_uri: REDIRECT, client_id: clientId, code_verifier: verifier, resource: `${origin}/mcp` }).toString(),
   });
   expect(tok.status, await tok.clone().text()).toBe(200);
-  return { token: (await tok.json<{ access_token: string }>()).access_token, html, coop: page.headers.get("cross-origin-opener-policy") };
+  return { token: (await tok.json<{ access_token: string }>()).access_token, html };
 }
 
 async function rpc(origin: string, token: string, method: string, params: Record<string, unknown> = {}) {
@@ -95,7 +96,8 @@ describe("an app's own address for AI tools", () => {
     expect(meta.status).toBe(200);
     expect(await meta.json()).toMatchObject({ resource: `${origin}/mcp`, authorization_servers: [origin] });
     const as = await (await call(`${origin}/.well-known/oauth-authorization-server`)).json<{ authorization_endpoint: string; token_endpoint: string }>();
-    expect(as.authorization_endpoint).toBe(`${origin}/_platform/authorize`);
+    // Consent happens on Formelab's own origin, where the app's code (and any service worker it registers) never runs.
+    expect(as.authorization_endpoint).toBe(`https://example.com/app-authorize/${new URL(origin).hostname.split(".")[0]}`);
     expect(as.token_endpoint).toBe(`${origin}/_platform/oauth/token`);
     // No token: a challenge pointing at the app's metadata.
     const bare = await call(`${origin}/mcp`, { method: "POST", json: {} });
@@ -182,27 +184,14 @@ describe("an app's own address for AI tools", () => {
     expect(log).toContain(REP);
   });
 
-  it("turns away guests and people the app doesn't list", async () => {
+  it("turns away people the app doesn't list, and has no consent page on the app's own host", async () => {
     const { origin } = await app();
-    const page = await call(`${origin}/_platform/authorize?client_id=x`, { as: NEW, headers: NAVIGATE });
+    const label = new URL(origin).hostname.split(".")[0];
+    const page = await call(`https://example.com/app-authorize/${label}?client_id=x`, { as: NEW, headers: NAVIGATE });
     expect(page.status).toBe(403);
-  });
-
-  it("never lets the app's own scripts read the consent page or press Allow", async () => {
-    const { origin } = await app();
-    // fetch() from the app's page: same origin, but not a page load.
-    const viaFetch = await call(`${origin}/_platform/authorize?client_id=x`, { as: REP, headers: { "sec-fetch-dest": "empty", "sec-fetch-mode": "cors", "sec-fetch-site": "same-origin" } });
-    expect(viaFetch.status).toBe(403);
-    expect(await viaFetch.text()).toContain("Open this page yourself");
-    // No Fetch Metadata at all: refused too.
-    expect((await call(`${origin}/_platform/authorize?client_id=x`, { as: REP })).status).toBe(403);
-    // A POST not made from the page itself.
-    const post = await call(`${origin}/_platform/authorize`, { as: REP, method: "POST", headers: { ...NAVIGATE, "content-type": "application/x-www-form-urlencoded" }, body: "handle=x&decision=approve" });
-    expect(post.status).toBe(403);
-    // The real page keeps popups opened by the app out.
-    const { html, coop } = await connect(origin, REP);
-    expect(html).toContain("Connect Claude to Acme CRM?");
-    expect(coop).toBe("same-origin");
+    expect(await page.text()).toContain(`${NEW} can&#39;t open Acme CRM.`);
+    // The app's own scripts can't reach a consent page on the app's origin: there is none.
+    expect((await call(`${origin}/_platform/authorize?client_id=x`, { as: REP, headers: NAVIGATE })).status).toBe(404);
   });
 
   it("keeps app files off the reserved paths", async () => {

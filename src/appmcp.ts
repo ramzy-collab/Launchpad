@@ -13,7 +13,7 @@ import { getUser } from "./auth";
 import type { AppEnv, Env, User } from "./env";
 import { ApiError, errorBody } from "./errors";
 import { flagOnForOwner } from "./flags";
-import { aiOrigin, appsLabelOf } from "./hosts";
+import { aiOrigin, appsLabelOf, siteOrigin } from "./hosts";
 import { kvDelete, kvGet, kvListKept, kvSet } from "./kv";
 import { appSignInName } from "./login";
 import { appAccess } from "./members";
@@ -25,7 +25,6 @@ import { getNamespace, getSiteByHostLabel, rulesOfSite, type SiteRow } from "./s
 import { recordMcpCall } from "./usage";
 import { escapeHtml as e, randomId } from "./util";
 
-const AUTHORIZE_PATH = "/_platform/authorize";
 const TOKEN_PATH = "/_platform/oauth/token";
 const REGISTER_PATH = "/_platform/oauth/register";
 
@@ -40,12 +39,12 @@ export async function appMcpRules(env: Env, site: SiteRow): Promise<Rules | null
 
 const notServed = { fetch: () => new Response(null, { status: 404 }) };
 
-function appOptions(origin: string): OAuthProviderOptions<Env> {
+function appOptions(origin: string, authorizeUrl: string): OAuthProviderOptions<Env> {
   return {
     apiRoute: "/mcp",
     apiHandler: appMcpHandler as never,
     defaultHandler: notServed as never,
-    authorizeEndpoint: AUTHORIZE_PATH,
+    authorizeEndpoint: authorizeUrl,
     tokenEndpoint: TOKEN_PATH,
     clientRegistrationEndpoint: REGISTER_PATH,
     clientIdMetadataDocumentEnabled: true,
@@ -63,11 +62,11 @@ function appOptions(origin: string): OAuthProviderOptions<Env> {
 // shortcut: one provider per app origin, kept for the isolate's life; cap the map if isolates come to serve thousands of apps.
 const providers = new Map<string, OAuthProvider<Env>>();
 
-/** The OAuth provider for the app at `origin`, for requests isAppOAuthPath matches. */
-export function appOAuth(origin: string): OAuthProvider<Env> {
+/** The OAuth provider for the app at `origin`, for requests isAppOAuthPath matches. Its consent page is `authorizeUrl` (consentUrl). */
+export function appOAuth(origin: string, authorizeUrl: string): OAuthProvider<Env> {
   let p = providers.get(origin);
   if (!p) {
-    p = new OAuthProvider<Env>(appOptions(origin));
+    p = new OAuthProvider<Env>(appOptions(origin, authorizeUrl));
     providers.set(origin, p);
   }
   return p;
@@ -322,11 +321,17 @@ function buildAppServer(a: AppCall): McpServer {
 }
 
 // ---------------------------------------------------------------------------
-// The consent page on the app's host: "Connect Claude to Acme CRM?"
+// The consent page, on Formelab's own origin: "Connect Claude to Acme CRM?"
 // ---------------------------------------------------------------------------
 
+/**
+ * The consent page lives on Formelab's own origin (aiOrigin), never on the app's: there, the app's
+ * own scripts (or a service worker it registered) could read the page or press Allow for the person.
+ */
+export const consentUrl = (env: Env, requestUrl: string, hostLabel: string) => `${aiOrigin(env, requestUrl)}/app-authorize/${hostLabel}`;
+
 /** OAuth helpers for the app at `origin`, for the consent page (which isn't behind the provider). */
-const appOAuthHelpers = (env: Env, origin: string) => getOAuthApi(appOptions(origin), env);
+const appOAuthHelpers = (env: Env, origin: string, authorizeUrl: string) => getOAuthApi(appOptions(origin, authorizeUrl), env);
 
 const CONSENT_STYLE = `:root{--fl-canvas:#FBFAF7;--fl-surface:#FFFFFF;--fl-ink:#1C1B19;--fl-ink-soft:#6B6862;--fl-line:#E8E5DE;--fl-accent:#5B4CF5;--fl-accent-ink:#FFFFFF;--fl-warn-bg:rgba(255,201,60,.14);--fl-warn-ink:#8A5A00;--fl-warn-line:rgba(202,138,4,.35);color-scheme:light}
 @media (prefers-color-scheme:dark){:root{--fl-canvas:#161514;--fl-surface:#1F1E1C;--fl-ink:#F3F1EC;--fl-ink-soft:#A39F97;--fl-line:#2E2C29;--fl-accent:#8A7EFF;--fl-accent-ink:#161514;--fl-warn-bg:rgba(255,214,102,.08);--fl-warn-ink:#FFD666;--fl-warn-line:rgba(255,214,102,.35);color-scheme:dark}}
@@ -340,10 +345,9 @@ button{font:inherit;font-weight:600;border-radius:12px;padding:11px 20px;cursor:
 button.primary{background:var(--fl-accent);border-color:var(--fl-accent);color:var(--fl-accent-ink)}button:focus-visible,label:focus-within,a:focus-visible{outline:3px solid var(--fl-accent);outline-offset:2px}
 a{color:var(--fl-accent)}.powered{margin:22px 0 0;text-align:center;font-size:.875rem;color:var(--fl-ink-soft)}`;
 
-function consentPage(c: Context<AppEnv>, d: ConsentDescription, handle: string, nonce: string): string {
-  const site = c.get("site");
+function consentPage(c: Context<AppEnv>, site: SiteRow, d: ConsentDescription, handle: string, nonce: string): string {
   const app = appSignInName(site);
-  const host = new URL(c.req.url).host;
+  const host = new URL(siteOrigin(c.env, site.host_label, c.req.url)).host;
   const who = d.clientDomain ? `Published by <b>${e(d.clientDomain)}</b>.` : "This app registered itself, so its name is not verified.";
   const local = d.redirectIsLoopback || !/^https?:/i.test(d.redirectUri)
     ? `<p class="warn"><b>This sends access to an app on your computer.</b> Continue only if you just started connecting from it.</p>`
@@ -356,7 +360,7 @@ function consentPage(c: Context<AppEnv>, d: ConsentDescription, handle: string, 
 <p>${who} Access will be sent to <b>${e(d.redirectHost)}</b>.</p>
 ${local}
 <p>If you allow it, <b>${e(d.clientName)}</b> uses ${e(app)} as <b>${e(c.get("user").email)}</b>, and only sees and changes what you can in it. Choose what it can do:</p>
-<form method="post" action="${AUTHORIZE_PATH}">
+<form method="post" action="/app-authorize/${e(site.host_label)}">
 <fieldset><legend class="soft">What it can do</legend>
 <label><input type="radio" name="access" value="write" checked> <b>See and change what you can</b><span>Read records and save or delete the ones you're allowed to.</span></label>
 <label><input type="radio" name="access" value="read"> <b>Only look</b><span>Read what you can see. It can't change anything.</span></label>
@@ -365,7 +369,7 @@ ${local}
 <input type="hidden" name="handle" value="${e(handle)}">
 <div class="row"><button class="primary" name="decision" value="approve">Allow</button><button name="decision" value="deny">Deny</button></div>
 </form>
-<p class="powered">Powered by <a href="${e(aiOrigin(c.env, c.req.url))}/">Formelab</a></p>
+<p class="powered">Powered by <a href="/">Formelab</a></p>
 </main></body></html>`;
 }
 
@@ -376,57 +380,43 @@ function consentFailure(err: unknown): Response {
   throw err;
 }
 
-/**
- * The consent page shares its origin with the app's own scripts, which must never be able to read
- * it or press Allow for the person: only a real page load gets it (Fetch Metadata), never fetch()
- * or a frame, and Allow must be posted from that page. Its Cross-Origin-Opener-Policy (below) also
- * keeps an app page that opens it in a popup from reaching into it.
- */
-function notFromAppScript(c: Context<AppEnv>): boolean {
-  const h = (n: string) => c.req.header(n) ?? "";
-  if (h("sec-fetch-dest") !== "document" || h("sec-fetch-mode") !== "navigate") return false;
-  return c.req.method === "GET" || h("sec-fetch-site") === "same-origin";
-}
-
-/** Guests from the public link aren't anyone, and apps without an address for AI tools have no consent page. */
-async function consentGate(c: Context<AppEnv>): Promise<Response | null> {
-  if (!(await appMcpRules(c.env, c.get("site")))) return plainPage(404, "Not found", "This app has no address for AI tools.");
-  if (c.get("guest")) return plainPage(403, "Sign in to connect", "Open the app and sign in first, then connect your AI tool again.");
-  if (!notFromAppScript(c)) {
-    return plainPage(403, "Open this page yourself", "Connecting an AI tool has to happen on its own page, opened by the AI tool. Start connecting again from it, in an up-to-date browser.");
+/** The app for /app-authorize/:label, if it has an address for AI tools and the signed-in person may open it. */
+async function consentApp(c: Context<AppEnv>): Promise<{ site: SiteRow; oauth: ReturnType<typeof appOAuthHelpers> } | Response> {
+  const site = await getSiteByHostLabel(c.env, c.req.param("label") ?? "");
+  if (!site || !(await appMcpRules(c.env, site))) return plainPage(404, "Not found", "This app has no address for AI tools.");
+  const ns = await getNamespace(c.env, site.namespace);
+  if (!ns || !(await appAccess(c.env, site, ns, c.get("user"))).allowed) {
+    return plainPage(403, "No access", `${c.get("user").email} can't open ${appSignInName(site)}. Ask whoever sent you its address to add you, then connect again.`);
   }
-  return null;
+  return { site, oauth: appOAuthHelpers(c.env, siteOrigin(c.env, site.host_label, c.req.url), consentUrl(c.env, c.req.url, site.host_label)) };
 }
 
-/** GET /_platform/authorize on an app host (signed in: the app host's own check ran first). */
+/** GET /app-authorize/:label on Formelab's own origin (signed in by its own check, app users included). */
 export async function appAuthorizeGet(c: Context<AppEnv>): Promise<Response> {
-  const gate = await consentGate(c);
-  if (gate) return gate;
-  const oauth = appOAuthHelpers(c.env, new URL(c.req.url).origin);
+  const found = await consentApp(c);
+  if (found instanceof Response) return found;
   try {
-    const request = await oauth.parseAuthRequest(c.req.raw);
-    const details = await oauth.describeConsent(request);
-    const consent = await oauth.beginConsent(request);
+    const request = await found.oauth.parseAuthRequest(c.req.raw);
+    const details = await found.oauth.describeConsent(request);
+    const consent = await found.oauth.beginConsent(request);
     const nonce = randomId("", 16);
     consent.headers.set("content-type", "text/html; charset=utf-8");
     consent.headers.set("cache-control", "no-store");
     consent.headers.set("content-security-policy", consentCsp(details.redirectUri).replace("default-src 'self';", `default-src 'self'; style-src 'nonce-${nonce}';`));
     consent.headers.set("x-content-type-options", "nosniff");
     consent.headers.set("referrer-policy", "no-referrer");
-    consent.headers.set("cross-origin-opener-policy", "same-origin");
-    return new Response(consentPage(c, details, consent.handle, nonce), { headers: consent.headers });
+    return new Response(consentPage(c, found.site, details, consent.handle, nonce), { headers: consent.headers });
   } catch (err) {
     return consentFailure(err);
   }
 }
 
-/** POST /_platform/authorize: Allow or Deny. */
+/** POST /app-authorize/:label: Allow or Deny. */
 export async function appAuthorizePost(c: Context<AppEnv>): Promise<Response> {
-  const gate = await consentGate(c);
-  if (gate) return gate;
-  const site = c.get("site");
+  const found = await consentApp(c);
+  if (found instanceof Response) return found;
+  const { site, oauth } = found;
   const user = c.get("user");
-  const oauth = appOAuthHelpers(c.env, new URL(c.req.url).origin);
   try {
     const form = await c.req.formData();
     const handle = String(form.get("handle") ?? "");
@@ -460,7 +450,7 @@ export async function appAuthorizePost(c: Context<AppEnv>): Promise<Response> {
 
 /** Takes away the person's AI connections to this app (removed from it, or the app deleted). Best effort. */
 export async function revokeAppGrants(env: Env, siteId: string, emails: string[]) {
-  const oauth = getOAuthApi(appOptions("https://revoke.invalid"), env);
+  const oauth = getOAuthApi(appOptions("https://revoke.invalid", "https://revoke.invalid/authorize"), env);
   for (const email of new Set(emails)) {
     const { items } = await oauth.listUserGrants(email, { limit: 100 }).catch(() => ({ items: [] as { id: string; metadata?: Record<string, unknown> }[] }));
     for (const g of items) if (g.metadata?.siteId === siteId) await oauth.revokeGrant(g.id, email).catch(() => {});

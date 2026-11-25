@@ -60,7 +60,7 @@ Write down each app's address (`https://….formelab.app`). The AI address is th
 | ID | Steps | Expected |
 |---|---|---|
 | `CN-01` | As Rep A, in Claude, add a custom connector with Leads' address plus `/mcp` and choose Connect. | A browser window opens on Leads' own sign-in page ("Sign in to Leads"), not Formelab's. |
-| `CN-02` | Sign in as Rep A. | A page "Connect Claude to Leads?" with "The app at <leads host>", Rep A's email, "See and change what you can" (chosen) and "Only look", **Allow** as the main button and **Deny**, and "Powered by Formelab". |
+| `CN-02` | Sign in as Rep A. | The address bar shows Formelab's own address (`…/app-authorize/<leads label>`), not the app's. A page "Connect Claude to Leads?" with "The app at <leads host>", Rep A's email, "See and change what you can" (chosen) and "Only look", **Allow** as the main button and **Deny**, and "Powered by Formelab". |
 | `CN-03` | Press **Allow**. | Back in Claude, the connector shows as connected, with tools named list_lead, get_lead, save_lead, delete_lead. |
 | `CN-04` | As Owner, open Leads' Activity tab in Formelab. | "<Rep A> connected Claude to this app". |
 | `CN-05` | As Rep A, open Formelab's Connect your AI page (if Rep A has a Formelab account) or the admin panel's view of their connections. | The Leads connection isn't listed with Formelab's own connections. |
@@ -125,7 +125,7 @@ Write down each app's address (`https://….formelab.app`). The AI address is th
 | ID | Steps | Expected |
 |---|---|---|
 | `ER-01` | As Owner (with `app_mcp`), upload a new version of Leads that includes a file named `mcp`. | Refused: ""mcp" is reserved for the app's address for AI tools." |
-| `ER-03` | As Owner, publish a version of Leads whose page runs `fetch("/_platform/authorize?client_id=x").then(r => r.status).then(console.log)` when loaded, and open it as Rep A. | The console shows 403: the app's own code can't read the consent page. Remove the line again afterwards. |
+| `ER-03` | Open `<leads address>/_platform/authorize` in the browser as Rep A. | Not found: the app's own address has no consent page, so nothing the app runs can reach one. |
 | `ER-02` | As Rep A, ask Claude to list leads 70 times in a minute (or have it loop). | After 60, "You made more than 60 calls to this app in a minute." A minute later it works again. |
 | `RG-01` | Run [Connector data tools](/test-plans/2026-11-22-connector-data-tools) cases KV-01, KV-05 and KV-08 with Formelab's own connector. | Same results as that plan. |
 | `RG-02` | As Owner, connect Formelab's own connector in Claude right after using Leads' address (CN-03). | Connects normally. |

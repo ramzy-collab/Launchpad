@@ -299,17 +299,18 @@ Two parts: **A** the address and its tools, **B** "Use with your AI" on the sett
 - **Each app host is its own OAuth server (A).** `src/appmcp.ts`, one `OAuthProvider` per app
   origin, tokens bound to `<origin>/mcp`. The library's separate authorization-server mode needs
   every resource listed at start-up, which apps (made all the time) can't give. Reserved on app
-  hosts: `/mcp`, `/.well-known/oauth-*`, and `/_platform/oauth/token`, `/_platform/oauth/register`
-  and `/_platform/authorize`. Other paths never build a provider. With the feature on, publishing
+  hosts: `/mcp`, `/.well-known/oauth-*`, `/_platform/oauth/token` and `/_platform/oauth/register`.
+  Other paths never build a provider. With the feature on, publishing
   a file at `mcp` or `.well-known/oauth-*` is refused (`reserved_path`).
-- **Sign-in and consent (A).** `/_platform/authorize` sits behind the app host's own sign-in (step
-  4's "Sign in to Acme CRM"). The page reads "Connect Claude to Acme CRM?" with the person's email
-  and the app's address, and offers "See and change what you can" or "Only look". Guests from the
-  public link are refused. The page shares its origin with the app's own scripts, so they must
-  never read it or press Allow: it's served only to real page loads (`Sec-Fetch-Dest: document`,
-  `Sec-Fetch-Mode: navigate`), Allow must be posted from the page itself (`Sec-Fetch-Site:
-  same-origin`), it sends `Cross-Origin-Opener-Policy: same-origin` so a popup the app opens can't be
-  reached into, and `frame-ancestors 'none'`. Browsers without Fetch Metadata are refused.
+- **Sign-in and consent (A).** The consent page is on Formelab's own origin,
+  `<aiOrigin>/app-authorize/<host label>`, which the app's OAuth metadata names as its
+  `authorization_endpoint`; tokens, registration and `/mcp` stay on the app host. On the app's own
+  origin, the app's scripts, or a service worker it registers, could read the page or press Allow
+  for the person (found by security review: Fetch Metadata checks don't stop a service worker),
+  so no consent page is served there. Signing in from it is the app's sign-in (`appOfReturn` knows
+  the path), app users may use that one path on Formelab, and the person must be able to open the
+  app (`appAccess`). The page reads "Connect Claude to Acme CRM?" with the person's email and the
+  app's address, and offers "See and change what you can" or "Only look".
 - **Tokens kept apart, two ways (A).** The library binds each token to its address. App grants
   also carry `siteId` in their props and metadata: the app's `/mcp` refuses grants without its own
   `siteId`, Formelab's `/mcp` refuses any grant with one (`wrong_address`), and Connect your AI

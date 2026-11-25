@@ -18,7 +18,7 @@ import { ASSET_VERSION, CONSENT_JS, DASHBOARD_JS, FORMELAB_CSS, GUIDE_MD, HOME_C
 import { AUTHORIZE_PATH, authorizeGet, authorizePost, oauthProvider } from "./oauth";
 import { runtimeApi } from "./runtime";
 import { appAccess } from "./members";
-import { appAuthorizeGet, appAuthorizePost, appMcpRules, appOAuth, isAppOAuthPath } from "./appmcp";
+import { appAuthorizeGet, appAuthorizePost, appMcpRules, appOAuth, consentUrl, isAppOAuthPath } from "./appmcp";
 import { appCallback, appHandoff, handoffStart, loginCallback, loginStart, logout, safeReturn, workosEnabled } from "./login";
 import { legacyAppRedirect, noAccessPage, notFoundPage, plainPage, serveAppFile } from "./serve";
 import { cookieHeader, hasSignIn, readCookie } from "./session";
@@ -123,8 +123,9 @@ apex.get("/admin/*", moved(adminOrigin, "/admin"));
 // identity. Pages send visitors without one to the login screen, then back.
 apex.use("*", async (c, next) => {
   const found = await identifyBrowser(c.req.raw, c.env);
-  // App users (spec step 4) are signed in only to hand their sign-in on to apps, and to log out.
-  const who = found && (!found.user.appOnly || c.req.path === "/auth/app" || c.req.path === "/auth/logout") ? found : null;
+  // App users (spec step 4) are signed in only to hand their sign-in on to apps, to connect an AI
+  // tool to one (step 5's consent page), and to log out.
+  const who = found && (!found.user.appOnly || c.req.path === "/auth/app" || c.req.path === "/auth/logout" || c.req.path.startsWith("/app-authorize/")) ? found : null;
   if (!who) {
     if (c.req.path.startsWith("/_api/")) return jsonError(unauthorized());
     const url = new URL(c.req.url);
@@ -138,6 +139,9 @@ apex.use("*", async (c, next) => {
 
 apex.post("/auth/logout", logout);
 apex.get("/auth/app", appHandoff);
+// "Connect Claude to Acme CRM?" for an app's own address for AI tools (src/appmcp.ts): here, where no app code runs.
+apex.get("/app-authorize/:label", appAuthorizeGet);
+apex.post("/app-authorize/:label", appAuthorizePost);
 
 // OAuth consent for MCP clients such as Claude chat.
 apex.get(AUTHORIZE_PATH, authorizeGet);
@@ -343,9 +347,6 @@ siteApp.use("*", async (c, next) => {
   await next();
 });
 
-// "Connect Claude to Acme CRM?": signed in on the app's host by the check above (src/appmcp.ts).
-siteApp.get("/_platform/authorize", appAuthorizeGet);
-siteApp.post("/_platform/authorize", appAuthorizePost);
 siteApp.get("/_platform/sdk.js", () => text(SDK_JS, "text/javascript; charset=utf-8", "public, max-age=300"));
 siteApp.get("/_platform/guide.md", guide);
 siteApp.get("/_platform/manifest.webmanifest", appManifest);
@@ -370,7 +371,7 @@ async function appsHost(req: Request, env: Env, ctx: ExecutionContext, label: st
     if (!(await appMcpRules(env, site))) return plainPage(404, "Not found", "This app has no address for AI tools.");
     // The provider writes its helpers onto env (env.OAUTH_PROVIDER), which every request in this
     // isolate shares: give it its own child so Formelab's /authorize never picks up an app's.
-    return appOAuth(new URL(req.url).origin).fetch(req, Object.create(env) as Env, ctx);
+    return appOAuth(new URL(req.url).origin, consentUrl(env, req.url, site.host_label)).fetch(req, Object.create(env) as Env, ctx);
   }
   if (site) {
     siteOf.set(req, site);

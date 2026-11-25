@@ -945,6 +945,9 @@ describe("signing in to an app (spec step 4)", () => {
     const page = await (await w(`/login?return=${encodeURIComponent(long.returnTo)}`)).text();
     expect(page).not.toContain("<b>PayPal");
     expect(page).toContain(`<h2>Sign in to &lt;b&gt;${"PayPal ".repeat(8)}P</h2>`); // the first 60 characters
+    // Connecting an AI tool to the app (step 5's consent page on Formelab) signs in to the app too.
+    const label = new URL(app).hostname.split(".")[0];
+    expect(await (await w(`/login?return=${encodeURIComponent(`/app-authorize/${label}?client_id=x`)}`)).text()).toContain("<h2>Sign in to Acme CRM</h2>");
     // Anywhere else, the usual page.
     expect(await (await w("/login?return=%2Fapp")).text()).toContain("Join the waitlist");
   });
