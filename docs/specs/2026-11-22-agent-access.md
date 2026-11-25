@@ -305,7 +305,11 @@ Two parts: **A** the address and its tools, **B** "Use with your AI" on the sett
 - **Sign-in and consent (A).** `/_platform/authorize` sits behind the app host's own sign-in (step
   4's "Sign in to Acme CRM"). The page reads "Connect Claude to Acme CRM?" with the person's email
   and the app's address, and offers "See and change what you can" or "Only look". Guests from the
-  public link are refused.
+  public link are refused. The page shares its origin with the app's own scripts, so they must
+  never read it or press Allow: it's served only to real page loads (`Sec-Fetch-Dest: document`,
+  `Sec-Fetch-Mode: navigate`), Allow must be posted from the page itself (`Sec-Fetch-Site:
+  same-origin`), it sends `Cross-Origin-Opener-Policy: same-origin` so a popup the app opens can't be
+  reached into, and `frame-ancestors 'none'`. Browsers without Fetch Metadata are refused.
 - **Tokens kept apart, two ways (A).** The library binds each token to its address. App grants
   also carry `siteId` in their props and metadata: the app's `/mcp` refuses grants without its own
   `siteId`, Formelab's `/mcp` refuses any grant with one (`wrong_address`), and Connect your AI

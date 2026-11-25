@@ -125,6 +125,7 @@ Write down each app's address (`https://….formelab.app`). The AI address is th
 | ID | Steps | Expected |
 |---|---|---|
 | `ER-01` | As Owner (with `app_mcp`), upload a new version of Leads that includes a file named `mcp`. | Refused: ""mcp" is reserved for the app's address for AI tools." |
+| `ER-03` | As Owner, publish a version of Leads whose page runs `fetch("/_platform/authorize?client_id=x").then(r => r.status).then(console.log)` when loaded, and open it as Rep A. | The console shows 403: the app's own code can't read the consent page. Remove the line again afterwards. |
 | `ER-02` | As Rep A, ask Claude to list leads 70 times in a minute (or have it loop). | After 60, "You made more than 60 calls to this app in a minute." A minute later it works again. |
 | `RG-01` | Run [Connector data tools](/test-plans/2026-11-22-connector-data-tools) cases KV-01, KV-05 and KV-08 with Formelab's own connector. | Same results as that plan. |
 | `RG-02` | As Owner, connect Formelab's own connector in Claude right after using Leads' address (CN-03). | Connects normally. |

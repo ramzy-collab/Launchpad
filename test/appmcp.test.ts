@@ -33,6 +33,9 @@ async function app(rules: unknown = CRM, title = "Acme CRM") {
   return { id: site.id, origin, kv, setRole };
 }
 
+/** What a browser sends for a real page load (Fetch Metadata). */
+const NAVIGATE = { "sec-fetch-dest": "document", "sec-fetch-mode": "navigate", "sec-fetch-site": "cross-site" };
+
 const b64url = (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 const cookiesFrom = (res: Response) => res.headers.getSetCookie().map((c) => c.split(";")[0]).join("; ");
 
@@ -49,14 +52,14 @@ async function connect(origin: string, as: string, opts: { access?: "read" | "wr
   const authorize = opts.authorize ?? `${origin}/_platform/authorize`;
   const u = new URL(authorize);
   u.search = new URLSearchParams({ response_type: "code", client_id: clientId, redirect_uri: REDIRECT, code_challenge: challenge, code_challenge_method: "S256", scope: "mcp", state: "s1", resource: `${origin}/mcp` }).toString();
-  const page = await call(u.toString(), { as });
+  const page = await call(u.toString(), { as, headers: NAVIGATE });
   expect(page.status, `${page.headers.get("location")} ${await page.clone().text()}`).toBe(200);
   const html = await page.text();
   const handle = /name="handle" value="([^"]+)"/.exec(html)![1]!;
   const res = await call(u.origin + u.pathname, {
     as,
     method: "POST",
-    headers: { cookie: cookiesFrom(page), "content-type": "application/x-www-form-urlencoded", origin },
+    headers: { ...NAVIGATE, "sec-fetch-site": "same-origin", cookie: cookiesFrom(page), "content-type": "application/x-www-form-urlencoded", origin },
     body: new URLSearchParams({ handle, decision: "approve", ...(opts.access ? { access: opts.access } : {}) }).toString(),
   });
   expect(res.status, await res.clone().text()).toBe(302);
@@ -67,7 +70,7 @@ async function connect(origin: string, as: string, opts: { access?: "read" | "wr
     body: new URLSearchParams({ grant_type: "authorization_code", code, redirect_uri: REDIRECT, client_id: clientId, code_verifier: verifier, resource: `${origin}/mcp` }).toString(),
   });
   expect(tok.status, await tok.clone().text()).toBe(200);
-  return { token: (await tok.json<{ access_token: string }>()).access_token, html };
+  return { token: (await tok.json<{ access_token: string }>()).access_token, html, coop: page.headers.get("cross-origin-opener-policy") };
 }
 
 async function rpc(origin: string, token: string, method: string, params: Record<string, unknown> = {}) {
@@ -181,8 +184,25 @@ describe("an app's own address for AI tools", () => {
 
   it("turns away guests and people the app doesn't list", async () => {
     const { origin } = await app();
-    const page = await call(`${origin}/_platform/authorize?client_id=x`, { as: NEW });
+    const page = await call(`${origin}/_platform/authorize?client_id=x`, { as: NEW, headers: NAVIGATE });
     expect(page.status).toBe(403);
+  });
+
+  it("never lets the app's own scripts read the consent page or press Allow", async () => {
+    const { origin } = await app();
+    // fetch() from the app's page: same origin, but not a page load.
+    const viaFetch = await call(`${origin}/_platform/authorize?client_id=x`, { as: REP, headers: { "sec-fetch-dest": "empty", "sec-fetch-mode": "cors", "sec-fetch-site": "same-origin" } });
+    expect(viaFetch.status).toBe(403);
+    expect(await viaFetch.text()).toContain("Open this page yourself");
+    // No Fetch Metadata at all: refused too.
+    expect((await call(`${origin}/_platform/authorize?client_id=x`, { as: REP })).status).toBe(403);
+    // A POST not made from the page itself.
+    const post = await call(`${origin}/_platform/authorize`, { as: REP, method: "POST", headers: { ...NAVIGATE, "content-type": "application/x-www-form-urlencoded" }, body: "handle=x&decision=approve" });
+    expect(post.status).toBe(403);
+    // The real page keeps popups opened by the app out.
+    const { html, coop } = await connect(origin, REP);
+    expect(html).toContain("Connect Claude to Acme CRM?");
+    expect(coop).toBe("same-origin");
   });
 
   it("keeps app files off the reserved paths", async () => {

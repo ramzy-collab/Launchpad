@@ -376,10 +376,25 @@ function consentFailure(err: unknown): Response {
   throw err;
 }
 
+/**
+ * The consent page shares its origin with the app's own scripts, which must never be able to read
+ * it or press Allow for the person: only a real page load gets it (Fetch Metadata), never fetch()
+ * or a frame, and Allow must be posted from that page. Its Cross-Origin-Opener-Policy (below) also
+ * keeps an app page that opens it in a popup from reaching into it.
+ */
+function notFromAppScript(c: Context<AppEnv>): boolean {
+  const h = (n: string) => c.req.header(n) ?? "";
+  if (h("sec-fetch-dest") !== "document" || h("sec-fetch-mode") !== "navigate") return false;
+  return c.req.method === "GET" || h("sec-fetch-site") === "same-origin";
+}
+
 /** Guests from the public link aren't anyone, and apps without an address for AI tools have no consent page. */
 async function consentGate(c: Context<AppEnv>): Promise<Response | null> {
   if (!(await appMcpRules(c.env, c.get("site")))) return plainPage(404, "Not found", "This app has no address for AI tools.");
   if (c.get("guest")) return plainPage(403, "Sign in to connect", "Open the app and sign in first, then connect your AI tool again.");
+  if (!notFromAppScript(c)) {
+    return plainPage(403, "Open this page yourself", "Connecting an AI tool has to happen on its own page, opened by the AI tool. Start connecting again from it, in an up-to-date browser.");
+  }
   return null;
 }
 
@@ -398,6 +413,7 @@ export async function appAuthorizeGet(c: Context<AppEnv>): Promise<Response> {
     consent.headers.set("content-security-policy", consentCsp(details.redirectUri).replace("default-src 'self';", `default-src 'self'; style-src 'nonce-${nonce}';`));
     consent.headers.set("x-content-type-options", "nosniff");
     consent.headers.set("referrer-policy", "no-referrer");
+    consent.headers.set("cross-origin-opener-policy", "same-origin");
     return new Response(consentPage(c, details, consent.handle, nonce), { headers: consent.headers });
   } catch (err) {
     return consentFailure(err);
