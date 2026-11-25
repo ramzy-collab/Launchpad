@@ -91,7 +91,8 @@ export async function deleteUser(env: Env, admin: User, rawEmail: string) {
     ...namespaces.map((n) => env.DB.prepare("UPDATE namespaces SET editors = COALESCE(?, editors) WHERE label = ?").bind(without(n.editors, email), n.label)),
   ];
 
-  const disconnected = await eraseAccount(env, email, user.workos_id, updates);
+  // Only here: an app user's clean-up must keep a member row added while it ran (dropUnlistedAppUsers).
+  const disconnected = await eraseAccount(env, email, user.workos_id, [...updates, env.DB.prepare("DELETE FROM app_members WHERE email = ?").bind(email)]);
   const result = { ok: true, email, deletedNamespaces: owned.length, deletedSites, removedFromShares: sites.length + namespaces.length, disconnected };
   await audit(env, admin.email, "user_delete", email, result);
   return result;
@@ -113,7 +114,6 @@ async function eraseAccount(env: Env, email: string, workosId: string | null, ex
     env.DB.prepare("DELETE FROM tokens WHERE owner_email = ?").bind(email),
     env.DB.prepare("DELETE FROM service_keys WHERE owner_email = ?").bind(email),
     env.DB.prepare("DELETE FROM kv_user WHERE email = ?").bind(email),
-    env.DB.prepare("DELETE FROM app_members WHERE email = ?").bind(email),
     env.DB.prepare("DELETE FROM feature_flag_users WHERE email = ?").bind(email),
     env.DB.prepare("DELETE FROM waitlist WHERE email = ?").bind(email),
     env.DB.prepare("DELETE FROM users WHERE email = ?").bind(email),
@@ -133,18 +133,20 @@ async function eraseAccount(env: Env, email: string, workosId: string | null, ex
   return disconnected;
 }
 
+/** SQL: whether the JSON email list in `column` holds ?1 exactly (LIKE would let "_" match any character). */
+const listHas = (column: string) => `EXISTS (SELECT 1 FROM json_each(${column}) WHERE lower(trim(value)) = ?1)`;
+
 /** Apps that list `email`: as owner, editor, on the share list or added in the app. */
 async function appsListing(env: Env, email: string) {
-  const pattern = `%"${email}"%`;
   const { results } = await env.DB.prepare(
     `SELECT s.id, s.title, s.namespace, s.mount_path, s.owner_email,
-            CASE WHEN s.owner_email = ?1 THEN 'owner' WHEN s.editors LIKE ?2 THEN 'editor' WHEN s.allowed_emails LIKE ?2 THEN 'shared' ELSE 'member' END AS how
+            CASE WHEN s.owner_email = ?1 THEN 'owner' WHEN ${listHas("s.editors")} THEN 'editor' WHEN ${listHas("s.allowed_emails")} THEN 'shared' ELSE 'member' END AS how
        FROM sites s
-      WHERE s.owner_email = ?1 OR s.editors LIKE ?2 OR s.allowed_emails LIKE ?2
+      WHERE s.owner_email = ?1 OR ${listHas("s.editors")} OR ${listHas("s.allowed_emails")}
          OR EXISTS (SELECT 1 FROM app_members m WHERE m.site_id = s.id AND m.email = ?1)
       ORDER BY s.owner_email, s.namespace, s.mount_path`,
   )
-    .bind(email, pattern)
+    .bind(email)
     .all<{ id: string; title: string | null; namespace: string; mount_path: string; owner_email: string; how: "owner" | "editor" | "shared" | "member" }>();
   return results;
 }
@@ -158,6 +160,8 @@ export async function dropUnlistedAppUsers(env: Env, emails: string[]) {
   for (const email of new Set(emails.map(normEmail))) {
     const user = await env.DB.prepare("SELECT workos_id FROM users WHERE email = ? AND status = 'app_user'").bind(email).first<{ workos_id: string | null }>();
     if (!user || (await appsListing(env, email)).length) continue;
+    // A space's editors count too: its apps are theirs to change.
+    if (await env.DB.prepare(`SELECT 1 FROM namespaces WHERE owner_email = ?1 OR ${listHas("editors")}`).bind(email).first()) continue;
     const standIn = `${DELETED_USER_PREFIX}${randomId("", 10)}`;
     const quoted = JSON.stringify(email);
     await eraseAccount(env, email, user.workos_id, [

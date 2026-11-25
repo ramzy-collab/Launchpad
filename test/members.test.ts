@@ -187,3 +187,15 @@ describe("deletion requests in the admin panel", () => {
     expect(sent[0]!.text).toContain(`https://app.example.com/apps/${b.id}`);
   });
 });
+
+describe("matching emails on lists", () => {
+  it("matches the exact address, so '_' isn't a wildcard", async () => {
+    const lookalike = `a_b-${uniq()}@example.com`;
+    const listed = lookalike.replace("a_b", "axb");
+    const ns = uniq();
+    const res = await publishZip(OWNER, ns, "crm", { "index.html": CODE, "formelab.json": JSON.stringify(CRM) }, { allowed_emails: listed, confirm_public: "true" });
+    expect(res.status).toBe(201);
+    expect(await (await call(`/_api/admin/users/${encodeURIComponent(lookalike)}/apps`, { as: OWNER })).json()).toMatchObject({ apps: [] });
+    expect((await (await call(`/_api/admin/users/${encodeURIComponent(listed)}/apps`, { as: OWNER })).json<{ apps: unknown[] }>()).apps).toHaveLength(1);
+  });
+});
