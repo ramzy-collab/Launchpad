@@ -193,6 +193,32 @@ export function roleInviteEmail(origin: string, to: string, opts: { by: string; 
   };
 }
 
+/** To an app's owner, when someone who uses their apps asked Formelab to delete their data (spec step 4). */
+export function deletionRequestEmail(origin: string, to: string, opts: { email: string; apps: { name: string; url: string }[] }): Email {
+  const one = opts.apps.length === 1;
+  return {
+    to,
+    subject: `${opts.email} asked to have their data deleted`,
+    html: layout(
+      "A request to delete someone's data",
+      [
+        `<strong>${e(opts.email)}</strong> asked Formelab to delete their data. They use ${one ? "this app" : "these apps"} of yours:`,
+        opts.apps.map((a) => `<a href="${e(a.url)}" style="color:#5B4CF5">${e(a.name)}</a>`).join("<br>"),
+        `You decide what happens to their place in your apps and to what your apps saved about them. To take them off, open each app's page and remove them under People (or "Added in the app"). Once no app lists them, Formelab deletes their sign-in too.`,
+        "We didn't tell them which apps use their email.",
+      ],
+      one ? { label: "Open the app's page", url: opts.apps[0]!.url } : undefined,
+    ),
+    text: plain([
+      `${opts.email} asked Formelab to delete their data. They use ${one ? "this app" : "these apps"} of yours:`,
+      opts.apps.map((a) => `${a.name}: ${a.url}`).join("\n"),
+      "You decide what happens to their place in your apps and to what your apps saved about them. To take them off, open each app's page and remove them. Once no app lists them, Formelab deletes their sign-in too.",
+      "We didn't tell them which apps use their email.",
+      `Your apps: ${origin}/`,
+    ]),
+  };
+}
+
 /** To an app's new owner, after someone handed it to them. */
 export function ownershipEmail(origin: string, to: string, opts: { by: string; title: string; settingsUrl: string }): Email {
   return {

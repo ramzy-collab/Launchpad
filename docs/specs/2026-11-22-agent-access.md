@@ -1,6 +1,6 @@
 # Formelab agent access
 
-Status: design agreed; steps 1 to 3 and 6 shipped; step 4 in progress (parts A and B built Nov 24, 2026). Supersedes the Nov 21,
+Status: design agreed; steps 1 to 3 and 6 shipped; step 4 built Nov 24, 2026 (parts A, B and C). Supersedes the Nov 21,
 2026 "Agent Access: Modular Feature Proposal". Decisions are recorded in the log at the end; the module sections state the result.
 
 ## Why
@@ -234,10 +234,19 @@ Built in three parts: **A** members and roles, **B** branded sign-in, **C** dele
   Formelab record is made, and the WorkOS user the sign-in created is deleted, best effort.
   Approving an `app_user` from the waitlist makes them active. The admin panel counts them as
   "People using apps", apart from "People", and tags them "uses apps".
-- **Deletion (C).** On removal (in the app, on the settings page, or by deleting the app), an
-  `app_user` that no app lists any more is deleted at once with `deleteUser`'s steps. There's no
-  scheduled clean-up job. Records naming the person (`owner_field` emails, responses) stay as the
-  app's data; audit lines are anonymized like visit logs.
+- **Deletion (C).** `dropUnlistedAppUsers` (`src/users.ts`) runs after every removal: in the app
+  (`roles.remove`), on the settings page, when an app stops being shared with someone or loses an
+  editor, and when an app is deleted (`removeSite`). An `app_user` that no app lists any more
+  (owner, editor, share list or `app_members`) is deleted at once with `deleteUser`'s own steps
+  (`eraseAccount`): sessions, private data (`kv.mine`), waitlist, AI connections and the WorkOS
+  user. Their activity log lines and usage metrics keep a stand-in (`deleted-user-…`) instead of
+  their email. Formelab accounts are never deleted this way. There's no scheduled clean-up job.
+  Records naming the person (`owner_field` emails, responses) stay as the app's data. Deleting a
+  Formelab account in the admin panel now also removes its `app_members` rows.
+- **Deletion requests (C).** Admin panel, Users, "Deletion requests": find an email, see every app
+  that lists them and how, and **Notify owners**, which emails each owner once with a link to each
+  app's page (`deletionRequestEmail`). The page gives the generic reply to send the requester.
+  Formelab's own account is deleted with **Delete** as before.
 - **Known gaps.** The sign-in code email and the Google consent screen still say Formelab. There is
   no privacy policy page yet, so "Powered by Formelab" links to the home page until there is one.
   The password step and "Forgot password?" are shown to app users too, the same for every email.

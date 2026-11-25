@@ -30,7 +30,7 @@ import { connectGemini, disconnectGemini, geminiStatus, setGeminiDailyLimit } fr
 import { buildApp, connectBuilder, editApp, disconnectBuilder, parseBuildDataWrites, parseBuilder } from "./builder";
 import { addFlagUser, flagOn, removeFlagUser, setFlag } from "./flags";
 import { sheetsDisconnect, sheetsStatus } from "./sheets";
-import { deleteUser, listUsers, setAdmin } from "./users";
+import { deleteUser, findPerson, listUsers, notifyOwnersOfDeletion, setAdmin } from "./users";
 import { clearResults, saveResults } from "./testplans";
 import { b64decode, isEmail } from "./util";
 
@@ -207,6 +207,9 @@ export function managementApi(kind: "admin" | "deploy") {
     api.delete("/test-plans/:slug/results", async (c) => c.json(await clearResults(c.env, c.get("user"), c.req.param("slug"))));
     api.post("/users/:email/admin", async (c) => c.json(await setAdmin(c.env, c.get("user"), c.req.param("email"), (await jsonBody(c)).admin)));
     api.delete("/users/:email", async (c) => c.json(await deleteUser(c.env, c.get("user"), c.req.param("email"))));
+    // Deletion requests (spec step 4): the apps that list someone, and emailing their owners.
+    api.get("/users/:email/apps", async (c) => c.json(await findPerson(c.env, c.get("user"), c.req.param("email"))));
+    api.post("/users/:email/notify-owners", async (c) => c.json(await notifyOwnersOfDeletion(c.env, c.get("user"), c.req.param("email"), c.req.url)));
     // The easy way, built in: the person's own Claude or OpenAI key builds and publishes the app.
     // Behind the app_builder flag (admin panel → Features).
     const builderFlag = async (c: Context<AppEnv>, next: () => Promise<void>) => {

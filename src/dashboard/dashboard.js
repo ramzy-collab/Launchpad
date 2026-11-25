@@ -621,6 +621,11 @@
         show("Deleted " + who + (r.deletedSites ? " and " + r.deletedSites + " app(s)." : "."));
         reloadSoon();
       });
+    } else if (action === "deletion-notify") {
+      if (!confirm("Email the owner of each app that lists " + btn.dataset.email + "? They're told the person asked for their data to be deleted.")) return;
+      p = api("POST", "/users/" + encodeURIComponent(btn.dataset.email) + "/notify-owners").then(function (r) {
+        show(r.owners === 1 ? "Emailed 1 owner." : "Emailed " + r.owners + " owners.");
+      });
     } else if (action === "user-admin") {
       var grant = btn.dataset.admin === "true";
       if (!confirm(grant ? "Make " + btn.dataset.email + " an admin? They'll be able to manage everyone on Formelab." : "Remove admin access from " + btn.dataset.email + "?")) return;
