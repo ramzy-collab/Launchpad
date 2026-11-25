@@ -1,6 +1,6 @@
 # Formelab agent access
 
-Status: design agreed; steps 1 to 3 and 6 shipped; step 4 built Nov 24, 2026 (parts A, B and C). Supersedes the Nov 21,
+Status: design agreed; steps 1 to 3 and 6 shipped; step 4 built Nov 24, 2026 (parts A, B and C); step 5 in progress (part A built Nov 25, 2026). Supersedes the Nov 21,
 2026 "Agent Access: Modular Feature Proposal". Decisions are recorded in the log at the end; the module sections state the result.
 
 ## Why
@@ -292,6 +292,53 @@ Built in three parts: **A** members and roles, **B** branded sign-in, **C** dele
 - Every request applies the rules on the server. Apps without a valid rules file have no endpoint
   for their users; owners and editors still use the Formelab connector (step 1).
 
+### Decided (Nov 25, 2026): how step 5 works
+
+Two parts: **A** the address and its tools, **B** "Use with your AI" on the settings page and the guide.
+
+- **Each app host is its own OAuth server (A).** `src/appmcp.ts`, one `OAuthProvider` per app
+  origin, tokens bound to `<origin>/mcp`. The library's separate authorization-server mode needs
+  every resource listed at start-up, which apps (made all the time) can't give. Reserved on app
+  hosts: `/mcp`, `/.well-known/oauth-*`, `/_platform/oauth/token` and `/_platform/oauth/register`.
+  Other paths never build a provider. With the feature on, publishing
+  a file at `mcp` or `.well-known/oauth-*` is refused (`reserved_path`).
+- **Sign-in and consent (A).** The consent page is on Formelab's own origin,
+  `<aiOrigin>/app-authorize/<host label>`, which the app's OAuth metadata names as its
+  `authorization_endpoint`; tokens, registration and `/mcp` stay on the app host. On the app's own
+  origin, the app's scripts, or a service worker it registers, could read the page or press Allow
+  for the person (found by security review: Fetch Metadata checks don't stop a service worker),
+  so no consent page is served there. Signing in from it is the app's sign-in (`appOfReturn` knows
+  the path), app users may use that one path on Formelab, and the person must be able to open the
+  app (`appAccess`). The page reads "Connect Claude to Acme CRM?" with the person's email and the
+  app's address, and offers "See and change what you can" or "Only look".
+- **Tokens kept apart, two ways (A).** The library binds each token to its address. App grants
+  also carry `siteId` in their props and metadata: the app's `/mcp` refuses grants without its own
+  `siteId`, Formelab's `/mcp` refuses any grant with one (`wrong_address`), and Connect your AI
+  lists only Formelab connections.
+- **Checked on every call (A).** Each request runs `appAccess` again, so a role change applies on
+  the next call. Removing a member, or deleting the app, also revokes their grants for it
+  (`revokeAppGrants`); deleting an account already revokes all of its grants.
+- **Tools (A).** Worked out per request from the rules and the caller's role: per record type
+  `list_<type>`, `get_<type>(id)`, `save_<type>(id, value)` and `delete_<type>(id)`, shown only when
+  the role's level isn't `none`, with save and delete left off read-only connections. `id` is the
+  key after the prefix; leaving it out reaches a record saved as the prefix itself. Titles and
+  descriptions say "my" and name the owner field for `own`. Values are JSON objects; `fields` show
+  in the input schema as optional. The same `mayRead`, `checkWrite` and filtered paging
+  (`kvListKept`, moved from `src/runtime.ts` to `src/kv.ts`) as inside the app. `{"everyone":
+  "all"}` apps get `list_data`, `get_data`, `save_data` and `delete_data`. Sheets, connectors and
+  `kv.mine` aren't offered. Saves and deletes are logged like step 1 ("via Claude").
+- **Limits and metrics (A).** 60 calls a minute per person per app. Calls are recorded in
+  `mcp_calls` with the app's id (migration `0030`), and the admin panel's Metrics count only calls
+  with none, so app use isn't counted as Formelab use.
+- **Feature flag (A).** `app_mcp`, following the app's owner. Off: the reserved paths answer 404.
+- **Found while building (A).** The OAuth library writes its helpers onto `env`
+  (`env.OAUTH_PROVIDER`), an object every request in an isolate shares, so Formelab's consent page
+  could pick up an app's helpers and refuse a connection. The app provider now gets its own child of
+  `env`, and `oauthHelpers` always builds Formelab's own.
+- **Known gaps.** App users can't see or end their AI connections in Formelab (they have no
+  dashboard): they disconnect in their AI tool, and access ends when the app removes them. No
+  custom domains. The provider cache keeps one object per app origin per isolate.
+
 ## Step 6: outside data
 
 Builds on what exists (behind `connected_apps`): Google Sheets (`src/sheets.ts`), custom connectors
@@ -453,3 +500,4 @@ Thanksgiving Menu. Example cases:
 | 16 | Who manages people in the app | Owner, editors, `manage_roles`; any role the rules name but `guest`; never the owner or editors; same people may list |
 | 17 | Invite link | The app's address, no token; settings "Remove this person" for owner and sharers |
 | 18 | App sign-in and records (B, C) | `app_user` off the waitlist, an account status Formelab's pages treat as signed out; non-members keep no record; deletion at removal time |
+| 19 | Step 5 address | Each app host its own OAuth server; tokens bound to the app and tagged with `siteId`; access and role checked on every call; tools per record type from the rules |

@@ -2,6 +2,11 @@
 
 Everything that has changed in Formelab, newest first. Shown in the admin panel under Changelog.
 
+## 2026-11-25
+
+- **Each app has its own address for AI tools** (behind the "Each app's address for AI tools" feature). Anyone who can open an app with access rules can connect Claude, ChatGPT or another AI tool to `<the app's address>/mcp`. They sign in with the app's own sign-in and approve "Connect Claude to Acme CRM?", choosing to let it change what they can or only look. That page is on formelab.ai, never on the app's own address, so nothing the app runs can press Allow for them. Their AI tool then gets tools made from the app's `formelab.json`, like "List my lead records" or "Save a lead record", and sees and changes only what their role allows: other people's records are left out, and changes they can't make are refused, the same as in the app. A role change counts on the next request, and removing someone from the app ends their connection. Apps open to everyone get general tools for all their data. Each change shows in the app's Activity under the person, with the AI tool's name. Connections to an app don't work at Formelab's own address or another app's, and don't show under Connect your AI. Files can't be published at `mcp` or `.well-known/oauth-…` while the feature is on, since the address uses them. Calls to apps' addresses aren't counted in Formelab's AI usage on the Metrics page. Also fixed: Formelab's own connection page could refuse a connection right after someone used an app's address, because the two shared a setting in memory.
+- **Test plan:** [Each app's address for AI tools](/test-plans/2026-11-25-app-ai-address), 42 test cases to hand to Claude Cowork.
+
 ## 2026-11-24
 
 - **People who only use apps are deleted when no app has them.** Someone with an account that only opens apps is deleted, sign-in and all, as soon as the last app that lists them removes them: with **Remove** under "Added in the app", with `formelab.roles.remove`, by stopping sharing with them, or by deleting the app. Their lines in the activity log stay, without their email. Formelab accounts are never deleted this way. What apps saved about them stays, for each app's owner to decide.

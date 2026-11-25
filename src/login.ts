@@ -60,10 +60,14 @@ export function safeReturn(raw: string | null | undefined, fallback = "/app"): s
 
 /**
  * The app a sign-in is for: one whose return address hands the session on to an app's host
- * (/auth/app?return=https://<label>.APP_DOMAIN/...), as signing in from an app does. Else null.
+ * (/auth/app?return=https://<label>.APP_DOMAIN/...), as signing in from an app does, or connects an
+ * AI tool to it (/app-authorize/<label>). Else null.
  */
 export async function appOfReturn(env: Env, returnTo: string): Promise<SiteRow | null> {
   const u = new URL(returnTo, "https://return.invalid");
+  // Connecting an AI tool to an app (step 5's consent page, /app-authorize/<label>) signs in to that app too.
+  const consent = /^\/app-authorize\/([a-z0-9-]{1,63})$/.exec(u.pathname);
+  if (consent) return getSiteByHostLabel(env, consent[1]!);
   if (u.pathname !== "/auth/app") return null;
   try {
     const label = appsLabelOf(new URL(u.searchParams.get("return") ?? "").hostname, env);

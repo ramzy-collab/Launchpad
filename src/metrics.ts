@@ -225,7 +225,7 @@ async function load(env: Env) {
     q<{ site_id: string; action: string; n: number }>("SELECT site_id, action, COUNT(*) AS n FROM audit WHERE site_id IS NOT NULL GROUP BY site_id, action"),
     q<{ actor: string; detail: string | null }>("SELECT actor, detail FROM audit WHERE action = 'oauth_connect'"),
     q<{ email: string; client: string | null; tool: string; d: number; n: number; errors: number; first: number }>(
-      `SELECT email, client, tool, CAST(at / ${DAY} AS INTEGER) AS d, COUNT(*) AS n, SUM(1 - ok) AS errors, MIN(at) AS first FROM mcp_calls GROUP BY email, client, tool, d`,
+      `SELECT email, client, tool, CAST(at / ${DAY} AS INTEGER) AS d, COUNT(*) AS n, SUM(1 - ok) AS errors, MIN(at) AS first FROM mcp_calls WHERE site_id IS NULL GROUP BY email, client, tool, d`,
     ),
     q<{ site_id: string; day: string; email: string; own: number; views: number }>("SELECT site_id, day, email, own, views FROM app_visits"),
     q<{ site_id: string; n: number }>("SELECT site_id, COUNT(*) AS n FROM kv GROUP BY site_id"),
@@ -240,7 +240,8 @@ async function load(env: Env) {
 async function latency(env: Env, from: number, to: number, team: Set<string>, includeTeam: boolean): Promise<{ p50: number | null; p95: number | null }> {
   const excluded = includeTeam ? [] : [...team];
   const notTeam = excluded.length ? ` AND email NOT IN (${excluded.map(() => "?").join(",")})` : "";
-  const where = `WHERE at >= ? AND at < ? AND tool <> 'initialize'${notTeam}`;
+  // Formelab's own connector only: calls to apps' own addresses (site_id set) aren't Formelab use.
+  const where = `WHERE at >= ? AND at < ? AND tool <> 'initialize' AND site_id IS NULL${notTeam}`;
   const n = (await env.DB.prepare(`SELECT COUNT(*) AS n FROM mcp_calls ${where}`).bind(from, to, ...excluded).first<{ n: number }>())?.n ?? 0;
   if (!n) return { p50: null, p95: null };
   const at = async (p: number) =>

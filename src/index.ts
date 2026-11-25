@@ -18,6 +18,7 @@ import { ASSET_VERSION, CONSENT_JS, DASHBOARD_JS, FORMELAB_CSS, GUIDE_MD, HOME_C
 import { AUTHORIZE_PATH, authorizeGet, authorizePost, oauthProvider } from "./oauth";
 import { runtimeApi } from "./runtime";
 import { appAccess } from "./members";
+import { appAuthorizeGet, appAuthorizePost, appMcpRules, appOAuth, consentUrl, isAppOAuthPath } from "./appmcp";
 import { appCallback, appHandoff, handoffStart, loginCallback, loginStart, logout, safeReturn, workosEnabled } from "./login";
 import { legacyAppRedirect, noAccessPage, notFoundPage, plainPage, serveAppFile } from "./serve";
 import { cookieHeader, hasSignIn, readCookie } from "./session";
@@ -122,8 +123,9 @@ apex.get("/admin/*", moved(adminOrigin, "/admin"));
 // identity. Pages send visitors without one to the login screen, then back.
 apex.use("*", async (c, next) => {
   const found = await identifyBrowser(c.req.raw, c.env);
-  // App users (spec step 4) are signed in only to hand their sign-in on to apps, and to log out.
-  const who = found && (!found.user.appOnly || c.req.path === "/auth/app" || c.req.path === "/auth/logout") ? found : null;
+  // App users (spec step 4) are signed in only to hand their sign-in on to apps, to connect an AI
+  // tool to one (step 5's consent page), and to log out.
+  const who = found && (!found.user.appOnly || c.req.path === "/auth/app" || c.req.path === "/auth/logout" || c.req.path.startsWith("/app-authorize/")) ? found : null;
   if (!who) {
     if (c.req.path.startsWith("/_api/")) return jsonError(unauthorized());
     const url = new URL(c.req.url);
@@ -137,6 +139,9 @@ apex.use("*", async (c, next) => {
 
 apex.post("/auth/logout", logout);
 apex.get("/auth/app", appHandoff);
+// "Connect Claude to Acme CRM?" for an app's own address for AI tools (src/appmcp.ts): here, where no app code runs.
+apex.get("/app-authorize/:label", appAuthorizeGet);
+apex.post("/app-authorize/:label", appAuthorizePost);
 
 // OAuth consent for MCP clients such as Claude chat.
 apex.get(AUTHORIZE_PATH, authorizeGet);
@@ -361,6 +366,13 @@ siteApp.all("*", (c) =>
 async function appsHost(req: Request, env: Env, ctx: ExecutionContext, label: string): Promise<Response> {
   if (new URL(req.url).pathname === "/healthz") return healthz();
   const site = await getSiteByHostLabel(env, label);
+  // The app's address for AI tools (spec step 5): OAuth metadata, tokens and /mcp itself.
+  if (site && isAppOAuthPath(new URL(req.url).pathname)) {
+    if (!(await appMcpRules(env, site))) return plainPage(404, "Not found", "This app has no address for AI tools.");
+    // The provider writes its helpers onto env (env.OAUTH_PROVIDER), which every request in this
+    // isolate shares: give it its own child so Formelab's /authorize never picks up an app's.
+    return appOAuth(new URL(req.url).origin, consentUrl(env, req.url, site.host_label)).fetch(req, Object.create(env) as Env, ctx);
+  }
   if (site) {
     siteOf.set(req, site);
     return siteApp.fetch(req, env, ctx);

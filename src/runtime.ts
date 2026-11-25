@@ -1,7 +1,7 @@
 import { Hono, type Context } from "hono";
 import type { AppEnv } from "./env";
 import { badRequest, err, forbidden, jsonError, notFound, onError } from "./errors";
-import { KV_LIST_PAGE_BYTES, kvDelete, kvGet, kvList, kvSet, type KvScope } from "./kv";
+import { kvDelete, kvGet, kvList, kvListKept, kvSet, type KvScope } from "./kv";
 import { listRoles, removeRole, setRole, type RolesCaller } from "./members";
 import { PROXY_VIEWER_PER_MINUTE, proxy, rateLimit, secretDelete, secretList, secretSet } from "./secrets";
 import { connectorFetch } from "./connectors";
@@ -129,24 +129,9 @@ export function runtimeApi() {
    * row the person may see and the cursor never names a key they can't.
    */
   const listKept = async (c: Ctx, scope: KvScope, keep: (row: { key: string; value: unknown }) => boolean) => {
-    const prefix = c.req.query("prefix") ?? "";
-    let after = c.req.query("after") ?? "";
-    const kept: { key: string; value: unknown; updatedAt: number }[] = [];
-    let bytes = 0;
-    for (;;) {
-      const { rows, next } = await kvList(c.env, scope, prefix, after);
-      for (const r of rows) {
-        if (!keep(r)) continue;
-        kept.push(r);
-        bytes += JSON.stringify(r.value).length;
-        if (bytes >= KV_LIST_PAGE_BYTES) {
-          c.header("x-formelab-next", encodeURIComponent(r.key));
-          return c.json(kept);
-        }
-      }
-      if (next === null) return c.json(kept);
-      after = next;
-    }
+    const { rows, next } = await kvListKept(c.env, scope, c.req.query("prefix") ?? "", c.req.query("after") ?? "", keep);
+    if (next !== null) c.header("x-formelab-next", encodeURIComponent(next));
+    return c.json(rows);
   };
 
   // Apps with access rules (formelab.json): each person reads and changes only what the rules allow.

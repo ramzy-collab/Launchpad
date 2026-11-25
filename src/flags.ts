@@ -19,6 +19,11 @@ export const FLAGS = {
     description:
       "On New app, people save their own Claude (Anthropic) or OpenAI API key, and \"Make it\" builds and publishes the app right in Formelab, billed to their API account. Off: the Make it buttons open Claude or ChatGPT with the idea typed in, as before.",
   },
+  app_mcp: {
+    label: "Each app's address for AI tools",
+    description:
+      "Apps with access rules get their own address for AI tools, <app-host>/mcp: anyone who can open the app connects Claude, ChatGPT or another AI tool to it, signs in with the app's sign-in, and gets tools made from its formelab.json that see and change only what they may. Follows the app's owner. Off: those addresses answer \"not found\".",
+  },
   responses: {
     label: "Responses (forms for anyone)",
     description:
