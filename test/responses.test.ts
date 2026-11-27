@@ -1,6 +1,6 @@
 import { env } from "cloudflare:workers";
 import { beforeAll, describe, expect, it } from "vitest";
-import { appAt, call, OWNER, PAGE, publishHtml, uniq } from "./helpers";
+import { appAt, awayFromMinuteEdge, call, OWNER, PAGE, publishHtml, TIMED, uniq } from "./helpers";
 
 type View = { id: string; publicUrl: string | null; guestResponses: boolean };
 type Listed = { total: number; responses: { id: string; at: number; email: string | null; data: unknown }[]; next: string | null };
@@ -96,7 +96,8 @@ describe("responses", () => {
     expect((await guest("responses", { method: "POST", body: "{}" })).status).toBe(401);
   });
 
-  it("limit how many one guest sends a minute", async () => {
+  it("limit how many one guest sends a minute", TIMED, async () => {
+    await awayFromMinuteEdge();
     const { patch, api } = await newSite();
     const cookie = await guestCookie(patch);
     await patch({ guest_responses: true });

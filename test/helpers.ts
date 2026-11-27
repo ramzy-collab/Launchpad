@@ -172,3 +172,17 @@ export const PAGE = (body: string) => `<!doctype html><html><head><title>t</titl
 /** A page with an icon, as the MCP publish tool requires. */
 export const ICON = `<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'/%3E">`;
 export const ICON_PAGE = (body: string) => `<!doctype html><html><head><title>t</title>${ICON}</head><body>${body}</body></html>`;
+
+/**
+ * Waits for the next clock minute if this one ends within `margin` ms. Rate limits count per clock
+ * minute (rateLimit in src/secrets.ts), so a burst of calls across a minute boundary would start
+ * counting again and never reach its 429. Stubbing Date.now here doesn't reach the worker's own
+ * clock, so tests wait instead. Give such tests a longer timeout (TIMED).
+ */
+export async function awayFromMinuteEdge(margin = 15_000) {
+  const left = 60_000 - (Date.now() % 60_000);
+  if (left < margin) await new Promise((r) => setTimeout(r, left + 100));
+}
+
+/** Test options for one that may wait in awayFromMinuteEdge. */
+export const TIMED = { timeout: 30_000 };
