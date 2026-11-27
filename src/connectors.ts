@@ -9,11 +9,12 @@
 // - Apps reach it with formelab.connectors.fetch(name, url) or, like a saved key,
 //   formelab.secrets.proxy(name, { url }) with {{value}} placeholders.
 // - Saved keys (an app's own secrets) can be moved into connectors: see planKeyMove / moveSavedKeys.
+import { identityToken, isSupabaseServiceKey, newSigningKey, supabaseHostsOnly, type Identity } from "./supabaseid";
 import { audit } from "./audit";
 import type { Env, User } from "./env";
 import { now } from "./env";
 import { ApiError, badRequest, err, forbidden, notFound } from "./errors";
-import { flagOnForOwner } from "./flags";
+import { flagOn, flagOnForOwner } from "./flags";
 import {
   checkRate,
   decryptSecret,
@@ -57,6 +58,12 @@ interface ConnectorRow {
   auth_name: string;
   created_at: number;
   updated_at: number;
+  /** 'supabase': each person's identity goes with every call (src/supabaseid.ts), else null. */
+  identity: string | null;
+  signing_kid: string | null;
+  signing_public: string | null;
+  signing_iv: string | null;
+  signing_private: string | null;
 }
 
 export interface ConnectorView {
@@ -71,6 +78,8 @@ export interface ConnectorView {
   authName: string;
   createdAt: number;
   updatedAt: number;
+  /** Sends each person's identity to Supabase with every call (spec step 6b). */
+  identity: boolean;
 }
 
 const view = (r: ConnectorRow): ConnectorView => ({
@@ -84,6 +93,7 @@ const view = (r: ConnectorRow): ConnectorView => ({
   authName: r.auth_name,
   createdAt: r.created_at,
   updatedAt: r.updated_at,
+  identity: r.identity === "supabase",
 });
 
 // The key is encrypted like app secrets, bound to the connector: AAD "connector:<id>:key".
@@ -182,6 +192,8 @@ export interface ConnectorInput {
   hosts?: unknown;
   auth?: unknown;
   authName?: unknown;
+  /** true or false: send each person's identity to Supabase (spec step 6b). */
+  identity?: unknown;
 }
 
 export async function createConnector(ctx: Ctx, input: ConnectorInput): Promise<ConnectorView> {
@@ -245,6 +257,32 @@ export async function updateConnector(ctx: Ctx, name: string, input: ConnectorIn
     const { auth, authName } = parseAuth(input.auth ?? row.auth, input.authName ?? row.auth_name);
     set("auth", auth, "auth");
     set("auth_name", authName, "auth");
+  }
+  if (input.identity !== undefined && typeof input.identity !== "boolean") throw badRequest("identity must be true or false.", 'Send { "identity": true } to send each person\'s identity to Supabase.');
+  const identityAfter = input.identity === undefined ? row.identity === "supabase" : input.identity === true;
+  if (identityAfter) {
+    if (input.identity === true && row.identity !== "supabase" && !(await flagOn(ctx.env, "supabase_identity", ctx.user))) {
+      throw err(403, "not_available", "Sending each person's identity to Supabase isn't available yet.", "Check back soon.");
+    }
+    const hosts = input.hosts !== undefined ? hostsOf(input.hosts, ctx.env) : parseJsonArray(row.hosts);
+    if (!supabaseHostsOnly(hosts)) {
+      throw badRequest("A connector that sends each person's identity can only call a Supabase project's address.", "Set its addresses to your project's, like abcdefghijklmnopqrst.supabase.co, and nothing else.");
+    }
+    const key = input.key !== undefined ? parseKey(input.key) : await decryptSecret(ctx.env, scope(row.id), "key", row.iv, row.ciphertext).then((j) => JSON.parse(j) as SecretValue);
+    if (typeof key !== "string" || isSupabaseServiceKey(key)) {
+      throw badRequest("Use the project's publishable (anon) key here, not its secret or service_role key.", "The service key skips your row-level security, so every person would see everything. Find the publishable key in Supabase under Project Settings, API Keys.");
+    }
+  }
+  if (input.identity === true && row.identity !== "supabase") {
+    const k = await newSigningKey(ctx.env, row.id);
+    set("identity", "supabase", "identity");
+    set("signing_kid", k.kid, "identity");
+    set("signing_public", k.publicJwk, "identity");
+    set("signing_iv", k.iv, "identity");
+    set("signing_private", k.ciphertext, "identity");
+  } else if (input.identity === false && row.identity === "supabase") {
+    // The key pair goes too: turning it on again makes a new one, which is how to replace it.
+    for (const col of ["identity", "signing_kid", "signing_public", "signing_iv", "signing_private"]) set(col, null, "identity");
   }
   if (input.key !== undefined) {
     const key = parseKey(input.key);
@@ -331,7 +369,7 @@ const notDeclared = (label: string, name: string) =>
   );
 
 /** The key for a connector the app was built to use, ready for the proxy. */
-export async function connectorKey(env: Env, site: SiteRow, name: string): Promise<ProxyKey> {
+export async function connectorKey(env: Env, site: SiteRow, name: string, who?: Omit<Identity, "siteId">): Promise<ProxyKey> {
   if (!(await flagOnForOwner(env, "connected_apps", site.owner_email))) {
     throw err(403, "not_available", "Connected apps aren't available on Formelab yet.", "Check back soon; the app can't use connectors until then.");
   }
@@ -348,8 +386,21 @@ export async function connectorKey(env: Env, site: SiteRow, name: string): Promi
     throw err(500, "secret_unreadable", `The key for ${name} could not be decrypted.`, "The owner can replace it in Formelab under Connected apps.");
   }
   const authName = row.auth_name;
-  const inject: ProxyKey["inject"] =
-    row.auth === "bearer"
+  // Each person's identity (spec step 6b): the key as apikey, and a fresh token naming them.
+  let token: string | undefined;
+  if (row.identity === "supabase") {
+    if (!(await flagOnForOwner(env, "supabase_identity", site.owner_email))) {
+      throw err(403, "not_available", "Sending each person's identity to Supabase isn't available yet.", "Check back soon.");
+    }
+    if (!who) throw err(401, "sign_in_required", `${name} needs to know who's asking.`, "Sign in to use it.");
+    token = await identityToken(env, row, { ...who, siteId: site.id });
+  }
+  const inject: ProxyKey["inject"] = token
+    ? (_u, h, v) => {
+        h.set("apikey", v);
+        h.set("Authorization", `Bearer ${token}`);
+      }
+    : row.auth === "bearer"
       ? (_u, h, v) => h.set("Authorization", `Bearer ${v}`)
       : row.auth === "header"
         ? (_u, h, v) => h.set(authName, v)
@@ -360,8 +411,9 @@ export async function connectorKey(env: Env, site: SiteRow, name: string): Promi
     what: `The connector ${name}`,
     secret,
     hosts: parseJsonArray(row.hosts),
-    audit: { connector: name },
+    audit: { connector: name, ...(token ? { identity: true } : {}) },
     inject,
+    alsoHide: token ? [token] : undefined,
     hostsHint: `Call one of those hosts, or have the owner add this one in Formelab under Connected apps → ${row.label}.`,
   };
 }
@@ -370,11 +422,11 @@ export async function connectorKey(env: Env, site: SiteRow, name: string): Promi
  * formelab.connectors.fetch(name, url, options): the app calls the service and Formelab adds the
  * key the way the connector says. `url` may be a path, sent to the connector's first host.
  */
-export async function connectorFetch(env: Env, site: SiteRow, viewer: User, name: string, req: ProxyRequest): Promise<ProxyResult> {
+export async function connectorFetch(env: Env, site: SiteRow, viewer: User, name: string, req: ProxyRequest, who?: { role: string | null; manages: boolean }): Promise<ProxyResult> {
   if (!SECRET_NAME_RE.test(name)) throw notDeclared(name.slice(0, 64), name.slice(0, 64));
   const parsed = parseProxyRequest(req, `formelab.connectors.fetch("${name}", url)`);
   await checkRate(env, site, viewer);
-  const key = await connectorKey(env, site, name);
+  const key = await connectorKey(env, site, name, who && { email: viewer.email, ...who });
   if (parsed.url.startsWith("/")) {
     const host = key.hosts.find((h) => !h.startsWith("*."));
     if (!host) throw badRequest("Use a full https:// address for this connector.", `${name} may be sent to ${key.hosts.join(", ")}, so a path alone doesn't say which.`);

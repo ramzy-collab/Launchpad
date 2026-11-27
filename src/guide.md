@@ -545,6 +545,22 @@ With `"own"` on a spreadsheet, people reach only their rows:
 
 Supabase is a custom connector here: role level only. Never give a connector Supabase's
 `service_role` key if people below editor can use it; it skips Supabase's row rules.
+<!-- flag:supabase_identity -->
+**Supabase, person by person.** A Supabase connector whose owner turned on "Send each person's
+identity" sends, with every call, a 60-second token naming the signed-in person, so the project's
+own row-level security decides what each person sees. Write the policies with `auth.jwt()`:
+`auth.jwt() ->> 'email'` is the person, `'formelab_role'` their role from `formelab.json`, and
+`'formelab_manages'` is true for the app's owner and editors. `auth.uid()` doesn't work (the subject
+is an email, not a UUID). Call it through Formelab:
+
+```js
+const res = await formelab.connectors.fetch("db", "/rest/v1/leads?select=*");
+const rows = res.json(); // only the rows this person's policies allow
+```
+
+Never use `supabase-js` in the browser for this: those calls skip Formelab and reach Supabase
+without anyone's identity. The connector must use the project's publishable (anon) key.
+<!-- /flag:supabase_identity -->
 <!-- /flag:connected_apps -->
 
 **Members and roles.** People get roles inside the app, through `formelab.roles`. Only the owner,

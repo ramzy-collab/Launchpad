@@ -2,6 +2,7 @@
 // (/connected/<name>): the apps built to use it, its settings and what happened to it. Built-in
 // ones (Google Gemini, Google Sheets) and the person's own custom connectors. Behind the
 // connected_apps flag.
+import { issuerOf } from "../supabaseid";
 import type { Context } from "hono";
 import { ctxOf } from "../api";
 import { appsUsing, connectorActivity, getConnector, listConnectors, planKeyMove, useCounts, type AppUse, type ConnectorView } from "../connectors";
@@ -155,6 +156,26 @@ const ACTIVITY: Record<string, (d: Record<string, unknown>) => string> = {
 };
 
 /** /connected/<name>: one connector's page. */
+const IDENTITY_SQL = `create policy "Own rows" on leads for select to authenticated
+  using (
+    auth.jwt() ->> 'email' = assigned_to
+    or coalesce((auth.jwt() ->> 'formelab_manages')::boolean, false)
+  );`;
+
+/** "Each person's identity" for a Supabase connector (spec step 6b): the switch, then how to set it up. */
+function identityBlock(k: { name: string; identity: boolean }, issuer: string): string {
+  const setup = k.identity
+    ? `<p>In Supabase: Authentication, Sign In / Providers, <strong>Third-Party Auth</strong>, Add provider, <strong>Custom OIDC</strong>. Paste this as the Issuer URL:</p>
+    <div class="linkbox"><code>${e(issuer)}</code><button type="button" class="small" data-copy-text="${e(issuer)}" data-copied="Issuer URL copied" aria-label="Copy the issuer URL">Copy</button></div>
+    <p class="muted">Then write row-level security policies that read the person from the token: <code>auth.jwt() -&gt;&gt; 'email'</code>, <code>'formelab_role'</code> (their role in the app's rules) and <code>'formelab_manages'</code> (true for you and your editors). <code>auth.uid()</code> doesn't work here. For example:</p>
+    <pre class="cx-code">${e(IDENTITY_SQL)}</pre>`
+    : "";
+  return `<h2>Each person's identity</h2>
+    <p class="muted">For a Supabase project. With every call, Formelab sends a token naming the signed-in person, good for 60 seconds, so your row-level security policies decide what each person sees. Use the project's publishable (anon) key, never its secret one.</p>
+    <div class="setting"><div class="setting-text"><strong id="lbl-identity">Send each person's identity</strong><span>Only to your project's supabase.co address.</span></div><label class="switch"><input type="checkbox" role="switch" data-connector-identity data-name="${e(k.name)}" aria-labelledby="lbl-identity"${k.identity ? " checked" : ""}><span aria-hidden="true"></span></label></div>
+    ${setup}`;
+}
+
 export async function connectorPage(c: Context<AppEnv>): Promise<Response> {
   const user = c.get("user");
   if (!on(c)) return notFoundPage();
@@ -166,8 +187,9 @@ export async function connectorPage(c: Context<AppEnv>): Promise<Response> {
   if (!k) return plainPage(404, "Not found", "You don't have a connector by that name. It may have been deleted.");
   const [apps, log] = await Promise.all([appsUsing(c.env, user.email, k.name), connectorActivity(c.env, user.email, k.name)]);
   const path = k.hosts.find((h) => !h.startsWith("*.")) ? "/v1/..." : `https://${k.hosts[0]!.slice(2)}/...`;
-  const sample =
-    k.auth === "placeholder"
+  const sample = k.identity
+    ? `const res = await formelab.connectors.fetch("${k.name}", "/rest/v1/leads?select=*");\nconst rows = res.json(); // only the rows your policies let this person see`
+    : k.auth === "placeholder"
       ? `await formelab.secrets.proxy("${k.name}", {\n  url: "https://${k.hosts[0]!.replace(/^\*\./, "")}/...",\n  headers: { Authorization: "Bearer {{value}}" },\n});`
       : `const res = await formelab.connectors.fetch("${k.name}", "${path}", {\n  method: "POST",\n  body: { ... },\n});\nconst data = res.json();`;
   const body = `${pageTop(connectorLogo(k.label), k.label, `${CUSTOM} ${e(k.description || `Sent only to ${k.hosts.join(", ")}.`)}`)}
@@ -189,6 +211,7 @@ export async function connectorPage(c: Context<AppEnv>): Promise<Response> {
       <input type="password" name="key" required autocomplete="off" spellcheck="false" placeholder="Paste the new key" aria-label="New key for ${e(k.label)}">
       <button class="secondary">Replace key</button>
     </form>
+    ${k.identity || c.get("features")?.has("supabase_identity") ? identityBlock(k, issuerOf(c.env, k.id)) : ""}
     ${activityList(log.map((l) => ({ at: l.at, text: (ACTIVITY[l.action] ?? (() => l.action))(l.detail) })))}
   </section>
 </div>

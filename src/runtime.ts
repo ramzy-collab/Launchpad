@@ -258,7 +258,7 @@ export function runtimeApi() {
   api.post("/secrets/:name/proxy", async (c) => {
     await requireSource(c, c.req.param("name"));
     const body = await objectBody(c, '{ "url": "https://..." }', "Use formelab.secrets.proxy(name, { url }).", ["The proxy request body is larger than 1 MB.", "Send less data."]);
-    return c.json(await proxy(c.env, c.get("site"), c.get("user"), c.req.param("name"), body));
+    return c.json(await proxy(c.env, c.get("site"), c.get("user"), c.req.param("name"), body, { role: c.get("role") ?? null, manages: !!c.get("manages") }));
   });
 
   // Gemini through the app owner's connected key (see gemini.ts). Anyone who can open the app can use it.
@@ -286,7 +286,7 @@ export function runtimeApi() {
   api.post("/connectors/:name/fetch", async (c) => {
     await requireSource(c, c.req.param("name"));
     const body = await objectBody(c, '{ "url": "/v1/..." }', 'Use formelab.connectors.fetch("name", "/path").', ["The request body is larger than 1 MB.", "Send less data."]);
-    return c.json(await connectorFetch(c.env, c.get("site"), c.get("user"), c.req.param("name"), body));
+    return c.json(await connectorFetch(c.env, c.get("site"), c.get("user"), c.req.param("name"), body, { role: c.get("role") ?? null, manages: !!c.get("manages") }));
   });
 
   // Google Sheets through the app owner's connected Google account (see sheets.ts).

@@ -386,15 +386,44 @@ Builds on what exists (behind `connected_apps`): Google Sheets (`src/sheets.ts`)
   grants nothing (`sheet_not_allowed`, the owner's Google sharing), and is usually in the code
   already.
 
-### Step 6b: Supabase per person (not started)
+### Step 6b: Supabase per person (built Nov 27, 2026, behind a feature)
 
 Supabase's RLS trusts only a JWT it can verify (`auth.jwt()`), so "send the person's identity"
 needs Formelab to sign a short-lived token per call. A plain header can be forged by anyone with the
-project's anon key, and a `service_role` key skips RLS entirely. Options to check: signing with the
-project's JWT secret (a second, very powerful secret to store) or Formelab as a third-party auth
-provider (depends on which providers Supabase accepts). Either way the owner writes RLS policies
-that read the email from the token. Until then the guide warns never to give a connector the
-`service_role` key when people below editor can use it.
+project's anon key, and a `service_role` key skips RLS entirely.
+
+#### Decided (Nov 27, 2026)
+
+- **Formelab is an OIDC issuer the project trusts.** Supabase's third-party auth accepts a
+  **Custom OIDC** provider: it reads the issuer's `/.well-known/openid-configuration` and JWKS and
+  verifies asymmetric tokens with a `kid`; tokens without a `role` claim run as `anon`. This beats
+  storing the project's JWT secret, or having owners import a Formelab key, both of which would give
+  Formelab a key that also signs `service_role` tokens.
+- **One issuer and ES256 key pair per connector** (`src/supabaseid.ts`, migration `0031`):
+  `<aiOrigin>/oidc/c/<connector id>`, public and cacheable. The private key is encrypted like the
+  connector's key (AAD `connector:<id>:signing`). Separate keys mean a token for one project is
+  never accepted by another, whatever Supabase checks of `iss` or `aud`. Turning the setting off
+  deletes the pair; turning it on again makes a new one (that's rotation, for now).
+- **A fresh token per call** through the connector (`connectors.fetch`, or `secrets.proxy` by its
+  name): `iss`, `sub` and `email` (the normalized email), `role: "authenticated"` always,
+  `formelab_role` (the person's role from `formelab.json`), `formelab_manages` (owner or editor),
+  `formelab_app`, `aud: "authenticated"`, 60 seconds. The key goes as `apikey`, the token as
+  `Authorization: Bearer`. The token is redacted from what the API answers. Without a signed-in
+  person the call is refused.
+- **Guard rails.** While identity is on, the connector may only call `<ref>.supabase.co` hosts, and
+  its key can't be a secret key (`sb_secret_…`) or a legacy `service_role` JWT. With the feature off
+  for the owner, calls through a connector that has it on are refused, never sent without identity.
+- **Access rules unchanged.** `sources.connectors` still decides which roles may use the connector;
+  Supabase's policies decide the rows. Policies read `auth.jwt() ->> 'email'`; `auth.uid()` fails
+  because the subject isn't a UUID.
+- **Feature flag** `supabase_identity`, following the connector's owner.
+- **Checked on a test project (Nov 27, 2026).** On hosted Supabase, a token from an issuer the
+  project hasn't registered is refused (`PGRST301`). Still to check once the test issuer is
+  registered: whether a trusted issuer's `role: "service_role"` is honoured, and whether a wrong
+  `iss` or `aud` is refused. The feature stays off until then.
+- **Known gaps.** No key rotation beyond off and on. Supabase custom domains aren't allowed as
+  hosts. Calls from `supabase-js` in the browser skip Formelab and carry no identity (the guide says
+  so). The app's AI address (step 5) offers no Supabase tools.
 
 ### Checked (Nov 22, 2026): what people an app is shared with can do today
 
@@ -506,3 +535,4 @@ Thanksgiving Menu. Example cases:
 | 17 | Invite link | The app's address, no token; settings "Remove this person" for owner and sharers |
 | 18 | App sign-in and records (B, C) | `app_user` off the waitlist, an account status Formelab's pages treat as signed out; non-members keep no record; deletion at removal time |
 | 19 | Step 5 address | Each app host its own OAuth server; tokens bound to the app and tagged with `siteId`; access and role checked on every call; tools per record type from the rules |
+| 20 | Step 6b Supabase per person | Formelab as a Custom OIDC issuer, one key per connector; 60-second tokens with `role: "authenticated"` only; Supabase hosts and publishable keys only; behind `supabase_identity` until the `service_role` check is done |
