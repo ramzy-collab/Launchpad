@@ -135,6 +135,13 @@ describe("each person's identity sent to Supabase", () => {
     expect(after).toContain("Custom OIDC");
     // The starter policies let in only the apps that use the connector, by id.
     expect(after).toContain(`using (auth.jwt() -&gt;&gt; &#39;formelab_app&#39; in (&#39;${site.id}&#39;));`);
+    // An app's name is text editors can change: it never goes into the SQL, even with a line break in it.
+    await env.DB.prepare("UPDATE sites SET title = ? WHERE id = ?").bind("Evil\ndrop table leads; --", site.id).run();
+    const named = await (await call("/app/connected/db", { as: owner })).text();
+    const sql = /<pre class="cx-code">([\s\S]*?)<\/pre>/g;
+    const blocks = [...named.matchAll(sql)].map((m) => m[1]!).join("\n");
+    expect(blocks).not.toContain("drop table");
+    expect(named).toContain("Evil"); // shown, as text, outside the SQL
   });
 
   it("explains it in the guide while the feature is on, with no flag markers left over", async () => {

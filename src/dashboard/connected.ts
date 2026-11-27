@@ -161,12 +161,12 @@ const ACTIVITY: Record<string, (d: Record<string, unknown>) => string> = {
  * connector, and a token's formelab_role and formelab_manages only mean something in the app it came
  * from, so the first, restrictive policy lets in only the apps the owner meant, by id.
  */
-function identitySql(apps: { id: string; name: string }[]): string {
-  const ids = apps.length ? apps.map((a) => `'${a.id}'`).join(", ") : "'<app id>'";
-  const names = apps.length ? ` -- ${apps.map((a) => a.name).join(", ")}` : "";
+function identitySql(apps: { id: string }[]): string {
+  // Only Formelab's own ids go into SQL the owner will run: app names are text editors can change.
+  const ids = apps.filter((a) => /^s_[a-z2-7]{1,40}$/.test(a.id)).map((a) => `'${a.id}'`);
   return `-- Only these apps' calls, whatever else uses this connector later.
 create policy "Only my apps" on leads as restrictive to authenticated
-  using (auth.jwt() ->> 'formelab_app' in (${ids}));${names}
+  using (auth.jwt() ->> 'formelab_app' in (${ids.join(", ") || "'<app id>'"}));
 
 -- Then who sees which rows.
 create policy "Own rows" on leads for select to authenticated
@@ -183,6 +183,7 @@ function identityBlock(k: { name: string; identity: boolean }, issuer: string, a
     <div class="linkbox"><code>${e(issuer)}</code><button type="button" class="small" data-copy-text="${e(issuer)}" data-copied="Issuer URL copied" aria-label="Copy the issuer URL">Copy</button></div>
     <p class="muted">Then write row-level security policies that read the person from the token: <code>auth.jwt() -&gt;&gt; 'email'</code>, <code>'formelab_role'</code> (their role in the app's rules), <code>'formelab_manages'</code> (true for the app's owner and editors) and <code>'formelab_app'</code> (which app is calling). <code>auth.uid()</code> doesn't work here.</p>
     <p class="muted"><strong>Check the app too.</strong> Any of your apps you let use ${e(k.name)} sends tokens to this project, and a role or manager status only counts in the app it came from: an editor of one app would otherwise get what managers of another get. The first policy below lets in only the apps that use it now.</p>
+    ${apps.length ? `<p class="muted">The apps in it: ${apps.map((a) => `${e(a.name)} (<code>${e(a.id)}</code>)`).join(", ")}.</p>` : ""}
     <pre class="cx-code">${e(identitySql(apps))}</pre>`
     : "";
   return `<h2>Each person's identity</h2>
