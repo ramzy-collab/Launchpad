@@ -550,8 +550,18 @@ Supabase is a custom connector here: role level only. Never give a connector Sup
 identity" sends, with every call, a 60-second token naming the signed-in person, so the project's
 own row-level security decides what each person sees. Write the policies with `auth.jwt()`:
 `auth.jwt() ->> 'email'` is the person, `'formelab_role'` their role from `formelab.json`, and
-`'formelab_manages'` is true for the app's owner and editors. `auth.uid()` doesn't work (the subject
-is an email, not a UUID). Call it through Formelab:
+`'formelab_manages'` is true for the app's owner and editors, and `'formelab_app'` is the app's id.
+`auth.uid()` doesn't work (the subject is an email, not a UUID). A role and manager status only count
+in the app they came from, and the owner's other apps can use the same connector, so the owner adds a
+restrictive policy that lets in only the right apps (the connector's page in Formelab shows it with
+their ids):
+
+```sql
+create policy "Only my apps" on leads as restrictive to authenticated
+  using (auth.jwt() ->> 'formelab_app' in ('s_abc123'));
+```
+
+Call it through Formelab:
 
 ```js
 const res = await formelab.connectors.fetch("db", "/rest/v1/leads?select=*");

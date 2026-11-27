@@ -413,6 +413,12 @@ project's anon key, and a `service_role` key skips RLS entirely.
 - **Guard rails.** While identity is on, the connector may only call `<ref>.supabase.co` hosts, and
   its key can't be a secret key (`sb_secret_…`) or a legacy `service_role` JWT. With the feature off
   for the owner, calls through a connector that has it on are refused, never sent without identity.
+- **Tokens are bound to their app by policy (security review, Nov 27, 2026).** One connector can be
+  used by several of its owner's apps, and `formelab_role` and `formelab_manages` only mean something
+  in the app the token came from: an editor of a side app would get a manager's rows in the main
+  one. The connector's page gives, first, a restrictive policy on `formelab_app` with the ids of the
+  apps using it now, and says why; the guide says the same. A per-app issuer was the alternative,
+  but it would make the owner register one issuer per app in Supabase.
 - **Access rules unchanged.** `sources.connectors` still decides which roles may use the connector;
   Supabase's policies decide the rows. Policies read `auth.jwt() ->> 'email'`; `auth.uid()` fails
   because the subject isn't a UUID.

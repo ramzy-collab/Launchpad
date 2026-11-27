@@ -64,7 +64,7 @@ As Owner, under Connected apps, **+ Custom connector**: name `db`, the publishab
 | ID | Steps | Expected |
 |---|---|---|
 | `SI-01` | As Owner, open the `db` connector's page. | An **Each person's identity** section with a **Send each person's identity** switch, off. No issuer URL yet. |
-| `SI-02` | Turn the switch on. | The page reloads with "On. Now add the issuer URL in Supabase." It shows the issuer URL (`https://<test deploy>/oidc/c/con_…`) with **Copy**, the Supabase steps (Third-Party Auth, Custom OIDC) and a starter policy. |
+| `SI-02` | Turn the switch on. | The page reloads with "On. Now add the issuer URL in Supabase." It shows the issuer URL (`https://<test deploy>/oidc/c/con_…`) with **Copy**, the Supabase steps (Third-Party Auth, Custom OIDC), a note that a role only counts in its own app, and two starter policies: first a restrictive "Only my apps" naming Leads DB's id, then "Own rows". |
 | `SI-03` | Open `<issuer URL>/.well-known/openid-configuration` in a private window, then `<issuer URL>/jwks.json`. | Both open without signing in. The first names the issuer URL exactly and a `jwks_uri`. The second has one key with a `kid` and no `d` field. |
 | `SI-04` | In Supabase (the test project): Authentication, Sign In / Providers, **Third-Party Auth**, Add provider, **Custom OIDC**. Paste the issuer URL. | Supabase accepts it and lists it. |
 
@@ -77,6 +77,7 @@ As Owner, under Connected apps, **+ Custom connector**: name `db`, the publishab
 | `RW-03` | As Owner, press **Load leads**. | Both, since the policy lets managers see everything. |
 | `RW-04` | As Rep A, press **Load vault**. | Nothing (an empty list): no policy lets anyone read it. |
 | `RW-05` | As Owner, open Leads DB's Activity. | Lines for the calls through `db`, under each person. |
+| `RW-07` | As Owner, make a second app, "Side app", with the same `formelab.json`, let it use `db`, and make Rep A its Editor. In Supabase, add the "Only my apps" policy from the connector's page with only Leads DB's id. As Rep A, press **Load leads** in Side app. | Nothing: Side app isn't on the policy's list, even though Rep A manages it. Without that policy, Rep A would see Bo too. |
 | `RW-06` | In Supabase, change the policy to `using (false)`. As Owner, press **Load leads**. Put the policy back afterwards. | Nothing: Supabase's policies decide, not Formelab. |
 
 ## 5. Guard rails

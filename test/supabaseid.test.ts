@@ -125,7 +125,7 @@ describe("each person's identity sent to Supabase", () => {
   });
 
   it("shows the switch and, once on, the issuer URL on the connector's page", async () => {
-    const { owner, id } = await setup();
+    const { owner, id, site } = await setup();
     const before = await (await call("/app/connected/db", { as: owner })).text();
     expect(before).toContain("Send each person's identity");
     expect(before).not.toContain(`/oidc/c/${id}`);
@@ -133,6 +133,8 @@ describe("each person's identity sent to Supabase", () => {
     const after = await (await call("/app/connected/db", { as: owner })).text();
     expect(after).toContain(`<code>https://example.com/oidc/c/${id}</code>`);
     expect(after).toContain("Custom OIDC");
+    // The starter policies let in only the apps that use the connector, by id.
+    expect(after).toContain(`using (auth.jwt() -&gt;&gt; &#39;formelab_app&#39; in (&#39;${site.id}&#39;));`);
   });
 
   it("explains it in the guide while the feature is on, with no flag markers left over", async () => {
