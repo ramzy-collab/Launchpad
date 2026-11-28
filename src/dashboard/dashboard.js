@@ -596,10 +596,23 @@
   document.addEventListener("change", function (ev) {
     var box = ev.target.closest("[data-connector-identity]");
     if (!box) return;
+    if (box.checked && !confirm("This gives Formelab full access to the Supabase project: anyone who got this connector's signing key could read and change everything in it, the same as with its service key. Turn it on?")) { box.checked = false; return; }
     api("PATCH", "/connectors/" + encodeURIComponent(box.dataset.name), { identity: box.checked }).then(function () {
       flashNext(box.checked ? "On. Now add the issuer URL in Supabase." : "Off. Calls no longer say who's asking.");
       location.reload();
     }, function (e) { box.checked = !box.checked; toast(e.message, true); });
+  });
+
+  // "Replace signing key" on a Supabase connector's page.
+  document.addEventListener("click", function (ev) {
+    var btn = ev.target.closest("[data-identity-rotate]");
+    if (!btn) return;
+    if (!confirm("Replace the signing key? Calls through this connector can fail for up to 30 minutes, until Supabase reads the new key.")) return;
+    btn.disabled = true;
+    api("POST", "/connectors/" + encodeURIComponent(btn.dataset.name) + "/identity-key").then(function () {
+      flashNext("Signing key replaced. Supabase picks up the new one within about 30 minutes.");
+      location.reload();
+    }, function (e) { btn.disabled = false; toast(e.message, true); });
   });
 
   // The left menu on narrow screens.

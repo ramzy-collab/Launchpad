@@ -299,6 +299,23 @@ export async function updateConnector(ctx: Ctx, name: string, input: ConnectorIn
   return view((await loadRow(ctx.env, ctx.user.email, name))!);
 }
 
+/**
+ * "Replace signing key" (spec step 6b): a new key pair for the connector's identity tokens, used from
+ * now on, and the only one its JWKS publishes. Supabase accepts any role from a trusted issuer, so a
+ * leaked signing key is a full-access credential for the project: this is how to cut it off. Calls
+ * can fail until Supabase reads the new key (up to about 30 minutes).
+ */
+export async function replaceIdentityKey(ctx: Ctx, name: string): Promise<ConnectorView> {
+  const row = await ownConnector(ctx, name);
+  if (row.identity !== "supabase") throw badRequest(`${name} doesn't send each person's identity.`, "Turn that on first.");
+  const k = await newSigningKey(ctx.env, row.id);
+  await ctx.env.DB.prepare("UPDATE connectors SET signing_kid = ?, signing_public = ?, signing_iv = ?, signing_private = ?, updated_at = ? WHERE id = ?")
+    .bind(k.kid, k.publicJwk, k.iv, k.ciphertext, now(), row.id)
+    .run();
+  await audit(ctx.env, ctx.user.email, "connector_identity_key", null, { connector: name });
+  return view((await loadRow(ctx.env, ctx.user.email, name))!);
+}
+
 /** Deletes the connector and its key. The apps that used it can't reach the service any more. */
 export async function deleteConnector(ctx: Ctx, name: string): Promise<{ ok: true; apps: number }> {
   const row = await ownConnector(ctx, name);
@@ -475,7 +492,7 @@ export async function useCounts(env: Env, email: string): Promise<Map<string, nu
 export async function connectorActivity(env: Env, email: string, name: string, limit = 8): Promise<{ at: number; action: string; detail: Record<string, unknown> }[]> {
   const { results } = await env.DB.prepare(
     `SELECT at, action, detail FROM audit
-      WHERE actor = ? AND action IN ('connector_create', 'connector_update', 'connector_key', 'connector_move') AND json_extract(detail, '$.connector') = ?
+      WHERE actor = ? AND action IN ('connector_create', 'connector_update', 'connector_key', 'connector_move', 'connector_identity_key') AND json_extract(detail, '$.connector') = ?
       ORDER BY id DESC LIMIT ?`,
   )
     .bind(email, name, limit)

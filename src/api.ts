@@ -6,7 +6,7 @@ import { ApiError, badRequest, err, errorBody, jsonError, onError } from "./erro
 import { adminOrigin, hostKind } from "./hosts";
 import { sendRoleInvites, setStar, transferOwnership, withoutAccounts } from "./sharing";
 import { removeSavedKey, replaceSavedKey } from "./connections";
-import { createConnector, deleteConnector, detachConnector, listConnectors, moveSavedKeys, planKeyMove, updateConnector } from "./connectors";
+import { createConnector, deleteConnector, detachConnector, listConnectors, moveSavedKeys, planKeyMove, replaceIdentityKey, updateConnector } from "./connectors";
 import {
   copySite,
   createNamespace,
@@ -275,6 +275,7 @@ export function managementApi(kind: "admin" | "deploy") {
     api.get("/connectors/saved-keys", async (c) => c.json(await planKeyMove(ctxOf(c))));
     api.post("/connectors/saved-keys", async (c) => c.json(await moveSavedKeys(ctxOf(c))));
     api.patch("/connectors/:name", async (c) => c.json(await updateConnector(ctxOf(c), c.req.param("name"), await jsonBody(c))));
+    api.post("/connectors/:name/identity-key", async (c) => c.json(await replaceIdentityKey(ctxOf(c), c.req.param("name"))));
     api.delete("/connectors/:name", async (c) => c.json(await deleteConnector(ctxOf(c), c.req.param("name"))));
     api.delete("/sites/:id/connectors/:name", async (c) => c.json(await detachConnector(ctxOf(c), c.req.param("id"), c.req.param("name"))));
     api.get("/services/gemini", async (c) => c.json(await geminiStatus(c.env, c.get("user").email)));
