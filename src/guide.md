@@ -569,7 +569,9 @@ const rows = res.json(); // only the rows this person's policies allow
 ```
 
 Never use `supabase-js` in the browser for this: those calls skip Formelab and reach Supabase
-without anyone's identity. The connector must use the project's publishable (anon) key.
+without anyone's identity. The connector must use the project's publishable (anon) key. Turning
+this on gives Formelab full access to the project (Supabase accepts any role from an issuer it
+trusts), so it's the owner's choice, made on the connector's page in Formelab.
 <!-- /flag:supabase_identity -->
 <!-- /flag:connected_apps -->
 

@@ -155,4 +155,35 @@ describe("each person's identity sent to Supabase", () => {
     expect(without).toContain("Supabase is a custom connector here");
     await flag("supabase_identity", "on");
   });
+
+  it("replaces the signing key on its own, keeping identity on, and stops publishing the old one", async () => {
+    const { owner, id, fetchDb } = await setup();
+    const rotate = (as: string) => call(`/_api/admin/connectors/db/identity-key`, { as, method: "POST" });
+    expect((await rotate(owner)).status).toBe(400); // not on yet
+    await patch("db", { identity: true }, owner);
+    const jwks = async () => (await (await call(`/oidc/c/${id}/jwks.json`)).json<{ keys: { kid: string }[] }>()).keys;
+    const before = await jwks();
+    const res = await rotate(owner);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ identity: true });
+    const after = await jwks();
+    expect(after).toHaveLength(1);
+    expect(after[0]!.kid).not.toBe(before[0]!.kid);
+    // Calls are signed with the new key.
+    let sent: Request | null = null;
+    onOutbound(async (req) => {
+      sent = req.clone();
+      return Response.json([]);
+    });
+    await fetchDb(REP);
+    expect(decodeProtectedHeader(sent!.headers.get("authorization")!.replace(/^Bearer /, "")).kid).toBe(after[0]!.kid);
+    // Only the connector's owner can.
+    const other = `sb3-${uniq()}@example.com`;
+    await accounts(other);
+    expect((await rotate(other)).status).toBe(404);
+    const page = await (await call("/app/connected/db", { as: owner })).text();
+    expect(page).toContain("This gives Formelab full access to the project.");
+    expect(page).toContain("Replace signing key");
+    expect(page).toContain("You replaced the signing key for each person&#39;s identity");
+  });
 });

@@ -63,8 +63,9 @@ As Owner, under Connected apps, **+ Custom connector**: name `db`, the publishab
 
 | ID | Steps | Expected |
 |---|---|---|
-| `SI-01` | As Owner, open the `db` connector's page. | An **Each person's identity** section with a **Send each person's identity** switch, off. No issuer URL yet. |
-| `SI-02` | Turn the switch on. | The page reloads with "On. Now add the issuer URL in Supabase." It shows the issuer URL (`https://<test deploy>/oidc/c/con_…`) with **Copy**, the Supabase steps (Third-Party Auth, Custom OIDC), a note that a role only counts in its own app, and two starter policies: first a restrictive "Only my apps" naming Leads DB's id, then "Own rows". |
+| `SI-01` | As Owner, open the `db` connector's page. | An **Each person's identity** section with a **Send each person's identity** switch, off, and a note starting "This gives Formelab full access to the project." No issuer URL yet. |
+| `SI-05` | Turn the switch on, and choose **Cancel** in the question that appears. | The question says Formelab gets full access to the project. After Cancel the switch is still off, and a reload shows it off. |
+| `SI-02` | Turn the switch on, and choose **OK** in the question. | The page reloads with "On. Now add the issuer URL in Supabase." It shows the issuer URL (`https://<test deploy>/oidc/c/con_…`) with **Copy**, the Supabase steps (Third-Party Auth, Custom OIDC), a note that a role only counts in its own app, and two starter policies: first a restrictive "Only my apps" naming Leads DB's id, then "Own rows". |
 | `SI-03` | Open `<issuer URL>/.well-known/openid-configuration` in a private window, then `<issuer URL>/jwks.json`. | Both open without signing in. The first names the issuer URL exactly and a `jwks_uri`. The second has one key with a `kid` and no `d` field. |
 | `SI-04` | In Supabase (the test project): Authentication, Sign In / Providers, **Third-Party Auth**, Add provider, **Custom OIDC**. Paste the issuer URL. | Supabase accepts it and lists it. |
 
@@ -88,6 +89,8 @@ As Owner, under Connected apps, **+ Custom connector**: name `db`, the publishab
 | `GR-02` | Change its address to `api.example.com`. | Refused: it can only call a Supabase project's address. |
 | `GR-03` | Turn the switch off. Open `<issuer URL>/jwks.json`. Press **Load leads** as Rep A. | The JWKS answers "Not found". Rep A gets nothing (the call no longer carries an identity, so Supabase treats it as signed out). |
 | `GR-04` | Turn it on again. | A new issuer key (a different `kid` in the JWKS). Supabase picks it up within about 30 minutes; until then Load leads may fail. |
+| `GR-08` | With the switch on, press **Replace signing key** and confirm. Open `<issuer URL>/jwks.json`. | A message that Supabase picks up the new key within about 30 minutes. The JWKS has one key with a new `kid`. The switch is still on. Activity: "You replaced the signing key for each person's identity". |
+| `GR-09` | Within a minute of GR-08, press **Load leads** as Rep A. Try again after 30 minutes. | It may fail at first (Supabase still has the old key). After 30 minutes it works again, with only Ada. |
 | `GR-05` | As Other owner, open their connector's page. | No **Each person's identity** section (the feature is off for them). |
 | `GR-06` | As Owner, turn `supabase_identity` off for yourself (Features), then press **Load leads** as Rep A. Turn it back on afterwards. | Refused ("isn't available yet"), never sent without an identity. |
 | `GR-07` | As Rep A, open the developer tools' Network tab and press **Load leads**. Look at the `/_api/connectors/db/fetch` response. | No token in it (nothing starting `eyJ`), and no key. |

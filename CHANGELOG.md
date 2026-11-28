@@ -2,6 +2,11 @@
 
 Everything that has changed in Formelab, newest first. Shown in the admin panel under Changelog.
 
+## 2026-11-28
+
+- **Supabase person by person: what it gives Formelab, said plainly, and a way to replace the key** (behind the "Each person's identity sent to Supabase" feature). Testing on a real Supabase project showed that Supabase accepts any role in a token from an issuer it trusts, including the one that skips every policy. Formelab only ever sends "authenticated", but a connector's signing key can do as much as the project's service key. The connector's page now says so next to **Send each person's identity**, and turning it on asks you to confirm. If you think the key may have leaked, **Replace signing key** makes a new one and stops publishing the old one, without turning anything off. Calls can fail for up to 30 minutes, until Supabase reads the new key.
+- **Test plan:** [Supabase person by person](/test-plans/2026-11-27-supabase-identity), now 29 browser test cases to hand to Claude Cowork.
+
 ## 2026-11-27
 
 - **Supabase can see who's asking** (behind the "Each person's identity sent to Supabase" feature). A custom connector for a Supabase project has a new switch on its page, **Send each person's identity**. With it on, every call an app makes through the connector carries a token naming the signed-in person, good for 60 seconds and signed by Formelab, so the project's own row-level security decides what each person sees. The token also says their role in the app and whether they manage it. The connector's page gives the issuer URL to add in Supabase (Third-Party Auth, Custom OIDC) and starter policies, the first of which lets in only the apps that use the connector, since a role or manager status only counts in the app it came from. While it's on, the connector only calls the project's `supabase.co` address and won't take the project's secret or service key, which would skip those policies. Each connector has its own signing key, so its tokens only work for its own project. The guide's Access rules section shows how to write the policies. Also fixed: guide sections behind a feature inside another feature's section now show or hide correctly.

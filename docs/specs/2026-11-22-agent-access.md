@@ -423,11 +423,31 @@ project's anon key, and a `service_role` key skips RLS entirely.
   Supabase's policies decide the rows. Policies read `auth.jwt() ->> 'email'`; `auth.uid()` fails
   because the subject isn't a UUID.
 - **Feature flag** `supabase_identity`, following the connector's owner.
-- **Checked on a test project (Nov 27, 2026).** On hosted Supabase, a token from an issuer the
-  project hasn't registered is refused (`PGRST301`). Still to check once the test issuer is
-  registered: whether a trusted issuer's `role: "service_role"` is honoured, and whether a wrong
-  `iss` or `aud` is refused. The feature stays off until then.
-- **Known gaps.** No key rotation beyond off and on. Supabase custom domains aren't allowed as
+- **Checked on a test project (Nov 27 to 28, 2026).** `formelab-oidc-test`, with a throwaway issuer
+  (an Edge Function with its own key) registered as Custom OIDC, a per-person `leads` policy and a
+  `vault` table only `service_role` may read:
+
+  | Token | Result |
+  |---|---|
+  | From an issuer the project hasn't registered | Refused (`PGRST301`) |
+  | Trusted issuer, `role: "authenticated"`, Rep A | Only Rep A's row |
+  | Same, on `vault` | Nothing |
+  | Trusted issuer, `role: "service_role"` | Every row of `leads`, and `vault`: **policies skipped** |
+  | Wrong `aud` | Accepted |
+  | Wrong `iss`, signed with the trusted key | Accepted |
+  | `role: "anon"` | Nothing |
+
+  So Supabase trusts the **key**, not the issuer name or audience, and obeys any `role` it signs. A
+  connector's signing key is a full-access credential for its project, the same power as the
+  service key the connector refuses. Per-connector keys are what keep projects apart.
+- **Decided (Nov 28, 2026): ship it, with that power stated.** Owners already trust Formelab with
+  their other keys, so this is the owner's choice with the risk next to it, not a reason to drop
+  per-person Supabase. The connector's page says "This gives Formelab full access to the project"
+  and why, and turning it on asks to confirm the same. **Replace signing key** makes a new pair and
+  publishes only it, so a suspected leak can be cut off without turning identity off; calls can fail
+  until Supabase reads the new key (about 30 minutes). The private key stays encrypted at rest and
+  never leaves the server.
+- **Known gaps.** Replacing the key isn't graceful (no overlap of old and new keys). Supabase custom domains aren't allowed as
   hosts. Calls from `supabase-js` in the browser skip Formelab and carry no identity (the guide says
   so). The app's AI address (step 5) offers no Supabase tools.
 
@@ -541,4 +561,4 @@ Thanksgiving Menu. Example cases:
 | 17 | Invite link | The app's address, no token; settings "Remove this person" for owner and sharers |
 | 18 | App sign-in and records (B, C) | `app_user` off the waitlist, an account status Formelab's pages treat as signed out; non-members keep no record; deletion at removal time |
 | 19 | Step 5 address | Each app host its own OAuth server; tokens bound to the app and tagged with `siteId`; access and role checked on every call; tools per record type from the rules |
-| 20 | Step 6b Supabase per person | Formelab as a Custom OIDC issuer, one key per connector; 60-second tokens with `role: "authenticated"` only; Supabase hosts and publishable keys only; behind `supabase_identity` until the `service_role` check is done |
+| 20 | Step 6b Supabase per person | Formelab as a Custom OIDC issuer, one key per connector; 60-second tokens with `role: "authenticated"` only; Supabase hosts and publishable keys only; Supabase obeys `service_role` from a trusted key, so the page says the key is full access and Replace signing key cuts it off |

@@ -152,6 +152,7 @@ const ACTIVITY: Record<string, (d: Record<string, unknown>) => string> = {
   connector_create: () => "You made this connector",
   connector_update: (d) => `You changed its ${(Array.isArray(d.fields) ? d.fields.map(String) : []).map((f) => (f === "auth" ? "way of sending the key" : f === "hosts" ? "hosts" : f === "label" ? "name" : f)).join(", ") || "settings"}`,
   connector_key: () => "You replaced the key",
+  connector_identity_key: () => "You replaced the signing key for each person's identity",
   connector_move: (d) => `You turned the saved keys${d.apps ? ` of ${d.apps} app${d.apps === 1 ? "" : "s"}` : ""} into this connector`,
 };
 
@@ -184,11 +185,15 @@ function identityBlock(k: { name: string; identity: boolean }, issuer: string, a
     <p class="muted">Then write row-level security policies that read the person from the token: <code>auth.jwt() -&gt;&gt; 'email'</code>, <code>'formelab_role'</code> (their role in the app's rules), <code>'formelab_manages'</code> (true for the app's owner and editors) and <code>'formelab_app'</code> (which app is calling). <code>auth.uid()</code> doesn't work here.</p>
     <p class="muted"><strong>Check the app too.</strong> Any of your apps you let use ${e(k.name)} sends tokens to this project, and a role or manager status only counts in the app it came from: an editor of one app would otherwise get what managers of another get. The first policy below lets in only the apps that use it now.</p>
     ${apps.length ? `<p class="muted">The apps in it: ${apps.map((a) => `${e(a.name)} (<code>${e(a.id)}</code>)`).join(", ")}.</p>` : ""}
-    <pre class="cx-code">${e(identitySql(apps))}</pre>`
+    <pre class="cx-code">${e(identitySql(apps))}</pre>
+    <h3 class="subhead">If the signing key may have leaked</h3>
+    <p class="muted">Replace it: Formelab signs with a new key from now on and stops publishing the old one. Calls can fail for up to 30 minutes, until Supabase reads the new key.</p>
+    <button type="button" class="secondary" data-identity-rotate data-name="${e(k.name)}">Replace signing key</button>`
     : "";
   return `<h2>Each person's identity</h2>
     <p class="muted">For a Supabase project. With every call, Formelab sends a token naming the signed-in person, good for 60 seconds, so your row-level security policies decide what each person sees. Use the project's publishable (anon) key, never its secret one.</p>
-    <div class="setting"><div class="setting-text"><strong id="lbl-identity">Send each person's identity</strong><span>Only to your project's supabase.co address.</span></div><label class="switch"><input type="checkbox" role="switch" data-connector-identity data-name="${e(k.name)}" aria-labelledby="lbl-identity"${k.identity ? " checked" : ""}><span aria-hidden="true"></span></label></div>
+    <p class="note" id="identity-power"><strong>This gives Formelab full access to the project.</strong> Supabase accepts any role in a token from an issuer it trusts, including service_role, which skips your policies. Formelab only ever sends "authenticated", but anyone who got this connector's signing key could read and change everything in the project, the same as with its service key. Formelab keeps the key encrypted and it never leaves the server. Turn this on only if you trust Formelab with that.</p>
+    <div class="setting"><div class="setting-text"><strong id="lbl-identity">Send each person's identity</strong><span>Only to your project's supabase.co address.</span></div><label class="switch"><input type="checkbox" role="switch" data-connector-identity data-name="${e(k.name)}" aria-labelledby="lbl-identity" aria-describedby="identity-power"${k.identity ? " checked" : ""}><span aria-hidden="true"></span></label></div>
     ${setup}`;
 }
 
