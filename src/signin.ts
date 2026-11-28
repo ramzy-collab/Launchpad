@@ -202,7 +202,7 @@ ${v.app ? "" : topNav(v.admin, false)}
       <p>${intro}</p>
       ${alert}
       ${body}
-      ${v.app ? `<p class="hint center-text">Powered by <a class="tlink" href="${e(v.app.formelab)}">Formelab</a></p>` : ""}
+      ${v.app ? `<p class="hint center-text">Powered by <a class="tlink" href="${e(v.app.formelab)}">Formelab</a> · <a class="tlink" href="${e(v.app.formelab)}privacy">Privacy</a></p>` : ""}
     </div>
   </div>
 </main>

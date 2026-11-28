@@ -369,7 +369,7 @@ ${local}
 <input type="hidden" name="handle" value="${e(handle)}">
 <div class="row"><button class="primary" name="decision" value="approve">Allow</button><button name="decision" value="deny">Deny</button></div>
 </form>
-<p class="powered">Powered by <a href="/">Formelab</a></p>
+<p class="powered">Powered by <a href="/">Formelab</a> · <a href="/privacy">Privacy</a></p>
 </main></body></html>`;
 }
 
