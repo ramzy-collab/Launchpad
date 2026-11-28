@@ -185,7 +185,7 @@ ${topNav()}
     </div>
   </section>
 
-  <div class="container"><footer><span>© 2026 Formelab</span><a href="/login">Log in</a></footer></div>
+  <div class="container"><footer><span>© 2026 Formelab</span><span><a href="/privacy">Privacy</a> · <a href="/login">Log in</a></span></footer></div>
 </main>
 
 <main class="screen" id="confirm" hidden>
