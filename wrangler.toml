@@ -85,6 +85,73 @@ allowed_sender_addresses = ["hello@formelab.ai"]
 enabled = true
 
 # ---------------------------------------------------------------------------
+# Staging: `npx wrangler deploy --env staging` (docs/staging.md). Its own Worker (formelab-staging),
+# domains, database, bucket, OAuth store and rate-limit counters, so nothing is shared with
+# production. ENVIRONMENT is "staging", never "dev": the DEV_USER sign-in bypass stays off.
+# Bindings must be repeated per env.
+# ---------------------------------------------------------------------------
+[env.staging]
+workers_dev = false
+routes = [
+  { pattern = "formelab-staging.com/*", zone_name = "formelab-staging.com" },
+  { pattern = "*.formelab-staging.com/*", zone_name = "formelab-staging.com" },
+  { pattern = "formelab-staging.app/*", zone_name = "formelab-staging.app" },
+  { pattern = "*.formelab-staging.app/*", zone_name = "formelab-staging.app" },
+]
+
+[env.staging.vars]
+DOMAIN = "formelab-staging.com"
+APP_DOMAIN = "formelab-staging.app"
+ENVIRONMENT = "staging"
+EMAIL_FROM = "Formelab staging <hello@formelab-staging.com>"
+
+[[env.staging.d1_databases]]
+binding = "DB"
+database_name = "launchpad-staging"
+database_id = "37531b25-23eb-49da-b93f-e3d50dea9dd7"
+migrations_dir = "migrations"
+
+[[env.staging.r2_buckets]]
+binding = "BUCKET"
+bucket_name = "launchpad-staging-sites"
+
+[[env.staging.kv_namespaces]]
+binding = "OAUTH_KV"
+id = "a15510d65c4e4ab2bc39ac479719c517"
+
+[[env.staging.ratelimits]]
+name = "PROXY_LIMITER"
+namespace_id = "2001"
+simple = { limit = 60, period = 60 }
+
+[[env.staging.ratelimits]]
+name = "WAITLIST_LIMITER"
+namespace_id = "2002"
+simple = { limit = 10, period = 60 }
+
+[[env.staging.ratelimits]]
+name = "LOGIN_LIMITER"
+namespace_id = "2003"
+simple = { limit = 20, period = 60 }
+
+[[env.staging.ratelimits]]
+name = "RESPONSES_LIMITER"
+namespace_id = "2004"
+simple = { limit = 5, period = 60 }
+
+[[env.staging.ratelimits]]
+name = "VIEWER_LIMITER"
+namespace_id = "2005"
+simple = { limit = 20, period = 60 }
+
+[[env.staging.send_email]]
+name = "EMAIL"
+allowed_sender_addresses = ["hello@formelab-staging.com"]
+
+[env.staging.observability]
+enabled = true
+
+# ---------------------------------------------------------------------------
 # Local development: `npm run dev` (wrangler dev --env dev).
 # No routes here, so wrangler keeps the real Host header and hosts like
 # http://app.localhost:8787 (web app) and http://hoops-7kq2.apps.localhost:8787 (an app) work.
