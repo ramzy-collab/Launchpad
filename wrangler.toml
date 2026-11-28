@@ -40,10 +40,11 @@ migrations_dir = "migrations"
 binding = "BUCKET"
 bucket_name = "launchpad-sites"
 
-# OAuth grants and tokens for the Claude chat connector. No id: `wrangler deploy`
-# creates the namespace on first deploy and remembers it.
+# OAuth grants and tokens for the AI connectors (formelab-oauth-kv). Pinned, so a deploy from any
+# machine binds the store that holds everyone's AI connections rather than making a new one.
 [[kv_namespaces]]
 binding = "OAUTH_KV"
+id = "6aa3d1cde40d4ddd9bd434036af5289b"
 
 # 60 secret-proxy calls per minute per site.
 [[ratelimits]]
