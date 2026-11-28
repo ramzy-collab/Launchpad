@@ -545,6 +545,32 @@ With `"own"` on a spreadsheet, people reach only their rows:
 
 Supabase is a custom connector here: role level only. Never give a connector Supabase's
 `service_role` key if people below editor can use it; it skips Supabase's row rules.
+<!-- flag:supabase_identity -->
+**Supabase, person by person.** A Supabase connector whose owner turned on "Send each person's
+identity" sends, with every call, a 60-second token naming the signed-in person, so the project's
+own row-level security decides what each person sees. Write the policies with `auth.jwt()`:
+`auth.jwt() ->> 'email'` is the person, `'formelab_role'` their role from `formelab.json`, and
+`'formelab_manages'` is true for the app's owner and editors, and `'formelab_app'` is the app's id.
+`auth.uid()` doesn't work (the subject is an email, not a UUID). A role and manager status only count
+in the app they came from, and the owner's other apps can use the same connector, so the owner adds a
+restrictive policy that lets in only the right apps (the connector's page in Formelab shows it with
+their ids):
+
+```sql
+create policy "Only my apps" on leads as restrictive to authenticated
+  using (auth.jwt() ->> 'formelab_app' in ('s_abc123'));
+```
+
+Call it through Formelab:
+
+```js
+const res = await formelab.connectors.fetch("db", "/rest/v1/leads?select=*");
+const rows = res.json(); // only the rows this person's policies allow
+```
+
+Never use `supabase-js` in the browser for this: those calls skip Formelab and reach Supabase
+without anyone's identity. The connector must use the project's publishable (anon) key.
+<!-- /flag:supabase_identity -->
 <!-- /flag:connected_apps -->
 
 **Members and roles.** People get roles inside the app, through `formelab.roles`. Only the owner,

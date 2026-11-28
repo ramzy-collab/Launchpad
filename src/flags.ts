@@ -24,6 +24,11 @@ export const FLAGS = {
     description:
       "Apps with access rules get their own address for AI tools, <app-host>/mcp: anyone who can open the app connects Claude, ChatGPT or another AI tool to it, signs in with the app's sign-in, and gets tools made from its formelab.json that see and change only what they may. Follows the app's owner. Off: those addresses answer \"not found\".",
   },
+  supabase_identity: {
+    label: "Each person's identity sent to Supabase",
+    description:
+      "A custom connector for a Supabase project can send, with every call, a 60-second token naming the signed-in person, signed by Formelab, so the project's row-level security decides what each person sees. The owner registers the connector's issuer in Supabase (Third-Party Auth, Custom OIDC). Follows the connector's owner. Off: the setting is hidden and connectors that have it on refuse calls.",
+  },
   responses: {
     label: "Responses (forms for anyone)",
     description:
@@ -127,7 +132,8 @@ export async function setFlag(env: Env, admin: User, rawName: string, rawState: 
  * features the person has, removed otherwise. Used for the build guide.
  */
 export function withFlags(text: string, enabled: Set<string>): string {
-  return text.replace(/<!-- flag:([a-z0-9_-]+) -->\n?([\s\S]*?)<!-- \/flag:\1 -->\n?/g, (_, name: string, body: string) => (enabled.has(name) ? body : ""));
+  // A kept block can hold flagged blocks of its own (Supabase identity inside connected apps).
+  return text.replace(/<!-- flag:([a-z0-9_-]+) -->\n?([\s\S]*?)<!-- \/flag:\1 -->\n?/g, (_, name: string, body: string) => (enabled.has(name) ? withFlags(body, enabled) : ""));
 }
 
 export async function enabledFlags(env: Env, user: FlagUser | null): Promise<Set<string>> {

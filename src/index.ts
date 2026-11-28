@@ -18,6 +18,7 @@ import { ASSET_VERSION, CONSENT_JS, DASHBOARD_JS, FORMELAB_CSS, GUIDE_MD, HOME_C
 import { AUTHORIZE_PATH, authorizeGet, authorizePost, oauthProvider } from "./oauth";
 import { runtimeApi } from "./runtime";
 import { appAccess } from "./members";
+import { oidcDiscovery, oidcJwks } from "./supabaseid";
 import { appAuthorizeGet, appAuthorizePost, appMcpRules, appOAuth, consentUrl, isAppOAuthPath } from "./appmcp";
 import { appCallback, appHandoff, handoffStart, loginCallback, loginStart, logout, safeReturn, workosEnabled } from "./login";
 import { legacyAppRedirect, noAccessPage, notFoundPage, plainPage, serveAppFile } from "./serve";
@@ -108,6 +109,9 @@ apex.post("/_api/waitlist", async (c) => {
 });
 for (const [path, handler] of assetRoutes) apex.get(path, handler);
 apex.get("/_assets/share.png", formelabShareImage);
+// Each connector's OIDC issuer for Supabase (spec step 6b, src/supabaseid.ts): public, since Supabase reads them.
+apex.get("/oidc/c/:id/.well-known/openid-configuration", oidcDiscovery);
+apex.get("/oidc/c/:id/jwks.json", oidcJwks);
 
 // Old dashboard and admin addresses on DOMAIN move to their own hosts.
 const moved = (origin: typeof appOrigin, prefix: string) => (c: Context<AppEnv>) => {

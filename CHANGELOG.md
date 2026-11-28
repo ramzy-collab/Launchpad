@@ -2,6 +2,11 @@
 
 Everything that has changed in Formelab, newest first. Shown in the admin panel under Changelog.
 
+## 2026-11-27
+
+- **Supabase can see who's asking** (behind the "Each person's identity sent to Supabase" feature). A custom connector for a Supabase project has a new switch on its page, **Send each person's identity**. With it on, every call an app makes through the connector carries a token naming the signed-in person, good for 60 seconds and signed by Formelab, so the project's own row-level security decides what each person sees. The token also says their role in the app and whether they manage it. The connector's page gives the issuer URL to add in Supabase (Third-Party Auth, Custom OIDC) and starter policies, the first of which lets in only the apps that use the connector, since a role or manager status only counts in the app it came from. While it's on, the connector only calls the project's `supabase.co` address and won't take the project's secret or service key, which would skip those policies. Each connector has its own signing key, so its tokens only work for its own project. The guide's Access rules section shows how to write the policies. Also fixed: guide sections behind a feature inside another feature's section now show or hide correctly.
+- **Test plan:** [Supabase person by person](/test-plans/2026-11-27-supabase-identity), 26 browser test cases to hand to Claude Cowork.
+
 ## 2026-11-25
 
 - **"Use with your AI" on an app's page** (behind the "Each app's address for AI tools" feature). An app that has its own address for AI tools shows it on its page in Formelab, Sharing tab, with **Copy address** and how to add it in Claude and ChatGPT, so its owner can pass it on. The guide's **Access rules** section explains the address to AI tools building apps, and they offer a "Use with your AI" section inside the app when asked.

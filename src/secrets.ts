@@ -434,16 +434,18 @@ export interface ProxyKey {
   inject?: (url: URL, headers: Headers, value: string) => void;
   /** Where to change its hosts, for the host_not_allowed hint. */
   hostsHint: string;
+  /** More values to keep out of what the API answers, like a connector's identity token (never placeholders). */
+  alsoHide?: string[];
 }
 
-export async function proxy(env: Env, site: SiteRow, viewer: User, name: string, req: ProxyRequest): Promise<ProxyResult> {
+export async function proxy(env: Env, site: SiteRow, viewer: User, name: string, req: ProxyRequest, who?: { role: string | null; manages: boolean }): Promise<ProxyResult> {
   validateSecretName(name);
   const parsed = parseProxyRequest(req);
   await checkRate(env, site, viewer);
   const saved = await env.DB.prepare("SELECT 1 FROM secrets WHERE site_id = ? AND name = ?").bind(site.id, name).first();
   // No saved key by that name: one of the connectors the app was built to use, if it has that one.
   if (!saved && siteUses(site, name)) {
-    return sendProxied(env, site, viewer, parsed, await connectorKey(env, site, name));
+    return sendProxied(env, site, viewer, parsed, await connectorKey(env, site, name, who && { email: viewer.email, ...who }));
   }
   const { secret, hosts } = await loadSecret(env, site.id, name);
   return sendProxied(env, site, viewer, parsed, {
@@ -499,13 +501,14 @@ export async function sendProxied(env: Env, site: SiteRow, viewer: User, req: Pa
     throw err(502, timedOut ? "upstream_timeout" : "upstream_error", timedOut ? "The API did not answer within 20 seconds." : "Could not reach the API.", "Check the URL and try again later.");
   }
   const capped = await readCapped(upstream, PROXY_MAX_RESPONSE);
-  const text = redact(capped.text, values);
+  const hidden = new Map([...values, ...(key.alsoHide ?? []).map((v, i) => [`hidden${i}`, v] as [string, string])]);
+  const text = redact(capped.text, hidden);
   const truncated = capped.truncated;
   await audit(env, viewer.email, "proxy", `${site.namespace}/${site.mount_path}`, { siteId: site.id, ...key.audit, host, status: upstream.status });
   const result: ProxyResult = { status: upstream.status, contentType: upstream.headers.get("content-type"), text, truncated };
   if (upstream.status >= 300 && upstream.status < 400) {
     const loc = upstream.headers.get("location");
-    if (loc) result.location = redact(loc, values);
+    if (loc) result.location = redact(loc, hidden);
   }
   return result;
 }

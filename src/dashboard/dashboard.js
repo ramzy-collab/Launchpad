@@ -586,6 +586,22 @@
   }
   document.querySelectorAll("[data-browser]").forEach(initBrowser);
 
+  // Copy buttons that carry their text (an app's address for AI tools, a connector's issuer URL).
+  document.addEventListener("click", function (ev) {
+    var btn = ev.target.closest("[data-copy-text]");
+    if (btn) copyText(btn.dataset.copyText, btn.dataset.copied || "Address copied");
+  });
+
+  // "Send each person's identity" on a Supabase connector's page: saved, then the page shows the setup.
+  document.addEventListener("change", function (ev) {
+    var box = ev.target.closest("[data-connector-identity]");
+    if (!box) return;
+    api("PATCH", "/connectors/" + encodeURIComponent(box.dataset.name), { identity: box.checked }).then(function () {
+      flashNext(box.checked ? "On. Now add the issuer URL in Supabase." : "Off. Calls no longer say who's asking.");
+      location.reload();
+    }, function (e) { box.checked = !box.checked; toast(e.message, true); });
+  });
+
   // The left menu on narrow screens.
   document.addEventListener("click", function (ev) {
     var toggle = ev.target.closest("[data-menu-toggle]");
@@ -1311,7 +1327,6 @@
         return;
       }
       if (t.closest("[data-copy-public]")) { copyText(S.publicUrl, "Link copied"); return; }
-      if (t.closest("[data-copy-text]")) { copyText(t.closest("[data-copy-text]").dataset.copyText, "Address copied"); return; }
       var choice = t.closest("[data-access-choice]");
       if (choice) {
         var toPublic = choice.dataset.accessChoice === "public";
