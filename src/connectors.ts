@@ -295,7 +295,7 @@ export async function updateConnector(ctx: Ctx, name: string, input: ConnectorIn
   set("updated_at", now(), "updated_at");
   await ctx.env.DB.prepare(`UPDATE connectors SET ${sets.join(", ")} WHERE id = ?`).bind(...binds, row.id).run();
   const fields = [...new Set(changed)].filter((f) => f !== "updated_at");
-  await audit(ctx.env, ctx.user.email, fields.length === 1 && fields[0] === "key" ? "connector_key" : "connector_update", null, { connector: name, fields });
+  await audit(ctx.env, ctx.user.email, fields.length === 1 && fields[0] === "key" ? "connector_key" : "connector_update", null, { connector: name, fields, ...(fields.includes("identity") ? { identity: input.identity === true } : {}) });
   return view((await loadRow(ctx.env, ctx.user.email, name))!);
 }
 

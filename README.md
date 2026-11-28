@@ -333,6 +333,10 @@ npm run dev                             # wrangler dev --env dev on http://local
   `http://<name>-<code>.apps.localhost:8787/`, the address the web app shows (browsers resolve
   `*.localhost` to your machine; for curl use `--resolve` or rely on curl's own `*.localhost` handling).
 - In dev the secret proxy also allows `http://` URLs (still never private addresses).
+- Two things need HTTPS and can't be tried locally: an app's own address for AI tools
+  (`<app>/mcp`, whose OAuth library only allows plain `http://` on `localhost` itself, not on
+  `*.apps.localhost`), and a Supabase connector's issuer URL, which shows `https://localhost/…`
+  in dev. Use a test deploy for those.
 
 ### Tests
 
