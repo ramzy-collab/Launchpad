@@ -133,6 +133,7 @@ describe("each person's identity sent to Supabase", () => {
     const after = await (await call("/app/connected/db", { as: owner })).text();
     expect(after).toContain(`<code>https://example.com/oidc/c/${id}</code>`);
     expect(after).toContain("Custom OIDC");
+    expect(after).toContain("You turned on sending each person&#39;s identity");
     // The starter policies let in only the apps that use the connector, by id.
     expect(after).toContain(`using (auth.jwt() -&gt;&gt; &#39;formelab_app&#39; in (&#39;${site.id}&#39;));`);
     // An app's name is text editors can change: it never goes into the SQL, even with a line break in it.

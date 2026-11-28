@@ -70,7 +70,7 @@ export function noAccessPage(site: SiteRow, user: User): Response {
   if (site.visibility === "all" && !user.active) {
     return plainPage(403, "Not yet", "This app is open to Formelab members, and your account is still on the waitlist. You'll be able to open it once you're let in, or if its owner shares it with you.");
   }
-  return plainPage(403, "Access denied", "You don't have access to this app. Ask its owner to add your email to the allow-list.");
+  return plainPage(403, "Access denied", "You don't have access to this app. Ask whoever sent it to you to add your email.");
 }
 
 /**

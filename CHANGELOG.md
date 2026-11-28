@@ -4,6 +4,7 @@ Everything that has changed in Formelab, newest first. Shown in the admin panel 
 
 ## 2026-11-28
 
+- **Fixes found in a local run-through.** A Supabase connector's activity now reads "You turned on sending each person's identity" (it said "You changed its identity"), and its Supabase steps match the text around them. The page for someone who can't open an app says "Ask whoever sent it to you to add your email" instead of mentioning an allow-list.
 - **Supabase person by person: what it gives Formelab, said plainly, and a way to replace the key** (behind the "Each person's identity sent to Supabase" feature). Testing on a real Supabase project showed that Supabase accepts any role in a token from an issuer it trusts, including the one that skips every policy. Formelab only ever sends "authenticated", but a connector's signing key can do as much as the project's service key. The connector's page now says so next to **Send each person's identity**, and turning it on asks you to confirm. If you think the key may have leaked, **Replace signing key** makes a new one and stops publishing the old one, without turning anything off. Calls can fail for up to 30 minutes, until Supabase reads the new key.
 - **Test plan:** [Supabase person by person](/test-plans/2026-11-27-supabase-identity), now 29 browser test cases to hand to Claude Cowork.
 

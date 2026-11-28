@@ -150,7 +150,10 @@ function activityList(items: { at: number; text: string }[]): string {
 
 const ACTIVITY: Record<string, (d: Record<string, unknown>) => string> = {
   connector_create: () => "You made this connector",
-  connector_update: (d) => `You changed its ${(Array.isArray(d.fields) ? d.fields.map(String) : []).map((f) => (f === "auth" ? "way of sending the key" : f === "hosts" ? "hosts" : f === "label" ? "name" : f)).join(", ") || "settings"}`,
+  connector_update: (d) =>
+    Array.isArray(d.fields) && d.fields.length === 1 && d.fields[0] === "identity"
+      ? `You turned ${d.identity === false ? "off" : "on"} sending each person's identity`
+      : `You changed its ${(Array.isArray(d.fields) ? d.fields.map(String) : []).map((f) => (f === "auth" ? "way of sending the key" : f === "hosts" ? "hosts" : f === "label" ? "name" : f)).join(", ") || "settings"}`,
   connector_key: () => "You replaced the key",
   connector_identity_key: () => "You replaced the signing key for each person's identity",
   connector_move: (d) => `You turned the saved keys${d.apps ? ` of ${d.apps} app${d.apps === 1 ? "" : "s"}` : ""} into this connector`,
@@ -180,7 +183,7 @@ create policy "Own rows" on leads for select to authenticated
 /** "Each person's identity" for a Supabase connector (spec step 6b): the switch, then how to set it up. */
 function identityBlock(k: { name: string; identity: boolean }, issuer: string, apps: { id: string; name: string }[]): string {
   const setup = k.identity
-    ? `<p>In Supabase: Authentication, Sign In / Providers, <strong>Third-Party Auth</strong>, Add provider, <strong>Custom OIDC</strong>. Paste this as the Issuer URL:</p>
+    ? `<p class="muted">In Supabase: Authentication, Sign In / Providers, <strong>Third-Party Auth</strong>, Add provider, <strong>Custom OIDC</strong>. Paste this as the Issuer URL:</p>
     <div class="linkbox"><code>${e(issuer)}</code><button type="button" class="small" data-copy-text="${e(issuer)}" data-copied="Issuer URL copied" aria-label="Copy the issuer URL">Copy</button></div>
     <p class="muted">Then write row-level security policies that read the person from the token: <code>auth.jwt() -&gt;&gt; 'email'</code>, <code>'formelab_role'</code> (their role in the app's rules), <code>'formelab_manages'</code> (true for the app's owner and editors) and <code>'formelab_app'</code> (which app is calling). <code>auth.uid()</code> doesn't work here.</p>
     <p class="muted"><strong>Check the app too.</strong> Any of your apps you let use ${e(k.name)} sends tokens to this project, and a role or manager status only counts in the app it came from: an editor of one app would otherwise get what managers of another get. The first policy below lets in only the apps that use it now.</p>
