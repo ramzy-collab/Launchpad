@@ -139,9 +139,14 @@
         reloadSoon();
       });
     },
-    "feature-set": function (form) {
-      return api("PUT", "/features/" + encodeURIComponent(form.dataset.name), { state: form.elements.state.value }).then(function () {
-        show("Saved. It applies right away.");
+    // Features: one Save for every "Who gets it" dropdown, saving only the ones that changed.
+    "features-save": function () {
+      var changed = Array.prototype.filter.call(document.querySelectorAll('select[form="features-form"]'), function (s) { return s.value !== s.dataset.saved; });
+      if (!changed.length) { show("Nothing to save: no feature was changed."); return Promise.resolve(); }
+      return Promise.all(changed.map(function (s) {
+        return api("PUT", "/features/" + encodeURIComponent(s.dataset.flag), { state: s.value }).then(function () { s.dataset.saved = s.value; });
+      })).then(function () {
+        show(changed.length === 1 ? "Saved 1 change. It applies right away." : "Saved " + changed.length + " changes. They apply right away.");
         reloadSoon();
       });
     },

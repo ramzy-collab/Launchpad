@@ -264,12 +264,9 @@ async function featuresBody(c: Context<AppEnv>): Promise<string> {
       (f) => `<tr>
   <td><strong>${e(f.label)}</strong><div class="muted">${e(f.description)}</div></td>
   <td class="nowrap">${f.updatedAt ? `${e(fmtTime(f.updatedAt))}<div class="muted">${e(f.updatedBy ?? "")}</div>` : '<span class="muted">Never changed</span>'}</td>
-  <td><form class="inline" data-action="feature-set" data-name="${e(f.name)}">
-    <select name="state" aria-label="${e(f.label)}">${(["off", "admins", "on"] as const)
+  <td><select form="features-form" data-flag="${e(f.name)}" data-saved="${e(f.state)}" aria-label="Who gets ${e(f.label)}">${(["off", "admins", "on"] as const)
       .map((s) => `<option value="${s}"${s === f.state ? " selected" : ""}>${e(STATE_LABEL[s])}</option>`)
-      .join("")}</select>
-    <button>Save</button>
-  </form></td>
+      .join("")}</select></td>
 </tr>
 <tr class="flag-people">
   <td colspan="3">
@@ -295,6 +292,7 @@ async function featuresBody(c: Context<AppEnv>): Promise<string> {
   return `<section>
   <p class="muted">New features ship turned off. Turn one on for <strong>Admins only</strong> to try it yourself, then for <strong>Everyone</strong>. To let a few people try it first, turn it on for them by email: they get it whatever <strong>Who gets it</strong> says. Turning a feature off hides it again right away; nothing people set up is deleted.</p>
   <div class="scroll"><table><thead><tr><th>Feature</th><th>Last changed</th><th>Who gets it</th></tr></thead><tbody>${rows}</tbody></table></div>
+  <form id="features-form" class="inline" data-action="features-save"><button>Save changes</button></form>
 </section>`;
 }
 

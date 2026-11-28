@@ -4,6 +4,8 @@ Everything that has changed in Formelab, newest first. Shown in the admin panel 
 
 ## 2026-11-28
 
+- **One Save on the admin panel's Features page.** Each feature had its own Save button, so changing a few dropdowns and saving one could leave the others unsaved. Now every feature's **Who gets it** is saved with a single **Save changes** under the table, which saves only the ones you changed and says how many.
+- **Test plan:** [Features page with one Save](/test-plans/2026-11-28-features-one-save), 12 browser test cases to hand to Claude Cowork.
 - **A privacy page.** Formelab now has a plain-language privacy policy at `/privacy`: what it keeps, why, which companies handle it (Cloudflare, WorkOS, Google Fonts, and services an app's owner connects), how the people who use apps are covered, how Google Sheets data is used, cookies, and how to get data deleted. It's linked from the home page's footer, and the "Powered by Formelab" line on an app's sign-in page and AI connection page now has a **Privacy** link.
 - **Test plan:** [Privacy page](/test-plans/2026-11-28-privacy-page), 10 browser test cases to hand to Claude Cowork.
 - **Fixes found in a local run-through.** A Supabase connector's activity now reads "You turned on sending each person's identity" (it said "You changed its identity"), and its Supabase steps match the text around them. The page for someone who can't open an app says "Ask whoever sent it to you to add your email" instead of mentioning an allow-list.

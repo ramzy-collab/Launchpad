@@ -213,7 +213,8 @@ describe("the connected_apps feature flag", () => {
     expect((await setFlag("on")).status).toBe(200);
     expect(await (await call("/app/connected", { as: person })).text()).toContain('href="/connected/gemini"');
     const admin = await (await call("https://admin.example.com/features", { as: OWNER })).text();
-    expect(admin).toContain('data-action="feature-set" data-name="connected_apps"');
+    expect(admin).toContain('data-flag="connected_apps"');
+    expect(admin).toContain('data-action="features-save"'); // one Save for every feature
     expect(admin).toContain('<option value="on" selected>Everyone</option>');
     expect(await (await call("https://admin.example.com/activity", { as: OWNER })).text()).toContain("Set Connected apps to on for everyone");
   });
